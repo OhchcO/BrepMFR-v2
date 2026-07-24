@@ -707,7 +707,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--subset-root",
         type=Path,
-        default=Path(r"D:\Code\Datasets\MFRInstSeg\subsets\train_val_balanced"),
+        default=Path(r"D:\Code\Datasets\MFRInstSeg\subsets\train_val_1pct_balanced"),
     )
     parser.add_argument("--output-root", type=Path, default=Path(r"D:\Code\Datasets\MFRInstSeg_BrepMFR"))
     parser.add_argument(

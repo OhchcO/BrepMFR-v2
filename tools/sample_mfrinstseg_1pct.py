@@ -27,6 +27,10 @@ from typing import Iterable, List, Sequence, Tuple
 import numpy as np
 
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="replace")
+
+
 DEFAULT_CLASSES = tuple(range(24))
 
 

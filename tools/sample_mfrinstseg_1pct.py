@@ -324,7 +324,7 @@ def sample_split(
 ) -> SplitResult:
     sample_ids, duplicate_count = read_unique_ids(split_file)
     records = load_records(dataset_root / "labels", sample_ids, class_ids)
-    selection_size = int(math.floor(len(records) * ratio))
+    selection_size = max(1, int(math.floor(len(records) * ratio)))
     matrix = np.stack([record.instance_counts for record in records])
     selected_indices, before_swaps, after_swaps = select_balanced(
         matrix, selection_size, seed, swap_attempts
@@ -400,6 +400,15 @@ def build_split_report(result: SplitResult, class_ids: Sequence[int]) -> dict:
             for column, class_id in enumerate(class_ids)
         },
     }
+
+
+def validate_output_dir(dataset_root: Path, output_dir: Path) -> None:
+    """Reject output destinations that would replace official split manifests."""
+    if output_dir.resolve() == dataset_root.resolve():
+        raise ValueError(
+            "--output-dir must not be the dataset root because it would overwrite "
+            "official train.txt and val.txt"
+        )
 
 
 def write_outputs(
@@ -510,7 +519,9 @@ def build_report(
 
 
 def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Create deterministic balanced train and validation subsets."
+    )
     parser.add_argument(
         "--dataset-root",
         type=Path,
@@ -532,6 +543,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--classes",
         default="0-23",
+        choices=("0-23",),
         help="参与均衡的类别，例如 0-23 或 0,1,5-8；默认不含背景类 24",
     )
     parser.add_argument(
@@ -540,6 +552,18 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         default=20000,
         help="贪心选择后的随机交换优化次数",
     )
+    for action in parser._actions:
+        if action.dest == "classes":
+            action.help = argparse.SUPPRESS
+        elif action.dest == "split_file":
+            action.help = argparse.SUPPRESS
+            for option in action.option_strings:
+                del parser._option_string_actions[option]
+        elif action.dest == "output_dir":
+            action.help = (
+                "Output directory (default: "
+                "<dataset-root>/subsets/train_val_1pct_balanced)"
+            )
     return parser.parse_args(argv)
 
 
@@ -628,7 +652,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         output_dir = args.output_dir or (
             dataset_root / "subsets" / "train_val_1pct_balanced"
         )
-        class_ids = parse_class_spec(args.classes)
+        validate_output_dir(dataset_root, output_dir)
+        class_ids = DEFAULT_CLASSES
         split_results = {
             name: sample_split(
                 dataset_root=dataset_root,

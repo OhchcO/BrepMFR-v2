@@ -55,6 +55,31 @@ FEATURE_CHANNELS = 7
 MAX_HOPS = 6
 RBF_BINS = 64
 UNREACHABLE_DISTANCE = 512
+WINDOWS_INVALID_FILENAME_CHARS = set('<>:"/\\|?*')
+WINDOWS_RESERVED_STEMS = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
 
 
 @dataclass(frozen=True)
@@ -97,13 +122,20 @@ class ConversionPaths:
 
 
 def validate_sample_id(sample_id: str) -> None:
-    """Require a manifest ID to be a safe, simple filename component."""
+    """Require a portable, non-reserved Windows filename component."""
     if not isinstance(sample_id, str) or not sample_id:
         raise ValueError("Sample ID must be a nonempty string")
-    if sample_id in {".", ".."} or "/" in sample_id or "\\" in sample_id:
+    if sample_id in {".", ".."} or sample_id.endswith((" ", ".")):
         raise ValueError("Sample ID is not a simple filename: {0}".format(sample_id))
-    if ":" in sample_id or Path(sample_id).name != sample_id:
+    if Path(sample_id).name != sample_id:
         raise ValueError("Sample ID is not a safe filename: {0}".format(sample_id))
+    if any(ord(character) < 32 for character in sample_id):
+        raise ValueError("Sample ID contains a control character")
+    if any(character in WINDOWS_INVALID_FILENAME_CHARS for character in sample_id):
+        raise ValueError("Sample ID contains an invalid filename character")
+    stem = sample_id.split(".", 1)[0].upper()
+    if stem in WINDOWS_RESERVED_STEMS:
+        raise ValueError("Sample ID uses a reserved Windows device name")
 
 
 def load_extractor(extractor_file: Path):
@@ -701,12 +733,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 except Exception as error:
                     try:
                         validate_sample_id(sample_id)
-                    except ValueError:
-                        pass
-                    else:
                         temporary = paths.bin_file(sample_id).with_suffix(".bin.tmp")
                         if temporary.exists():
                             temporary.unlink()
+                    except (OSError, ValueError):
+                        # Never let cleanup obscure the original per-model failure.
+                        pass
                     failures.append(
                         {
                             "split": split,

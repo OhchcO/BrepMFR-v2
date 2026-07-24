@@ -157,10 +157,9 @@ metadata:
 ```text
 metadata["instance"]  # [N, N]，同实例亲和矩阵
 metadata["bottom"]    # [N]，MFRInstSeg 原始 bottom 标签
-metadata["sample_id"]
 ```
 
-当前 Baseline 可以忽略这些新增 metadata；后续模型修改直接读取，无需再次转换数据。
+当前 Baseline 可以忽略这些新增 metadata；后续模型修改直接读取，无需再次转换数据。DGL 图级 metadata 只接受 Tensor，因此样本 ID 不重复写入 metadata，直接使用 `<sample_id>.bin` 的文件名。
 
 ### 4.3 输出组织
 

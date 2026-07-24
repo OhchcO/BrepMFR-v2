@@ -1,15 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""�� MFRInstSeg �ٷ�ѵ������ȡ����������С�����嵥��
+"""Create deterministic, instance-balanced train and validation subsets.
 
-Ĭ����Ϊ��
-1. ֻ��ȡ�ٷ� train.txt�����޸�ԭ���ݼ���
-2. ��ȡΨһѵ��ģ�������� 1%��
-3. ���� ``inst`` ʵ���ڽӾ���ͳ��ÿ��ģ���� 0~23 ��������ʵ������
-4. �ö��ǩ̰��ѡ�����������Ż���ʹ 24 ��ʵ�����������ӽ���
-5. ��� train_1pct.txt��class_statistics.csv �� selection_report.json��
+The script reads the official ``train.txt`` and ``val.txt`` manifests from
+MFRInstSeg. It never changes the source manifests or label files. Classes
+0..23 are balanced by feature-instance count. Semantic class 24 stays in a
+selected CAD model but is excluded from the balancing objective.
 
-��ǩ 24 �ǷǼӹ�����/�����棬Ĭ�ϲ������������⣬���Իᱣ���ڱ�ѡģ���С�
+Outputs:
+    train.txt
+    val.txt
+    train_class_statistics.csv
+    val_class_statistics.csv
+    selection_report.json
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ import random
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -32,12 +35,11 @@ if hasattr(sys.stdout, "reconfigure"):
 
 
 DEFAULT_CLASSES = tuple(range(24))
+Objective = Tuple[int, float, int]
 
 
 @dataclass(frozen=True)
 class SampleRecord:
-    """һ�� CAD ģ�ͼ����и�������������ʵ��������"""
-
     sample_id: str
     instance_counts: np.ndarray
     face_counts: np.ndarray
@@ -45,38 +47,60 @@ class SampleRecord:
 
 @dataclass(frozen=True)
 class SplitResult:
-    """Sampling inputs and results for one official split."""
-
-    split_file: Path
-    raw_model_count: int
-    duplicate_count: int
-    records: Sequence[SampleRecord]
+    split_name: str
+    source_entries: int
+    duplicate_entries: int
+    records: Tuple[SampleRecord, ...]
     selected_indices: np.ndarray
     random_indices: np.ndarray
-    before_swaps: Tuple[int, float, int]
-    after_swaps: Tuple[int, float, int]
+    objective_before_swaps: Objective
+    objective_after_swaps: Objective
+
+    @property
+    def instance_matrix(self) -> np.ndarray:
+        return np.stack([record.instance_counts for record in self.records])
+
+    @property
+    def face_matrix(self) -> np.ndarray:
+        return np.stack([record.face_counts for record in self.records])
+
+    @property
+    def selected_instance_counts(self) -> np.ndarray:
+        return counts_for_indices(self.instance_matrix, self.selected_indices)
+
+    @property
+    def random_instance_counts(self) -> np.ndarray:
+        return counts_for_indices(self.instance_matrix, self.random_indices)
+
+    @property
+    def selected_face_counts(self) -> np.ndarray:
+        return counts_for_indices(self.face_matrix, self.selected_indices)
 
 
-def read_unique_ids(path: Path) -> Tuple[List[str], int]:
-    """��ȡ�����嵥�������״γ��ֵ�˳��ͬʱ�����ظ���������"""
+def read_unique_ids(path: Path) -> Tuple[List[str], int, int]:
+    """Return unique IDs, raw entry count, and duplicate entry count."""
     if not path.is_file():
-        raise FileNotFoundError("�Ҳ���ѵ�����嵥��{0}".format(path))
+        raise FileNotFoundError("Split manifest not found: {0}".format(path))
+
     raw_ids = [
         line.strip()
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+    if not raw_ids:
+        raise ValueError("Split manifest is empty: {0}".format(path))
+
     seen = set()
     unique_ids = []
     for sample_id in raw_ids:
         if sample_id not in seen:
             seen.add(sample_id)
             unique_ids.append(sample_id)
-    return unique_ids, len(raw_ids) - len(unique_ids)
+    return unique_ids, len(raw_ids), len(raw_ids) - len(unique_ids)
 
 
 def unwrap_label(document: object, path: Path) -> Tuple[str, dict]:
-    """���ݹٷ� ``[[sample_id, annotation]]`` ��ǩ��װ��ʽ��"""
+    """Read the official ``[[sample_id, annotation]]`` label wrapper."""
     if (
         isinstance(document, list)
         and len(document) == 1
@@ -87,23 +111,30 @@ def unwrap_label(document: object, path: Path) -> Tuple[str, dict]:
         return str(document[0][0]), document[0][1]
     if isinstance(document, dict) and {"seg", "inst"}.issubset(document):
         return path.stem, document
-    raise ValueError("�޷�ʶ���ǩ��ʽ��{0}".format(path))
+    raise ValueError("Unsupported label format: {0}".format(path))
 
 
 def semantic_labels(seg: object, path: Path) -> np.ndarray:
-    """�������ǩ�ֵ䰴����ת�����������顣"""
+    """Convert a face-indexed semantic dictionary into a dense array."""
     if isinstance(seg, dict):
         try:
             indexed = {int(key): int(value) for key, value in seg.items()}
         except (TypeError, ValueError) as error:
-            raise ValueError("seg �д��ڷ�������ֵ��{0}".format(path)) from error
-        expected = set(range(len(indexed)))
-        if set(indexed) != expected:
-            raise ValueError("seg ���Ų��Ǵ� 0 ��ʼ��������ţ�{0}".format(path))
-        return np.asarray([indexed[index] for index in range(len(indexed))], dtype=np.int32)
+            raise ValueError(
+                "Non-integer key or value in seg: {0}".format(path)
+            ) from error
+        if set(indexed) != set(range(len(indexed))):
+            raise ValueError(
+                "Face indices in seg are not contiguous from zero: {0}".format(
+                    path
+                )
+            )
+        return np.asarray(
+            [indexed[index] for index in range(len(indexed))], dtype=np.int32
+        )
     if isinstance(seg, list):
         return np.asarray(seg, dtype=np.int32)
-    raise ValueError("seg �������ֵ���б���{0}".format(path))
+    raise ValueError("seg must be a dictionary or list: {0}".format(path))
 
 
 def count_instances(
@@ -112,44 +143,51 @@ def count_instances(
     class_ids: Sequence[int],
     path: Path,
 ) -> np.ndarray:
-    """���������ͳ��ʵ����ͨ����������
+    """Count same-semantic connected components as feature instances.
 
-    ``inst[i][j] > 0`` ��ʾ�� i��j ����ͬһʵ�����Ծ��������򻯺�
-    ÿ����ͨ������Ϊһ������ʵ����ȫ���в���Ϊʵ����
+    The affinity matrix is treated as an undirected graph. Traversal is
+    restricted to faces with the same semantic class. An all-zero row is an
+    isolated vertex and therefore counts as one single-face instance when its
+    semantic class is in ``class_ids``.
     """
     matrix = np.asarray(affinity)
     node_count = len(labels)
     if matrix.shape != (node_count, node_count):
         raise ValueError(
-            "inst ��״ {0} ������ {1} ��һ�£�{2}".format(
+            "inst shape {0} does not match {1} faces: {2}".format(
                 tuple(matrix.shape), node_count, path
             )
         )
+
     linked = (matrix > 0) | (matrix.T > 0)
-    class_to_column = {class_id: index for index, class_id in enumerate(class_ids)}
+    class_to_column = {
+        class_id: column for column, class_id in enumerate(class_ids)
+    }
     counts = np.zeros(len(class_ids), dtype=np.int32)
     visited = np.zeros(node_count, dtype=bool)
 
     for start in range(node_count):
-        if visited[start] or not linked[start].any():
+        if visited[start]:
             continue
+
+        class_id = int(labels[start])
+        column = class_to_column.get(class_id)
+        if column is None:
+            visited[start] = True
+            continue
+
         stack = [start]
         visited[start] = True
-        component = []
         while stack:
             node = stack.pop()
-            component.append(node)
-            neighbours = np.flatnonzero(linked[node] & ~visited)
+            neighbours = np.flatnonzero(
+                linked[node] & ~visited & (labels == class_id)
+            )
             if len(neighbours):
                 visited[neighbours] = True
                 stack.extend(int(value) for value in neighbours)
+        counts[column] += 1
 
-        component_labels = labels[np.asarray(component, dtype=np.int64)]
-        values, frequencies = np.unique(component_labels, return_counts=True)
-        class_id = int(values[int(np.argmax(frequencies))])
-        column = class_to_column.get(class_id)
-        if column is not None:
-            counts[column] += 1
     return counts
 
 
@@ -158,12 +196,15 @@ def load_record(
 ) -> SampleRecord:
     path = labels_dir / (sample_id + ".json")
     if not path.is_file():
-        raise FileNotFoundError("�Ҳ�����ǩ�ļ���{0}".format(path))
+        raise FileNotFoundError("Label file not found: {0}".format(path))
+
     try:
         with path.open("r", encoding="utf-8") as stream:
             document = json.load(stream)
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise ValueError("��ȡ��ǩʧ�ܣ�{0} ({1})".format(path, error)) from error
+        raise ValueError(
+            "Cannot read label file {0}: {1}".format(path, error)
+        ) from error
 
     _, annotation = unwrap_label(document, path)
     labels = semantic_labels(annotation.get("seg"), path)
@@ -171,38 +212,44 @@ def load_record(
         labels, annotation.get("inst"), class_ids, path
     )
     face_counts = np.asarray(
-        [int(np.count_nonzero(labels == class_id)) for class_id in class_ids],
+        [
+            int(np.count_nonzero(labels == class_id))
+            for class_id in class_ids
+        ],
         dtype=np.int32,
     )
     return SampleRecord(sample_id, instance_counts, face_counts)
 
 
 def load_records(
-    labels_dir: Path, sample_ids: Sequence[str], class_ids: Sequence[int]
-) -> List[SampleRecord]:
+    labels_dir: Path,
+    sample_ids: Sequence[str],
+    class_ids: Sequence[int],
+    split_name: str,
+) -> Tuple[SampleRecord, ...]:
     records = []
     total = len(sample_ids)
     for index, sample_id in enumerate(sample_ids, start=1):
         records.append(load_record(labels_dir, sample_id, class_ids))
         if index == total or index % 1000 == 0:
             print(
-                "\r��ȡ��ǩ��{0}/{1}".format(index, total),
+                "\rLoading {0}: {1}/{2}".format(split_name, index, total),
                 end="" if index < total else "\n",
                 flush=True,
             )
-    return records
+    return tuple(records)
 
 
-def balance_objective(counts: np.ndarray) -> Tuple[int, float, int]:
-    """����ԽСԽ�õ� (δ���������, ����ϵ��, ����)��"""
-    counts = np.asarray(counts, dtype=np.float64)
-    uncovered = int(np.count_nonzero(counts == 0))
-    mean = float(counts.mean())
-    coefficient_of_variation = (
-        float(counts.std() / mean) if mean > 0.0 else float("inf")
+def balance_objective(counts: np.ndarray) -> Objective:
+    """Return (uncovered classes, coefficient of variation, spread)."""
+    values = np.asarray(counts, dtype=np.float64)
+    uncovered = int(np.count_nonzero(values == 0))
+    mean = float(values.mean())
+    coefficient = (
+        float(values.std() / mean) if mean > 0.0 else float("inf")
     )
-    spread = int(counts.max() - counts.min()) if len(counts) else 0
-    return uncovered, coefficient_of_variation, spread
+    spread = int(values.max() - values.min()) if len(values) else 0
+    return uncovered, coefficient, spread
 
 
 def select_balanced(
@@ -210,17 +257,28 @@ def select_balanced(
     selection_size: int,
     seed: int,
     swap_attempts: int,
-) -> Tuple[np.ndarray, Tuple[int, float, int], Tuple[int, float, int]]:
-    """�ڹ̶�ģ����Լ����ѡ��ʵ���ֲ�����������С�"""
+    split_name: str,
+) -> Tuple[np.ndarray, Objective, Objective]:
+    """Select a fixed number of rows with balanced column totals."""
     model_count, class_count = matrix.shape
     if not 0 < selection_size <= model_count:
-        raise ValueError("������������λ�� 1 ��ѵ��ģ������֮��")
+        raise ValueError(
+            "Selection size for {0} must be in [1, {1}]".format(
+                split_name, model_count
+            )
+        )
     if class_count == 0:
-        raise ValueError("û�����ھ�������")
+        raise ValueError("No classes are configured for balancing")
+
     available = matrix.sum(axis=0)
     if np.any(available == 0):
-        missing = np.flatnonzero(available == 0).tolist()
-        raise ValueError("���������ѵ������û��ʵ����{0}".format(missing))
+        missing_columns = np.flatnonzero(available == 0)
+        missing_classes = [
+            DEFAULT_CLASSES[int(column)] for column in missing_columns
+        ]
+        raise ValueError(
+            "Classes absent from {0}: {1}".format(split_name, missing_classes)
+        )
 
     rng = np.random.default_rng(seed)
     tie_rank = np.empty(model_count, dtype=np.int64)
@@ -256,9 +314,12 @@ def select_balanced(
         selected.append(chosen)
         selected_mask[chosen] = True
         counts += matrix[chosen]
-        if (step + 1) % 50 == 0 or step + 1 == selection_size:
+
+        if step + 1 == selection_size or (step + 1) % 50 == 0:
             print(
-                "\r����ѡ��{0}/{1}".format(step + 1, selection_size),
+                "\rSelecting {0}: {1}/{2}".format(
+                    split_name, step + 1, selection_size
+                ),
                 end="" if step + 1 < selection_size else "\n",
                 flush=True,
             )
@@ -267,6 +328,7 @@ def select_balanced(
     current_objective = before_swaps
     unselected = np.flatnonzero(~selected_mask).tolist()
     random_generator = random.Random(seed)
+
     for _ in range(swap_attempts):
         if not selected or not unselected:
             break
@@ -289,155 +351,262 @@ def select_balanced(
     )
 
 
-def counts_for_indices(matrix: np.ndarray, indices: np.ndarray) -> np.ndarray:
+def counts_for_indices(
+    matrix: np.ndarray, indices: np.ndarray
+) -> np.ndarray:
     if len(indices) == 0:
         return np.zeros(matrix.shape[1], dtype=np.int64)
     return matrix[indices].sum(axis=0).astype(np.int64)
 
 
 def sample_split(
-    *,
     dataset_root: Path,
-    split_file: Path,
-    class_ids: Sequence[int],
+    split_name: str,
     ratio: float,
     seed: int,
     swap_attempts: int,
 ) -> SplitResult:
-    sample_ids, duplicate_count = read_unique_ids(split_file)
-    records = load_records(dataset_root / "labels", sample_ids, class_ids)
-    selection_size = max(1, int(math.floor(len(records) * ratio)))
+    split_file = dataset_root / (split_name + ".txt")
+    sample_ids, source_entries, duplicate_entries = read_unique_ids(split_file)
+    records = load_records(
+        dataset_root / "labels",
+        sample_ids,
+        DEFAULT_CLASSES,
+        split_name,
+    )
     matrix = np.stack([record.instance_counts for record in records])
-    selected_indices, before_swaps, after_swaps = select_balanced(
-        matrix, selection_size, seed, swap_attempts
+    selection_size = max(1, int(math.floor(len(records) * ratio)))
+    selected, before_swaps, after_swaps = select_balanced(
+        matrix,
+        selection_size,
+        seed,
+        swap_attempts,
+        split_name,
     )
     random_indices = np.random.default_rng(seed).choice(
         len(records), size=selection_size, replace=False
     )
     return SplitResult(
-        split_file,
-        len(sample_ids) + duplicate_count,
-        duplicate_count,
-        records,
-        selected_indices,
-        random_indices,
-        before_swaps,
-        after_swaps,
+        split_name=split_name,
+        source_entries=source_entries,
+        duplicate_entries=duplicate_entries,
+        records=records,
+        selected_indices=selected,
+        random_indices=random_indices,
+        objective_before_swaps=before_swaps,
+        objective_after_swaps=after_swaps,
     )
 
 
-def write_manifest(path: Path, records: Sequence[SampleRecord]) -> None:
-    path.write_text(
-        "\n".join(sorted(record.sample_id for record in records)) + "\n",
-        encoding="utf-8",
-    )
+def selected_records(result: SplitResult) -> List[SampleRecord]:
+    records = [result.records[int(index)] for index in result.selected_indices]
+    return sorted(records, key=lambda record: record.sample_id)
 
 
-def write_class_statistics(
-    path: Path, result: SplitResult, class_ids: Sequence[int]
-) -> None:
-    matrix = np.stack([record.instance_counts for record in result.records])
-    face_matrix = np.stack([record.face_counts for record in result.records])
-    balanced = counts_for_indices(matrix, result.selected_indices)
-    random_counts = counts_for_indices(matrix, result.random_indices)
-    balanced_faces = counts_for_indices(face_matrix, result.selected_indices)
+def write_manifest(path: Path, result: SplitResult) -> None:
+    text = "\n".join(
+        record.sample_id for record in selected_records(result)
+    ) + "\n"
+    path.write_text(text, encoding="utf-8")
+
+
+def write_class_statistics(path: Path, result: SplitResult) -> None:
+    full_counts = result.instance_matrix.sum(axis=0)
+    selected_counts = result.selected_instance_counts
+    random_counts = result.random_instance_counts
+    selected_faces = result.selected_face_counts
+
     with path.open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.writer(stream)
-        writer.writerow([
-            "class_id", "full_split_instances", "balanced_subset_instances",
-            "random_subset_instances", "balanced_subset_faces",
-        ])
-        for column, class_id in enumerate(class_ids):
-            writer.writerow([
-                class_id, int(matrix[:, column].sum()), int(balanced[column]),
-                int(random_counts[column]), int(balanced_faces[column]),
-            ])
+        writer.writerow(
+            [
+                "class_id",
+                "full_split_instances",
+                "balanced_subset_instances",
+                "random_subset_instances",
+                "balanced_subset_faces",
+            ]
+        )
+        for column, class_id in enumerate(DEFAULT_CLASSES):
+            writer.writerow(
+                [
+                    class_id,
+                    int(full_counts[column]),
+                    int(selected_counts[column]),
+                    int(random_counts[column]),
+                    int(selected_faces[column]),
+                ]
+            )
 
 
-def build_split_report(result: SplitResult, class_ids: Sequence[int]) -> dict:
-    matrix = np.stack([record.instance_counts for record in result.records])
-    balanced = counts_for_indices(matrix, result.selected_indices)
-    random_counts = counts_for_indices(matrix, result.random_indices)
+def split_report(result: SplitResult) -> dict:
+    full_counts = result.instance_matrix.sum(axis=0)
+    selected_counts = result.selected_instance_counts
+    random_counts = result.random_instance_counts
     return {
-        "source_split": str(result.split_file.resolve()),
-        "official_entries": result.raw_model_count,
+        "official_entries": result.source_entries,
         "unique_models": len(result.records),
-        "duplicate_entries_ignored": result.duplicate_count,
+        "duplicate_entries_ignored": result.duplicate_entries,
         "selected_models": int(len(result.selected_indices)),
-        "actual_unique_model_ratio": len(result.selected_indices) / len(result.records),
-        "objective_before_swaps": list(result.before_swaps),
-        "objective_after_swaps": list(result.after_swaps),
-        "balanced_objective": list(balance_objective(balanced)),
+        "actual_unique_model_ratio": (
+            len(result.selected_indices) / len(result.records)
+        ),
+        "objective_before_swaps": list(result.objective_before_swaps),
+        "objective_after_swaps": list(result.objective_after_swaps),
+        "balanced_objective": list(balance_objective(selected_counts)),
         "random_objective": list(balance_objective(random_counts)),
         "full_instance_counts": {
-            str(class_id): int(matrix[:, column].sum())
-            for column, class_id in enumerate(class_ids)
+            str(class_id): int(full_counts[column])
+            for column, class_id in enumerate(DEFAULT_CLASSES)
         },
         "balanced_instance_counts": {
-            str(class_id): int(balanced[column])
-            for column, class_id in enumerate(class_ids)
+            str(class_id): int(selected_counts[column])
+            for column, class_id in enumerate(DEFAULT_CLASSES)
         },
         "random_instance_counts": {
             str(class_id): int(random_counts[column])
-            for column, class_id in enumerate(class_ids)
+            for column, class_id in enumerate(DEFAULT_CLASSES)
         },
     }
 
 
 def validate_output_dir(dataset_root: Path, output_dir: Path) -> None:
-    """Reject output destinations that would replace official split manifests."""
-    if output_dir.resolve() == dataset_root.resolve():
-        raise ValueError("--output-dir must not be the dataset root because it would overwrite official train.txt and val.txt")
+    source_root = dataset_root.resolve()
+    destination_root = output_dir.resolve()
+    if source_root == destination_root:
+        raise ValueError(
+            "--output-dir must not be the dataset root because train.txt "
+            "and val.txt would overwrite the official manifests"
+        )
+
+    source_manifests = {
+        (source_root / "train.txt").resolve(),
+        (source_root / "val.txt").resolve(),
+    }
+    output_manifests = {
+        (destination_root / "train.txt").resolve(),
+        (destination_root / "val.txt").resolve(),
+    }
+    if source_manifests & output_manifests:
+        raise ValueError("--output-dir would overwrite an official manifest")
 
 
-def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Create deterministic balanced train and validation subsets.")
-    parser.add_argument("--dataset-root", type=Path, default=Path(r"D:\Code\Datasets\MFRInstSeg"), help="Dataset root containing train.txt, val.txt, and labels/")
-    parser.add_argument("--output-dir", type=Path, help="Output directory (default: <dataset-root>/subsets/train_val_1pct_balanced)")
-    parser.add_argument("--ratio", type=float, default=0.01, help="Fraction selected from each split")
-    parser.add_argument("--seed", type=int, default=2026, help="Deterministic seed")
-    parser.add_argument("--swap-attempts", type=int, default=20000, help="Random swap optimization attempts after greedy selection")
+def write_outputs(
+    output_dir: Path,
+    ratio: float,
+    seed: int,
+    swap_attempts: int,
+    results: Dict[str, SplitResult],
+    dataset_root: Path,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for split_name in ("train", "val"):
+        result = results[split_name]
+        write_manifest(output_dir / (split_name + ".txt"), result)
+        write_class_statistics(
+            output_dir / (split_name + "_class_statistics.csv"), result
+        )
+
+    report = {
+        "dataset_root": str(dataset_root.resolve()),
+        "output_dir": str(output_dir.resolve()),
+        "ratio": ratio,
+        "seed": seed,
+        "swap_attempts": swap_attempts,
+        "balanced_class_ids": list(DEFAULT_CLASSES),
+        "excluded_semantic_class": 24,
+        "train": split_report(results["train"]),
+        "val": split_report(results["val"]),
+    }
+    with (output_dir / "selection_report.json").open(
+        "w", encoding="utf-8"
+    ) as stream:
+        json.dump(report, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+
+
+def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--dataset-root",
+        type=Path,
+        default=Path(r"D:\Code\Datasets\MFRInstSeg"),
+        help="MFRInstSeg root directory",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        help=(
+            "Output directory; default: "
+            "<dataset-root>/subsets/train_val_balanced"
+        ),
+    )
+    parser.add_argument(
+        "--ratio",
+        type=float,
+        default=0.01,
+        help="Sampling ratio applied independently to train and val",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=2026,
+        help="Fixed random seed (default: 2026)",
+    )
+    parser.add_argument(
+        "--swap-attempts",
+        type=int,
+        default=20000,
+        help="Number of post-greedy random swap attempts",
+    )
     return parser.parse_args(argv)
 
 
-def main(argv: Iterable[str] | None = None) -> int:
+def main(argv: Optional[Iterable[str]] = None) -> int:
     args = parse_args(argv)
     try:
         if not 0.0 < args.ratio <= 1.0:
             raise ValueError("--ratio must be in (0, 1]")
         if args.swap_attempts < 0:
-            raise ValueError("--swap-attempts cannot be negative")
+            raise ValueError("--swap-attempts must be non-negative")
+
         dataset_root = args.dataset_root
-        output_dir = args.output_dir or (dataset_root / "subsets" / "train_val_1pct_balanced")
+        output_dir = args.output_dir or (
+            dataset_root / "subsets" / "train_val_balanced"
+        )
         validate_output_dir(dataset_root, output_dir)
-        split_results = {
-            name: sample_split(dataset_root=dataset_root, split_file=dataset_root / (name + ".txt"), class_ids=DEFAULT_CLASSES, ratio=args.ratio, seed=args.seed, swap_attempts=args.swap_attempts)
-            for name in ("train", "val")
+
+        results = {
+            split_name: sample_split(
+                dataset_root=dataset_root,
+                split_name=split_name,
+                ratio=args.ratio,
+                seed=args.seed,
+                swap_attempts=args.swap_attempts,
+            )
+            for split_name in ("train", "val")
         }
-        output_dir.mkdir(parents=True, exist_ok=True)
-        for split_name, result in split_results.items():
-            selected_records = [result.records[int(index)] for index in result.selected_indices]
-            write_manifest(output_dir / (split_name + ".txt"), selected_records)
-            write_class_statistics(output_dir / (split_name + "_class_statistics.csv"), result, DEFAULT_CLASSES)
-        report = {
-            "dataset_root": str(dataset_root.resolve()), "output_dir": str(output_dir.resolve()),
-            "requested_ratio": args.ratio, "seed": args.seed,
-            "balanced_class_ids": list(DEFAULT_CLASSES),
-            "class_24_note": "Background class 24 is not balanced.",
-            "train": build_split_report(split_results["train"], DEFAULT_CLASSES),
-            "val": build_split_report(split_results["val"], DEFAULT_CLASSES),
-        }
-        with (output_dir / "selection_report.json").open("w", encoding="utf-8") as stream:
-            json.dump(report, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
-        for split_name, result in split_results.items():
-            matrix = np.stack([record.instance_counts for record in result.records])
-            balanced = counts_for_indices(matrix, result.selected_indices)
-            random_counts = counts_for_indices(matrix, result.random_indices)
-            print("Completed {0}: selected {1} of {2} unique models.".format(split_name, len(result.selected_indices), len(result.records)))
-            print("Balanced objective: {0}".format(balance_objective(balanced)))
-            print("Random objective: {0}".format(balance_objective(random_counts)))
-        print("Output directory: {0}".format(output_dir))
+        write_outputs(
+            output_dir=output_dir,
+            ratio=args.ratio,
+            seed=args.seed,
+            swap_attempts=args.swap_attempts,
+            results=results,
+            dataset_root=dataset_root,
+        )
+
+        for split_name in ("train", "val"):
+            result = results[split_name]
+            print(
+                "{0}: selected {1}/{2}, balanced={3}, random={4}".format(
+                    split_name,
+                    len(result.selected_indices),
+                    len(result.records),
+                    balance_objective(result.selected_instance_counts),
+                    balance_objective(result.random_instance_counts),
+                )
+            )
+        print("Output: {0}".format(output_dir))
         return 0
     except (FileNotFoundError, ValueError, OSError) as error:
         print("Error: {0}".format(error), file=sys.stderr)

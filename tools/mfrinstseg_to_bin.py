@@ -741,7 +741,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             raise ValueError("--limit must be positive")
         schema = load_schema(args.schema_file)
         extractor_class, topology_utils = load_extractor(args.extractor_file)
-    except (FileNotFoundError, ImportError, OSError, ValueError) as error:
+    except Exception as error:
         failures.append(_global_failure(error))
         try:
             _write_failures(paths.output_root, failures)

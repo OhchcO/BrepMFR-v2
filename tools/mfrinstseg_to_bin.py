@@ -80,6 +80,7 @@ class ConversionPaths:
         return self.output_root / "bin"
 
     def step_file(self, sample_id: str) -> Path:
+        validate_sample_id(sample_id)
         primary = self.dataset_root / "steps" / (sample_id + ".step")
         if primary.is_file():
             return primary
@@ -87,10 +88,22 @@ class ConversionPaths:
         return alternate if alternate.is_file() else primary
 
     def label_file(self, sample_id: str) -> Path:
+        validate_sample_id(sample_id)
         return self.dataset_root / "labels" / (sample_id + ".json")
 
     def bin_file(self, sample_id: str) -> Path:
+        validate_sample_id(sample_id)
         return self.bins_root / (sample_id + ".bin")
+
+
+def validate_sample_id(sample_id: str) -> None:
+    """Require a manifest ID to be a safe, simple filename component."""
+    if not isinstance(sample_id, str) or not sample_id:
+        raise ValueError("Sample ID must be a nonempty string")
+    if sample_id in {".", ".."} or "/" in sample_id or "\\" in sample_id:
+        raise ValueError("Sample ID is not a simple filename: {0}".format(sample_id))
+    if ":" in sample_id or Path(sample_id).name != sample_id:
+        raise ValueError("Sample ID is not a safe filename: {0}".format(sample_id))
 
 
 def load_extractor(extractor_file: Path):
@@ -233,12 +246,21 @@ def _finite_array(value: object, name: str) -> np.ndarray:
 
 
 def _signed_edge_angles(edge_grid: np.ndarray, convexity: np.ndarray) -> np.ndarray:
-    """Return one signed dihedral angle per edge from normal grid channels."""
+    """Return signed angles from epsilon-safe normalized edge normals."""
     left = edge_grid[:, 6:9, :].transpose(0, 2, 1)
     right = edge_grid[:, 9:12, :].transpose(0, 2, 1)
-    dots = np.clip(np.sum(left * right, axis=-1), -1.0, 1.0)
-    valid = (np.linalg.norm(left, axis=-1) > 0.0) & (
-        np.linalg.norm(right, axis=-1) > 0.0
+    epsilon = np.finfo(np.float32).eps
+    left_norm = np.linalg.norm(left, axis=-1, keepdims=True)
+    right_norm = np.linalg.norm(right, axis=-1, keepdims=True)
+    left_unit = np.divide(
+        left, left_norm, out=np.zeros_like(left), where=left_norm > epsilon
+    )
+    right_unit = np.divide(
+        right, right_norm, out=np.zeros_like(right), where=right_norm > epsilon
+    )
+    dots = np.clip(np.sum(left_unit * right_unit, axis=-1), -1.0, 1.0)
+    valid = (left_norm[..., 0] > epsilon) & (
+        right_norm[..., 0] > epsilon
     )
     valid_count = valid.sum(axis=1)
     unsigned = np.divide(
@@ -445,12 +467,13 @@ def shortest_path_metadata(graph, node_grid: np.ndarray) -> Dict[str, torch.Tens
     maximum_distance = float(pair_distance.max())
     if maximum_distance > 0.0:
         pair_distance = pair_distance / maximum_distance
+    epsilon = np.finfo(np.float32).eps
     normal_lengths = np.linalg.norm(normals, axis=-1, keepdims=True)
     unit_normals = np.divide(
         normals,
         normal_lengths,
         out=np.zeros_like(normals),
-        where=normal_lengths > 0.0,
+        where=normal_lengths > epsilon,
     )
     dots = np.clip(np.matmul(unit_normals, unit_normals.T), -1.0, 1.0)
     pair_angle = np.arccos(dots).astype(np.float32) / math.pi
@@ -463,19 +486,19 @@ def shortest_path_metadata(graph, node_grid: np.ndarray) -> Dict[str, torch.Tens
 
 
 def validate_bin(path: Path, expected_nodes: int) -> None:
-    """Reload one BIN and validate required keys and exact leading shapes."""
+    """Reload one BIN and validate its exact owned field contract."""
     graphs, metadata = load_graphs(str(path))
     if len(graphs) != 1:
         raise ValueError("BIN must contain exactly one graph: {0}".format(path))
     graph = graphs[0]
     if graph.num_nodes() != expected_nodes:
         raise ValueError("BIN node count differs from label count: {0}".format(path))
-    if not REQUIRED_NODE_KEYS.issubset(graph.ndata):
-        raise ValueError("BIN is missing node fields: {0}".format(path))
-    if not REQUIRED_EDGE_KEYS.issubset(graph.edata):
-        raise ValueError("BIN is missing edge fields: {0}".format(path))
-    if not REQUIRED_METADATA_KEYS.issubset(metadata):
-        raise ValueError("BIN is missing metadata fields: {0}".format(path))
+    if set(graph.ndata) != REQUIRED_NODE_KEYS:
+        raise ValueError("BIN node fields differ from the contract: {0}".format(path))
+    if set(graph.edata) != REQUIRED_EDGE_KEYS:
+        raise ValueError("BIN edge fields differ from the contract: {0}".format(path))
+    if set(metadata) != REQUIRED_METADATA_KEYS:
+        raise ValueError("BIN metadata fields differ from the contract: {0}".format(path))
     count, edge_count = graph.num_nodes(), graph.num_edges()
     shapes = {
         "node_x": tuple(graph.ndata["x"].shape),
@@ -570,7 +593,8 @@ def convert_one(
     schema: dict,
     overwrite: bool,
 ) -> str:
-    """Return ``converted`` or ``skipped``; raise on invalid input/output."""
+    """Convert safely, skipping only a valid existing BIN unless overwritten."""
+    validate_sample_id(sample_id)
     label = load_label(paths.label_file(sample_id))
     if label.sample_id != sample_id:
         raise ValueError(
@@ -580,12 +604,9 @@ def convert_one(
         )
     target = paths.bin_file(sample_id)
     temporary = target.with_suffix(target.suffix + ".tmp")
-    if target.is_file() and not overwrite:
-        try:
-            validate_bin(target, len(label.semantic))
-            return "skipped"
-        except (OSError, ValueError):
-            pass
+    if target.exists() and not overwrite:
+        validate_bin(target, len(label.semantic))
+        return "skipped"
     step_file = paths.step_file(sample_id)
     if not step_file.is_file():
         raise FileNotFoundError("STEP file not found: {0}".format(step_file))
@@ -678,9 +699,14 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                     )
                     successful.append(sample_id)
                 except Exception as error:
-                    temporary = paths.bin_file(sample_id).with_suffix(".bin.tmp")
-                    if temporary.exists():
-                        temporary.unlink()
+                    try:
+                        validate_sample_id(sample_id)
+                    except ValueError:
+                        pass
+                    else:
+                        temporary = paths.bin_file(sample_id).with_suffix(".bin.tmp")
+                        if temporary.exists():
+                            temporary.unlink()
                     failures.append(
                         {
                             "split": split,

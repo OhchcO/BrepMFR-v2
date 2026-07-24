@@ -48,13 +48,13 @@ REQUIRED_METADATA_KEYS = {
     "d2_distance",
     "angle_distance",
     "instance",
-    "bottom",
 }
 GRID_SIZE = 5
 FEATURE_CHANNELS = 7
 MAX_HOPS = 6
 RBF_BINS = 64
 UNREACHABLE_DISTANCE = 512
+MAX_SAVED_SPATIAL_POSITION = 62
 WINDOWS_INVALID_FILENAME_CHARS = set('<>:"/\\|?*')
 WINDOWS_RESERVED_STEMS = {
     "CON",
@@ -84,12 +84,11 @@ WINDOWS_RESERVED_STEMS = {
 
 @dataclass(frozen=True)
 class LabelData:
-    """Dense MFRInstSeg annotations for a single CAD model."""
+    """Dense MFRInstSeg semantic and instance annotations for one CAD model."""
 
     sample_id: str
     semantic: np.ndarray
     instance: np.ndarray
-    bottom: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -234,7 +233,7 @@ def _dense_semantic(values: object, label_file: Path) -> np.ndarray:
 
 
 def load_label(label_file: Path) -> LabelData:
-    """Return dense semantic, instance, and bottom arrays."""
+    """Return dense semantic labels and the square instance matrix."""
     try:
         with label_file.open("r", encoding="utf-8") as stream:
             document = json.load(stream)
@@ -242,11 +241,10 @@ def load_label(label_file: Path) -> LabelData:
         raise ValueError("Cannot read label {0}: {1}".format(label_file, error)) from error
 
     sample_id, annotation = _unwrap_label(document, label_file)
-    if not {"seg", "inst", "bottom"}.issubset(annotation):
-        raise ValueError("Label is missing seg, inst, or bottom: {0}".format(label_file))
+    if not {"seg", "inst"}.issubset(annotation):
+        raise ValueError("Label is missing seg or inst: {0}".format(label_file))
     semantic = _dense_semantic(annotation["seg"], label_file)
     instance = np.asarray(annotation["inst"], dtype=np.int8)
-    bottom = np.asarray(annotation["bottom"], dtype=np.int32)
     count = len(semantic)
     if instance.shape != (count, count):
         raise ValueError(
@@ -254,13 +252,7 @@ def load_label(label_file: Path) -> LabelData:
                 label_file, tuple(instance.shape)
             )
         )
-    if bottom.shape != (count,):
-        raise ValueError(
-            "Bottom labels must have {0} entries for {1}; got {2}".format(
-                count, label_file, tuple(bottom.shape)
-            )
-        )
-    return LabelData(sample_id, semantic, instance, bottom)
+    return LabelData(sample_id, semantic, instance)
 
 
 def _attribute_index(attributes: Sequence[object], name: str) -> int:
@@ -509,8 +501,11 @@ def shortest_path_metadata(graph, node_grid: np.ndarray) -> Dict[str, torch.Tens
     )
     dots = np.clip(np.matmul(unit_normals, unit_normals.T), -1.0, 1.0)
     pair_angle = np.arccos(dots).astype(np.float32) / math.pi
+    saved_spatial_pos = np.minimum(
+        spatial_pos, MAX_SAVED_SPATIAL_POSITION
+    ).astype(np.int32, copy=False)
     return {
-        "spatial_pos": torch.from_numpy(spatial_pos).to(torch.int32),
+        "spatial_pos": torch.from_numpy(saved_spatial_pos).to(torch.int32),
         "edges_path": torch.from_numpy(edges_path).to(torch.int64),
         "d2_distance": torch.from_numpy(rbf_encode(pair_distance)).to(torch.float32),
         "angle_distance": torch.from_numpy(rbf_encode(pair_angle)).to(torch.float32),
@@ -549,7 +544,6 @@ def validate_bin(path: Path, expected_nodes: int) -> None:
         "d2_distance": tuple(metadata["d2_distance"].shape),
         "angle_distance": tuple(metadata["angle_distance"].shape),
         "instance": tuple(metadata["instance"].shape),
-        "bottom": tuple(metadata["bottom"].shape),
     }
     expected = {
         "node_x": (count, GRID_SIZE, GRID_SIZE, FEATURE_CHANNELS),
@@ -568,7 +562,6 @@ def validate_bin(path: Path, expected_nodes: int) -> None:
         "d2_distance": (count, count, RBF_BINS),
         "angle_distance": (count, count, RBF_BINS),
         "instance": (count, count),
-        "bottom": (count,),
     }
     if shapes != expected:
         raise ValueError("BIN shapes differ from the contract: {0}".format(shapes))
@@ -589,7 +582,6 @@ def validate_bin(path: Path, expected_nodes: int) -> None:
         "d2_distance": torch.float32,
         "angle_distance": torch.float32,
         "instance": torch.int8,
-        "bottom": torch.int32,
     }
     actual_tensors = {
         "node_x": graph.ndata["x"],
@@ -608,7 +600,6 @@ def validate_bin(path: Path, expected_nodes: int) -> None:
         "d2_distance": metadata["d2_distance"],
         "angle_distance": metadata["angle_distance"],
         "instance": metadata["instance"],
-        "bottom": metadata["bottom"],
     }
     for key, tensor in actual_tensors.items():
         if tensor.dtype != expected_dtypes[key]:
@@ -649,7 +640,6 @@ def convert_one(
         graph = build_graph(extraction, label, schema, topology_utils)
         metadata = shortest_path_metadata(graph, graph.ndata["x"].cpu().numpy())
         metadata["instance"] = torch.from_numpy(label.instance).to(torch.int8)
-        metadata["bottom"] = torch.from_numpy(label.bottom).to(torch.int32)
         save_graphs(str(temporary), [graph], metadata)
         validate_bin(temporary, len(label.semantic))
         temporary.replace(target)
@@ -678,6 +668,36 @@ def _reject_source_output(paths: ConversionPaths) -> None:
     subset = paths.subset_root.resolve()
     if output == source or output == subset:
         raise ValueError("Output root must differ from dataset and subset roots")
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Publish UTF-8 text through a sibling temporary file and replacement."""
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    try:
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _write_failures(output_root: Path, failures: List[dict]) -> None:
+    """Atomically publish the converter's complete structured failure report."""
+    output_root.mkdir(parents=True, exist_ok=True)
+    _atomic_write_text(
+        output_root / "conversion_failures.json",
+        json.dumps(failures, indent=2, ensure_ascii=False) + "\n",
+    )
+
+
+def _global_failure(error: Exception) -> dict:
+    """Represent a pre-conversion setup failure in the normal report schema."""
+    return {
+        "split": "global",
+        "sample_id": None,
+        "exception_type": type(error).__name__,
+        "message": str(error),
+    }
 
 
 def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
@@ -709,16 +729,29 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[Iterable[str]] = None) -> int:
     """Convert selected manifests and write successful output manifests."""
     args = parse_args(argv)
-    if args.limit is not None and args.limit < 1:
-        print("Error: --limit must be positive", file=sys.stderr)
-        return 2
     paths = ConversionPaths(args.dataset_root, args.subset_root, args.output_root)
     try:
         _reject_source_output(paths)
+    except ValueError as error:
+        print("Error: {0}".format(error), file=sys.stderr)
+        return 2
+    failures: List[dict] = []
+    try:
+        if args.limit is not None and args.limit < 1:
+            raise ValueError("--limit must be positive")
         schema = load_schema(args.schema_file)
         extractor_class, topology_utils = load_extractor(args.extractor_file)
+    except (FileNotFoundError, ImportError, OSError, ValueError) as error:
+        failures.append(_global_failure(error))
+        try:
+            _write_failures(paths.output_root, failures)
+        except OSError as report_error:
+            print("Error writing failure report: {0}".format(report_error), file=sys.stderr)
+        print("Error: {0}".format(error), file=sys.stderr)
+        return 2
+    try:
+        paths.output_root.mkdir(parents=True, exist_ok=True)
         splits = ("train", "val") if args.split == "all" else (args.split,)
-        failures = []
         for split in splits:
             sample_ids = _read_ids(paths.subset_root / (split + ".txt"))
             if args.limit is not None:
@@ -747,15 +780,18 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                             "message": str(error),
                         }
                     )
-            (paths.output_root / (split + ".txt")).parent.mkdir(parents=True, exist_ok=True)
-            (paths.output_root / (split + ".txt")).write_text(
-                "\n".join(successful) + ("\n" if successful else ""), encoding="utf-8"
+            _atomic_write_text(
+                paths.output_root / (split + ".txt"),
+                "\n".join(successful) + ("\n" if successful else ""),
             )
-        (paths.output_root / "conversion_failures.json").write_text(
-            json.dumps(failures, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-        )
+        _write_failures(paths.output_root, failures)
         return 1 if failures else 0
     except (FileNotFoundError, ImportError, OSError, ValueError) as error:
+        failures.append(_global_failure(error))
+        try:
+            _write_failures(paths.output_root, failures)
+        except OSError as report_error:
+            print("Error writing failure report: {0}".format(report_error), file=sys.stderr)
         print("Error: {0}".format(error), file=sys.stderr)
         return 2
 

@@ -27,11 +27,13 @@ ensure_prepared_dataset = None
 
 EXPERIMENT_ALIASES = (
     "baseline",
+    "dynamic_no_loss",
+    "affinity_only",
+    "instance",
+    "oracle",
     "cyl",
     "point",
     "spe_pcaag",
-    "instance",
-    "affinity_only",
     "full",
 )
 
@@ -46,13 +48,15 @@ class ExperimentSwitches:
 
 _EXPERIMENT_SWITCHES = {
     "baseline": ExperimentSwitches("baseline", False, False, 1.0),
-    "cyl": ExperimentSwitches("baseline", False, True, 1.0),
-    "point": ExperimentSwitches("baseline", True, False, 1.0),
-    "spe_pcaag": ExperimentSwitches("baseline", True, True, 1.0),
-    "instance": ExperimentSwitches("dynamic_affinity", False, False, 1.0),
+    "dynamic_no_loss": ExperimentSwitches("dynamic", False, False, 1.0),
     "affinity_only": ExperimentSwitches(
         "dynamic_affinity", False, False, 0.0
     ),
+    "instance": ExperimentSwitches("dynamic_affinity", False, False, 1.0),
+    "oracle": ExperimentSwitches("oracle", False, False, 1.0),
+    "cyl": ExperimentSwitches("baseline", False, True, 1.0),
+    "point": ExperimentSwitches("baseline", True, False, 1.0),
+    "spe_pcaag": ExperimentSwitches("baseline", True, True, 1.0),
     "full": ExperimentSwitches("dynamic_affinity", True, True, 1.0),
 }
 

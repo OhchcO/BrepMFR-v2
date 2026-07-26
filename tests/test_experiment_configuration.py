@@ -1,6 +1,7 @@
 import ast
 import importlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -89,8 +90,10 @@ def test_importing_segmentation_does_not_parse_process_arguments(segmentation):
         ("cyl", "baseline", False, True, 1.0),
         ("point", "baseline", True, False, 1.0),
         ("spe_pcaag", "baseline", True, True, 1.0),
+        ("dynamic_no_loss", "dynamic", False, False, 1.0),
         ("instance", "dynamic_affinity", False, False, 1.0),
         ("affinity_only", "dynamic_affinity", False, False, 0.0),
+        ("oracle", "oracle", False, False, 1.0),
         ("full", "dynamic_affinity", True, True, 1.0),
     ],
 )
@@ -102,6 +105,43 @@ def test_alias_mapping(segmentation, alias, mode, point, cyl, bias_scale):
         switches.use_cylindrical_pos,
         switches.instance_bias_scale,
     ) == (mode, point, cyl, bias_scale)
+
+
+def test_launcher_accepts_all_formal_experiment_modes():
+    launcher = Path(__file__).resolve().parents[1] / "tools" / "run_mfrinstseg_experiments.ps1"
+    powershell = """
+$command = Get-Command '{0}'
+$metadata = [System.Management.Automation.CommandMetadata]::new($command)
+$attribute = $metadata.Parameters['Mode'].Attributes |
+  Where-Object {{ $_ -is [System.Management.Automation.ValidateSetAttribute] }}
+$attribute.ValidValues | ConvertTo-Json -Compress
+""".format(str(launcher).replace("'", "''"))
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            powershell,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    accepted_modes = json.loads(completed.stdout)
+
+    assert accepted_modes == [
+        "baseline",
+        "dynamic_no_loss",
+        "affinity_only",
+        "instance",
+        "oracle",
+        "cyl",
+        "point",
+        "spe_pcaag",
+        "full",
+    ]
 
 
 def test_parser_exposes_preparation_and_geometry_defaults(segmentation):

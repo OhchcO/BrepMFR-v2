@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("baseline", "cyl", "point", "spe_pcaag", "instance", "affinity_only", "full")]
+    [ValidateSet("baseline", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "point", "spe_pcaag", "full")]
     [string]$Mode = "baseline",
     [switch]$All,
     [bool]$AutoPrepare = $true,
@@ -11,7 +11,7 @@ param(
     [string]$SchemaFile = "D:\Code\BrepMFR-g\data_set_line\schema.json",
     [string]$PythonExe = "G:\ProgramData\anaconda3\envs\aagmspenv\python.exe",
     [int]$BatchSize = 16,
-    [int]$MaxEpochs = 1000,
+    [int]$MaxEpochs = 100,
     [int]$Seed = 2026,
     [int]$NumWorkers = 0,
     [double]$SamplePercent = 0.01,
@@ -64,7 +64,7 @@ else {
 }
 
 if ($All) {
-    $Modes = @("baseline", "cyl", "point", "spe_pcaag", "instance", "affinity_only", "full")
+    $Modes = @("baseline", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "point", "spe_pcaag", "full")
 }
 else {
     $Modes = @($Mode)

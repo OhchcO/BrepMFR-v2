@@ -17,6 +17,8 @@ from utils.reproducibility import derive_seed
 
 MAX_FACE_POINTS = 96
 NORMAL_EPSILON = 1e-12
+ADAPTIVE_BASE_COUNT = 64
+DEFAULT_CANDIDATE_GRIDS = (20, 32, 48, 64, 80)
 
 
 @dataclass(frozen=True)
@@ -28,12 +30,18 @@ class PointSamplingConfig:
     min_count: int = 32
     max_count: int = 96
     area_exponent: float = 0.5
-    candidate_grids: Tuple[int, int, int, int, int] = (20, 32, 48, 64, 80)
+    candidate_grids: Tuple[int, int, int, int, int] = DEFAULT_CANDIDATE_GRIDS
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "candidate_grids", tuple(self.candidate_grids))
         if self.mode not in ("fixed", "area_adaptive"):
             raise ValueError("mode must be 'fixed' or 'area_adaptive'")
+        for name in ("fixed_count", "min_count", "max_count"):
+            value = getattr(self, name)
+            if not isinstance(value, (int, np.integer)) or isinstance(
+                value, (bool, np.bool_)
+            ):
+                raise ValueError("{0} must be a non-boolean integer".format(name))
         if not 1 <= self.fixed_count <= MAX_FACE_POINTS:
             raise ValueError("fixed_count must be in [1, 96]")
         if not 1 <= self.min_count <= self.max_count <= MAX_FACE_POINTS:
@@ -44,16 +52,10 @@ class PointSamplingConfig:
             raise ValueError("area-adaptive min_count and max_count must be multiples of 8")
         if not math.isfinite(self.area_exponent) or self.area_exponent <= 0.0:
             raise ValueError("area_exponent must be positive and finite")
-        if not self.candidate_grids or any(
-            not isinstance(grid, int) or isinstance(grid, bool) or grid < 2
-            for grid in self.candidate_grids
-        ):
-            raise ValueError("candidate_grids must contain integer resolutions >= 2")
-        if any(
-            right <= left
-            for left, right in zip(self.candidate_grids, self.candidate_grids[1:])
-        ):
-            raise ValueError("candidate_grids must be strictly increasing")
+        if self.candidate_grids != DEFAULT_CANDIDATE_GRIDS:
+            raise ValueError(
+                "candidate_grids must be exactly (20, 32, 48, 64, 80)"
+            )
 
 
 @dataclass(frozen=True)
@@ -77,13 +79,33 @@ def adaptive_point_count(
     if not math.isfinite(median_area) or median_area <= 0.0:
         raise ValueError("median_area must be positive and finite")
     if config.mode == "fixed":
-        return config.fixed_count
-    requested = config.fixed_count * math.pow(
+        return int(config.fixed_count)
+    requested = ADAPTIVE_BASE_COUNT * math.pow(
         area / median_area, config.area_exponent
     )
     clipped = min(float(config.max_count), max(float(config.min_count), requested))
     rounded = int(math.floor(clipped / 8.0 + 0.5)) * 8
-    return min(config.max_count, max(config.min_count, rounded))
+    return int(min(config.max_count, max(config.min_count, rounded)))
+
+
+def expected_point_counts(
+    face_areas: np.ndarray, config: PointSamplingConfig
+) -> np.ndarray:
+    """Compute exact targets from float32-stored areas using float64 arithmetic."""
+    stored_areas = np.asarray(face_areas)
+    if stored_areas.ndim != 1 or stored_areas.shape[0] == 0:
+        raise ValueError("face_areas must have shape [N] with N > 0")
+    if not np.isfinite(stored_areas).all() or bool((stored_areas <= 0).any()):
+        raise ValueError("face_areas must be positive and finite")
+    calculation_areas = stored_areas.astype(np.float32).astype(np.float64)
+    median_area = float(np.median(calculation_areas))
+    return np.asarray(
+        [
+            adaptive_point_count(area, median_area, config)
+            for area in calculation_areas
+        ],
+        dtype=np.int32,
+    )
 
 
 def farthest_point_indices(points_xyz: np.ndarray, count: int) -> np.ndarray:
@@ -228,6 +250,8 @@ def extract_geometry_features(
     config: PointSamplingConfig,
     base_seed: int,
     sample_id: str,
+    include_face_pointcloud: bool = True,
+    include_cylindrical_pos: bool = True,
 ) -> GeometryFeatureBatch:
     """Extract complete-model geometry and pack each face to 96 positions.
 
@@ -242,39 +266,46 @@ def extract_geometry_features(
     for face_index, face in enumerate(faces):
         areas[face_index], centroids[face_index] = _surface_properties(face)
 
-    median_area = float(np.median(areas))
-    target_counts = np.asarray(
-        [adaptive_point_count(area, median_area, config) for area in areas],
-        dtype=np.int32,
+    target_counts = (
+        expected_point_counts(areas, config)
+        if include_face_pointcloud
+        else np.zeros(len(faces), dtype=np.int32)
     )
     packed_points = np.zeros(
         (len(faces), MAX_FACE_POINTS, 6), dtype=np.float32
     )
     packed_mask = np.zeros((len(faces), MAX_FACE_POINTS), dtype=np.bool_)
 
-    for face_index, (face, target_count) in enumerate(zip(faces, target_counts)):
-        candidates = np.empty((0, 6), dtype=np.float32)
-        for grid in config.candidate_grids:
-            candidates = _valid_uv_candidates(face, grid)
-            if candidates.shape[0] >= int(target_count):
-                break
-        if candidates.shape[0] == 0:
-            raise ValueError(
-                "Face {0} has no valid UV candidates".format(face_index)
-            )
-        unique_count = min(int(target_count), candidates.shape[0])
-        fps_order = farthest_point_indices(candidates[:, :3], unique_count)
-        if unique_count < int(target_count):
-            repeats = int(math.ceil(float(target_count) / unique_count))
-            selected = np.tile(fps_order, repeats)[: int(target_count)]
-        else:
-            selected = fps_order
-        packed_points[face_index, : int(target_count)] = candidates[selected]
-        packed_mask[face_index, : int(target_count)] = True
+    if include_face_pointcloud:
+        for face_index, (face, target_count) in enumerate(
+            zip(faces, target_counts)
+        ):
+            candidates = np.empty((0, 6), dtype=np.float32)
+            for grid in config.candidate_grids:
+                candidates = _valid_uv_candidates(face, grid)
+                if candidates.shape[0] >= int(target_count):
+                    break
+            if candidates.shape[0] == 0:
+                raise ValueError(
+                    "Face {0} has no valid UV candidates".format(face_index)
+                )
+            unique_count = min(int(target_count), candidates.shape[0])
+            fps_order = farthest_point_indices(candidates[:, :3], unique_count)
+            if unique_count < int(target_count):
+                repeats = int(math.ceil(float(target_count) / unique_count))
+                selected = np.tile(fps_order, repeats)[: int(target_count)]
+            else:
+                selected = fps_order
+            packed_points[face_index, : int(target_count)] = candidates[selected]
+            packed_mask[face_index, : int(target_count)] = True
 
     return GeometryFeatureBatch(
         face_points=packed_points,
         face_point_mask=packed_mask,
         face_point_count=target_counts,
-        cylindrical_pos=cylindrical_positions(centroids),
+        cylindrical_pos=(
+            cylindrical_positions(centroids)
+            if include_cylindrical_pos
+            else np.zeros((len(faces), 4), dtype=np.float32)
+        ),
     )

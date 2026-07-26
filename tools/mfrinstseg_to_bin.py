@@ -29,6 +29,7 @@ from tqdm import tqdm
 from tools.geometry_features import (
     GeometryFeatureBatch,
     PointSamplingConfig,
+    expected_point_counts,
     extract_geometry_features,
 )
 from utils.reproducibility import DEFAULT_SEED
@@ -795,19 +796,40 @@ def validate_bin(
             raise ValueError("BIN face_point_mask and face_point_count are inconsistent")
         if not bool(graph.ndata["face_points"][~mask].eq(0).all()):
             raise ValueError("BIN padded face_points must be zero")
+        valid_normals = graph.ndata["face_points"][..., 3:6][mask]
+        normal_lengths = torch.linalg.norm(valid_normals, dim=1)
+        if not torch.allclose(
+            normal_lengths,
+            torch.ones_like(normal_lengths),
+            rtol=1e-4,
+            atol=1e-4,
+        ):
+            raise ValueError("BIN valid face_points must contain unit normals")
         if point_sampling.mode == "fixed":
             if not bool((counts == point_sampling.fixed_count).all()):
                 raise ValueError("BIN fixed face_point_count values are invalid")
-        elif not bool(
-            (
-                (counts >= point_sampling.min_count)
-                & (counts <= point_sampling.max_count)
-                & (counts.remainder(8) == 0)
-            ).all()
-        ):
-            raise ValueError(
-                "BIN adaptive face_point_count values must be in range and a multiple of 8"
-            )
+        else:
+            if not bool(
+                (
+                    (counts >= point_sampling.min_count)
+                    & (counts <= point_sampling.max_count)
+                    & (counts.remainder(8) == 0)
+                ).all()
+            ):
+                raise ValueError(
+                    "BIN adaptive face_point_count values must be in range and "
+                    "a multiple of 8"
+                )
+            expected_counts = torch.from_numpy(
+                expected_point_counts(
+                    graph.ndata["y"].cpu().numpy(), point_sampling
+                )
+            ).to(device=counts.device, dtype=torch.int64)
+            if not torch.equal(counts, expected_counts):
+                raise ValueError(
+                    "BIN adaptive face_point_count values do not match full-model "
+                    "face areas"
+                )
 
         requested_metadata = geometry_metadata(point_sampling)
         for key, expected_tensor in requested_metadata.items():
@@ -825,6 +847,23 @@ def validate_bin(
             raise ValueError("BIN dtype for cylindrical_pos is invalid")
         if not bool(torch.isfinite(cylindrical).all()):
             raise ValueError("BIN contains non-finite values in cylindrical_pos")
+        tolerance = 1e-5
+        radius = cylindrical[:, 0]
+        normalized_z = cylindrical[:, 3]
+        if not bool(((radius >= -tolerance) & (radius <= 1.0 + tolerance)).all()):
+            raise ValueError("BIN cylindrical normalized radius is outside [0, 1]")
+        if not bool(
+            ((normalized_z >= -tolerance) & (normalized_z <= 1.0 + tolerance)).all()
+        ):
+            raise ValueError("BIN cylindrical normalized z is outside [0, 1]")
+        angular_norm = cylindrical[:, 1].square() + cylindrical[:, 2].square()
+        if not torch.allclose(
+            angular_norm,
+            torch.ones_like(angular_norm),
+            rtol=1e-4,
+            atol=1e-4,
+        ):
+            raise ValueError("BIN cylindrical sine/cosine pair is not unit length")
 
 
 def convert_one(
@@ -876,6 +915,8 @@ def convert_one(
                 options.point_sampling,
                 options.seed,
                 sample_id,
+                include_face_pointcloud=options.include_face_pointcloud,
+                include_cylindrical_pos=options.include_cylindrical_pos,
             )
             attach_geometry_features(graph, geometry, options)
         if options.include_face_pointcloud:

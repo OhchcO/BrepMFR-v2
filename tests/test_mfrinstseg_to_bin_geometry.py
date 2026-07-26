@@ -1,6 +1,8 @@
 from dataclasses import replace
+from types import SimpleNamespace
 
 import dgl
+import numpy as np
 import pytest
 import torch
 from dgl.data.utils import save_graphs
@@ -11,7 +13,9 @@ from tools.mfrinstseg_to_bin import (
     BinRequirements,
     ConversionOptions,
     ConversionPaths,
+    LabelData,
     attach_geometry_features,
+    convert_one,
     convert_selected_samples,
     geometry_metadata,
     validate_bin,
@@ -44,7 +48,7 @@ def make_core_metadata():
     }
 
 
-def make_geometry_batch(counts=(32, 96)):
+def make_geometry_batch(counts=(64, 64)):
     points = torch.zeros((2, 96, 6), dtype=torch.float32)
     mask = torch.zeros((2, 96), dtype=torch.bool)
     for face_index, count in enumerate(counts):
@@ -202,6 +206,51 @@ def test_geometry_bin_rejects_invalid_adaptive_counts(tmp_path):
         )
 
 
+def test_geometry_bin_rejects_wrong_but_divisible_adaptive_count(tmp_path):
+    path = tmp_path / "wrong-adaptive-count.bin"
+    graph = make_core_graph()
+    graph.ndata["y"] = torch.tensor([1.0, 4.0], dtype=torch.float32)
+    options = ConversionOptions(
+        seed=2026,
+        point_sampling=PointSamplingConfig(),
+        include_face_pointcloud=True,
+        include_cylindrical_pos=True,
+    )
+    attach_geometry_features(graph, make_geometry_batch((32, 80)), options)
+    metadata = make_core_metadata()
+    metadata.update(geometry_metadata(options.point_sampling))
+    save_graphs(str(path), [graph], metadata)
+
+    with pytest.raises(ValueError, match="adaptive.*face areas"):
+        validate_bin(
+            path,
+            requirements=geometry_requirements(),
+            point_sampling=PointSamplingConfig(),
+        )
+
+
+def test_geometry_bin_accepts_exact_area_derived_adaptive_counts(tmp_path):
+    path = tmp_path / "exact-adaptive-count.bin"
+    graph = make_core_graph()
+    graph.ndata["y"] = torch.tensor([1.0, 4.0], dtype=torch.float32)
+    options = ConversionOptions(
+        seed=2026,
+        point_sampling=PointSamplingConfig(),
+        include_face_pointcloud=True,
+        include_cylindrical_pos=True,
+    )
+    attach_geometry_features(graph, make_geometry_batch((40, 80)), options)
+    metadata = make_core_metadata()
+    metadata.update(geometry_metadata(options.point_sampling))
+    save_graphs(str(path), [graph], metadata)
+
+    validate_bin(
+        path,
+        requirements=geometry_requirements(),
+        point_sampling=PointSamplingConfig(),
+    )
+
+
 def test_geometry_bin_rejects_fixed_count_mismatch(tmp_path):
     path = tmp_path / "fixed.bin"
     fixed = PointSamplingConfig(mode="fixed", fixed_count=64)
@@ -246,6 +295,48 @@ def test_legacy_bin_is_valid_when_optional_geometry_is_not_requested(tmp_path):
             require_cylindrical=False,
         ),
     )
+
+
+def test_geometry_bin_rejects_non_unit_valid_normals(tmp_path):
+    path = tmp_path / "normal.bin"
+    graph, metadata = write_geometry_bin(path)
+    graph.ndata["face_points"][0, 0, 3:6] = torch.tensor(
+        [0.0, 0.0, 0.5], dtype=torch.float32
+    )
+    save_graphs(str(path), [graph], metadata)
+
+    with pytest.raises(ValueError, match="unit normals"):
+        validate_bin(
+            path,
+            requirements=geometry_requirements(),
+            point_sampling=PointSamplingConfig(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "message"),
+    [
+        (0, -0.01, "normalized radius"),
+        (3, 1.01, "normalized z"),
+        (1, 0.0, "sine/cosine"),
+    ],
+)
+def test_geometry_bin_rejects_invalid_cylindrical_semantics(
+    tmp_path, column, value, message
+):
+    path = tmp_path / ("cyl-{0}.bin".format(column))
+    graph, metadata = write_geometry_bin(path)
+    graph.ndata["cylindrical_pos"][0, column] = value
+    if column == 1:
+        graph.ndata["cylindrical_pos"][0, 2] = 0.0
+    save_graphs(str(path), [graph], metadata)
+
+    with pytest.raises(ValueError, match=message):
+        validate_bin(
+            path,
+            requirements=geometry_requirements(),
+            point_sampling=PointSamplingConfig(),
+        )
 
 
 def test_selected_conversion_accepts_automatic_preparation_root_contract(
@@ -316,3 +407,151 @@ def test_selected_conversion_accepts_automatic_preparation_root_contract(
     assert (prepared / "conversion_failures.json").read_text(
         encoding="utf-8"
     ) == "[]\n"
+
+
+def make_convert_one_fixture(tmp_path, monkeypatch):
+    paths = ConversionPaths(
+        dataset_root=tmp_path / "raw",
+        subset_root=tmp_path / "subset",
+        output_root=tmp_path / "output",
+    )
+    step_file = paths.dataset_root / "steps" / "sample.step"
+    step_file.parent.mkdir(parents=True)
+    step_file.write_text("STEP", encoding="utf-8")
+    label = LabelData(
+        sample_id="sample",
+        semantic=np.array([0, 1], dtype=np.int32),
+        instance=np.eye(2, dtype=np.int8),
+    )
+    monkeypatch.setattr(mfrinstseg_to_bin, "load_label", lambda path: label)
+    monkeypatch.setattr(
+        mfrinstseg_to_bin, "build_graph", lambda *args: make_core_graph()
+    )
+    monkeypatch.setattr(
+        mfrinstseg_to_bin,
+        "shortest_path_metadata",
+        lambda *args: {
+            key: value
+            for key, value in make_core_metadata().items()
+            if key != "instance"
+        },
+    )
+
+    class FakeExtractor:
+        def __init__(self, step_file, attribute_schema):
+            self.step_file = step_file
+            self.attribute_schema = attribute_schema
+
+        def process(self):
+            return {"extraction": True}
+
+    return paths, FakeExtractor
+
+
+def test_convert_one_validates_temporary_before_atomic_replace(
+    tmp_path, monkeypatch
+):
+    paths, extractor = make_convert_one_fixture(tmp_path, monkeypatch)
+    target = paths.bin_file("sample")
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"old")
+    events = []
+
+    def fake_save(path, graphs, metadata):
+        temporary = type(target)(path)
+        events.append(("save", temporary.name))
+        assert target.read_bytes() == b"old"
+        temporary.write_bytes(b"new")
+
+    def fake_validate(path, *args, **kwargs):
+        events.append(("validate", path.name))
+        assert path == target.with_suffix(".bin.tmp")
+        assert path.read_bytes() == b"new"
+        assert target.read_bytes() == b"old"
+
+    monkeypatch.setattr(mfrinstseg_to_bin, "save_graphs", fake_save)
+    monkeypatch.setattr(mfrinstseg_to_bin, "validate_bin", fake_validate)
+
+    outcome = convert_one(
+        "sample",
+        paths,
+        extractor,
+        topology_utils=object(),
+        schema={},
+        options=ConversionOptions(),
+        overwrite=True,
+    )
+
+    assert outcome == "converted"
+    assert events == [("save", "sample.bin.tmp"), ("validate", "sample.bin.tmp")]
+    assert target.read_bytes() == b"new"
+    assert not target.with_suffix(".bin.tmp").exists()
+
+
+@pytest.mark.parametrize("failure_stage", ["save", "validate"])
+def test_convert_one_preserves_target_and_cleans_temporary_on_failure(
+    tmp_path, monkeypatch, failure_stage
+):
+    paths, extractor = make_convert_one_fixture(tmp_path, monkeypatch)
+    target = paths.bin_file("sample")
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"old")
+
+    def fake_save(path, graphs, metadata):
+        type(target)(path).write_bytes(b"partial")
+        if failure_stage == "save":
+            raise OSError("save failed")
+
+    def fake_validate(path, *args, **kwargs):
+        if failure_stage == "validate":
+            raise ValueError("validation failed")
+
+    monkeypatch.setattr(mfrinstseg_to_bin, "save_graphs", fake_save)
+    monkeypatch.setattr(mfrinstseg_to_bin, "validate_bin", fake_validate)
+
+    with pytest.raises((OSError, ValueError), match="failed"):
+        convert_one(
+            "sample",
+            paths,
+            extractor,
+            topology_utils=object(),
+            schema={},
+            options=ConversionOptions(),
+            overwrite=True,
+        )
+
+    assert target.read_bytes() == b"old"
+    assert not target.with_suffix(".bin.tmp").exists()
+
+
+def test_convert_one_rejects_incompatible_existing_bin_without_overwrite(
+    tmp_path, monkeypatch
+):
+    paths, extractor = make_convert_one_fixture(tmp_path, monkeypatch)
+    target = paths.bin_file("sample")
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"old")
+    monkeypatch.setattr(
+        mfrinstseg_to_bin,
+        "validate_bin",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("incompatible")),
+    )
+    monkeypatch.setattr(
+        mfrinstseg_to_bin,
+        "save_graphs",
+        lambda *args: pytest.fail("incompatible target must not be overwritten"),
+    )
+
+    with pytest.raises(ValueError, match="new output directory|--overwrite"):
+        convert_one(
+            "sample",
+            paths,
+            extractor,
+            topology_utils=object(),
+            schema={},
+            options=ConversionOptions(),
+            overwrite=False,
+        )
+
+    assert target.read_bytes() == b"old"
+    assert not target.with_suffix(".bin.tmp").exists()

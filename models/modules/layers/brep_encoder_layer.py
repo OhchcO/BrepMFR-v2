@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from typing import Callable, Optional
 import math
 import torch
@@ -9,6 +10,24 @@ from fairseq.modules.fairseq_dropout import FairseqDropout
 from fairseq.modules.quant_noise import quant_noise
 from .multihead_attention import MultiheadAttention
 from .feature_encoders import SurfaceEncoder, CurveEncoder
+from ..cylindrical_encoder import CylindricalPositionEncoder
+from ..pointcloud_encoder import PointCloudFaceEncoder
+
+
+@contextmanager
+def preserve_torch_rng_state():
+    """Keep optional branch initialization invisible to later modules."""
+    cpu_rng_state = torch.random.get_rng_state()
+    cuda_rng_states = (
+        torch.cuda.get_rng_state_all() if torch.cuda.is_initialized() else None
+    )
+    try:
+        yield
+    finally:
+        torch.random.set_rng_state(cpu_rng_state)
+        if cuda_rng_states is not None:
+            torch.cuda.set_rng_state_all(cuda_rng_states)
+
 
 class GraphEncoderLayer(nn.Module):
     def __init__(
@@ -179,11 +198,21 @@ class GraphNodeFeature(nn.Module):
     """
 
     def __init__(
-            self, num_heads, num_degree, hidden_dim, n_layers
+        self,
+        num_heads,
+        num_degree,
+        hidden_dim,
+        n_layers,
+        use_face_pointcloud=False,
+        use_cylindrical_pos=False,
+        pointcloud_scale=1.0,
+        cylindrical_scale=1.0,
     ):
         super(GraphNodeFeature, self).__init__()
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
+        self.pointcloud_scale = float(pointcloud_scale)
+        self.cylindrical_scale = float(cylindrical_scale)
         # node_feature encode
         self.surf_encoder = SurfaceEncoder(
             in_channels=7, output_dims=int(0.5*hidden_dim)
@@ -196,7 +225,26 @@ class GraphNodeFeature(nn.Module):
         self.graph_token = nn.Embedding(1, hidden_dim)
         self.apply(lambda module: init_params(module, n_layers=n_layers))
 
-    def forward(self, x, face_area, face_type, face_loop, face_degree, padding_mask):
+        self.pointcloud_encoder = None
+        self.cylindrical_encoder = None
+        with preserve_torch_rng_state():
+            if use_face_pointcloud:
+                self.pointcloud_encoder = PointCloudFaceEncoder(hidden_dim)
+            if use_cylindrical_pos:
+                self.cylindrical_encoder = CylindricalPositionEncoder(hidden_dim)
+
+    def forward(
+        self,
+        x,
+        face_area,
+        face_type,
+        face_loop,
+        face_degree,
+        padding_mask,
+        face_points=None,
+        face_point_mask=None,
+        cylindrical_pos=None,
+    ):
         # x [total_node_num, U_grid, V_grid, pnt_feature]
         # padding_mask [batch_size, max_node_num] 记录每个graph的实际长度，空位记为True
         n_graph, n_node = padding_mask.size()[:2]
@@ -208,6 +256,24 @@ class GraphNodeFeature(nn.Module):
         face_loop_ = self.face_loop_encoder(face_loop)
         face_degree_ = self.degree_encoder(face_degree)
         node_feature = torch.cat((x_, face_area_, face_type_, face_loop_, face_degree_), dim=-1)
+        if self.pointcloud_encoder is not None:
+            if face_points is None or face_point_mask is None:
+                raise ValueError(
+                    "face_points and face_point_mask are required when "
+                    "use_face_pointcloud is enabled"
+                )
+            node_feature = node_feature + self.pointcloud_scale * (
+                self.pointcloud_encoder(face_points, face_point_mask)
+            )
+        if self.cylindrical_encoder is not None:
+            if cylindrical_pos is None:
+                raise ValueError(
+                    "cylindrical_pos is required when "
+                    "use_cylindrical_pos is enabled"
+                )
+            node_feature = node_feature + self.cylindrical_scale * (
+                self.cylindrical_encoder(cylindrical_pos)
+            )
 
         face_feature = torch.zeros([n_graph, n_node, self.hidden_dim], device=x.device, dtype=x.dtype)
         face_feature[node_pos] = node_feature[:]  # [total_nodes, n_hidden]->[n_graph, max_node_num, n_hidden] 空节点用0.0填充

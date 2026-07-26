@@ -149,6 +149,24 @@ class BrepSeg(pl.LightningModule):
         self.affinity_warmup_epochs = getattr(
             args, "affinity_warmup_epochs", 10
         )
+        self.use_face_pointcloud = bool(
+            getattr(args, "use_face_pointcloud", False)
+        )
+        self.use_cylindrical_pos = bool(
+            getattr(args, "use_cylindrical_pos", False)
+        )
+        self.pointcloud_scale = float(getattr(args, "pointcloud_scale", 1.0))
+        self.cylindrical_scale = float(
+            getattr(args, "cylindrical_scale", 1.0)
+        )
+        self.save_hyperparameters(
+            {
+                "use_face_pointcloud": self.use_face_pointcloud,
+                "use_cylindrical_pos": self.use_cylindrical_pos,
+                "pointcloud_scale": self.pointcloud_scale,
+                "cylindrical_scale": self.cylindrical_scale,
+            }
+        )
 
         self.brep_encoder = BrepEncoder(
             # < for graphormer
@@ -175,6 +193,10 @@ class BrepSeg(pl.LightningModule):
             affinity_dim=getattr(args, "affinity_dim", 64),
             affinity_temperature=getattr(args, "affinity_temperature", 0.2),
             instance_bias_scale=getattr(args, "instance_bias_scale", 1.0),
+            use_face_pointcloud=self.use_face_pointcloud,
+            use_cylindrical_pos=self.use_cylindrical_pos,
+            pointcloud_scale=self.pointcloud_scale,
+            cylindrical_scale=self.cylindrical_scale,
         )
 
         self.attention = Attention(args.dim_node)

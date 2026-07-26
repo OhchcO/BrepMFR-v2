@@ -5,7 +5,12 @@ from fairseq.modules import FairseqDropout, LayerDropModuleList, LayerNorm
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 
 from .layers.multihead_attention import MultiheadAttention
-from .layers.brep_encoder_layer import GraphEncoderLayer, GraphNodeFeature, GraphAttnBias
+from .layers.brep_encoder_layer import (
+    GraphAttnBias,
+    GraphEncoderLayer,
+    GraphNodeFeature,
+    preserve_torch_rng_state,
+)
 from .instance_bias import InstanceRelationBias
 
 
@@ -58,6 +63,10 @@ class BrepEncoder(nn.Module):
         affinity_dim: int = 64,
         affinity_temperature: float = 0.2,
         instance_bias_scale: float = 1.0,
+        use_face_pointcloud: bool = False,
+        use_cylindrical_pos: bool = False,
+        pointcloud_scale: float = 1.0,
+        cylindrical_scale: float = 1.0,
     ) -> None:
         super().__init__()
 
@@ -74,6 +83,10 @@ class BrepEncoder(nn.Module):
             num_degree=num_degree,
             hidden_dim=embedding_dim,
             n_layers=num_encoder_layers,
+            use_face_pointcloud=use_face_pointcloud,
+            use_cylindrical_pos=use_cylindrical_pos,
+            pointcloud_scale=pointcloud_scale,
+            cylindrical_scale=cylindrical_scale,
         )
 
         self.graph_attn_bias = GraphAttnBias(
@@ -131,24 +144,38 @@ class BrepEncoder(nn.Module):
 
         # Apply initialization of model params after building the model
         if self.apply_params_init:
-            self.apply(init_params)
+            pointcloud_encoder = self.graph_node_feature.pointcloud_encoder
+            cylindrical_encoder = self.graph_node_feature.cylindrical_encoder
+            self.graph_node_feature.pointcloud_encoder = None
+            self.graph_node_feature.cylindrical_encoder = None
+            try:
+                self.apply(init_params)
+            finally:
+                self.graph_node_feature.pointcloud_encoder = pointcloud_encoder
+                self.graph_node_feature.cylindrical_encoder = (
+                    cylindrical_encoder
+                )
+            with preserve_torch_rng_state():
+                if pointcloud_encoder is not None:
+                    pointcloud_encoder.apply(init_params)
+                if cylindrical_encoder is not None:
+                    cylindrical_encoder.apply(init_params)
 
         # Initialize the experiment-only branch without advancing the RNG used
         # by the shared encoder/classifier. This keeps shared initial weights
         # identical across modes when the same seed is used.
-        shared_rng_state = torch.random.get_rng_state()
-        self.instance_relation_bias = InstanceRelationBias(
-            embedding_dim=embedding_dim,
-            num_heads=num_attention_heads,
-            mode=experiment_mode,
-            affinity_dim=affinity_dim,
-            temperature=affinity_temperature,
-            bias_scale=instance_bias_scale,
-            num_spatial=num_spatial,
-        )
-        if self.apply_params_init:
-            self.instance_relation_bias.apply(init_params)
-        torch.random.set_rng_state(shared_rng_state)
+        with preserve_torch_rng_state():
+            self.instance_relation_bias = InstanceRelationBias(
+                embedding_dim=embedding_dim,
+                num_heads=num_attention_heads,
+                mode=experiment_mode,
+                affinity_dim=affinity_dim,
+                temperature=affinity_temperature,
+                bias_scale=instance_bias_scale,
+                num_spatial=num_spatial,
+            )
+            if self.apply_params_init:
+                self.instance_relation_bias.apply(init_params)
 
         def freeze_module_params(m):
             if m is not None:
@@ -204,12 +231,17 @@ class BrepEncoder(nn.Module):
         if token_embeddings is not None:
             x = token_embeddings
         else:
-            x, x_0= self.graph_node_feature(batch_data["node_data"],
-                                        batch_data["face_area"],
-                                        batch_data["face_type"],
-                                        batch_data["face_loop"],
-                                        batch_data["in_degree"],
-                                        batch_data["padding_mask"])  
+            x, x_0 = self.graph_node_feature(
+                batch_data["node_data"],
+                batch_data["face_area"],
+                batch_data["face_type"],
+                batch_data["face_loop"],
+                batch_data["in_degree"],
+                batch_data["padding_mask"],
+                face_points=batch_data.get("face_points"),
+                face_point_mask=batch_data.get("face_point_mask"),
+                cylindrical_pos=batch_data.get("cylindrical_pos"),
+            )
             # x[batch_size, max_node, embedding_dim] 每个节点均嵌入到长度embedding_dim的向量
 
         if perturb is not None:
@@ -231,14 +263,21 @@ class BrepEncoder(nn.Module):
                                          )  #attn_bias[n_graph, n_head, max_node_num, max_node_num]
         instance_logits = None
         if self.instance_relation_bias.mode != "baseline":
+            use_oracle_labels = self.instance_relation_bias.mode == "oracle"
             instance_bias, instance_logits = self.instance_relation_bias(
                 node_features=x,
                 padding_mask=batch_data["padding_mask"],
                 spatial_pos=batch_data["spatial_pos"],
                 d2_distance=batch_data["d2_distance"],
                 angle_distance=batch_data["angle_distance"],
-                instance=batch_data.get("instance"),
-                instance_available=batch_data.get("instance_available"),
+                instance=(
+                    batch_data.get("instance") if use_oracle_labels else None
+                ),
+                instance_available=(
+                    batch_data.get("instance_available")
+                    if use_oracle_labels
+                    else None
+                ),
             )
             # Keep the graph token untouched and add the prior exactly once.
             attn_bias = attn_bias + instance_bias

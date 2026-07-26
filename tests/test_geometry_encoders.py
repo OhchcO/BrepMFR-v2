@@ -1,7 +1,13 @@
+from types import SimpleNamespace
+
 import pytest
 import torch
+from torch import nn
 
+from models.brepseg_model import BrepSeg
+from models.modules.brep_encoder import BrepEncoder
 from models.modules.cylindrical_encoder import CylindricalPositionEncoder
+from models.modules.layers.brep_encoder_layer import GraphNodeFeature
 from models.modules.pointcloud_encoder import PointCloudFaceEncoder
 
 
@@ -50,3 +56,295 @@ def test_encoders_reject_malformed_inputs():
         PointCloudFaceEncoder(16)(points, torch.zeros_like(mask))
     with pytest.raises(ValueError, match="finite"):
         CylindricalPositionEncoder(16)(torch.tensor([[float("nan"), 0.0, 0.0, 0.0]]))
+
+
+def make_graph_node_feature(
+    use_face_pointcloud=False,
+    use_cylindrical_pos=False,
+    pointcloud_scale=1.0,
+    cylindrical_scale=1.0,
+):
+    return GraphNodeFeature(
+        num_heads=8,
+        num_degree=128,
+        hidden_dim=128,
+        n_layers=1,
+        use_face_pointcloud=use_face_pointcloud,
+        use_cylindrical_pos=use_cylindrical_pos,
+        pointcloud_scale=pointcloud_scale,
+        cylindrical_scale=cylindrical_scale,
+    ).eval()
+
+
+def graph_node_inputs():
+    points, point_mask = valid_face_point_batch(face_count=2)
+    return {
+        "x": torch.randn(2, 4, 4, 7),
+        "face_area": torch.rand(2),
+        "face_type": torch.tensor([1, 2]),
+        "face_loop": torch.tensor([1, 1]),
+        "face_degree": torch.tensor([1, 2]),
+        "padding_mask": torch.tensor([[False, False]]),
+        "face_points": points,
+        "face_point_mask": point_mask,
+        "cylindrical_pos": torch.randn(2, 4),
+    }
+
+
+def make_brep_encoder(**geometry_options):
+    return BrepEncoder(
+        num_degree=128,
+        num_spatial=64,
+        num_edge_dis=64,
+        edge_type="multi_hop",
+        multi_hop_max_dist=16,
+        num_encoder_layers=1,
+        embedding_dim=128,
+        ffn_embedding_dim=128,
+        num_attention_heads=8,
+        dropout=0.0,
+        attention_dropout=0.0,
+        activation_dropout=0.0,
+        layerdrop=0.0,
+        apply_params_init=True,
+        experiment_mode="dynamic",
+        **geometry_options,
+    ).eval()
+
+
+def test_all_geometry_switches_off_preserve_original_parameter_names():
+    baseline = make_graph_node_feature()
+    baseline_encoder = make_brep_encoder()
+
+    assert baseline.pointcloud_encoder is None
+    assert baseline.cylindrical_encoder is None
+    assert not any(
+        name.startswith("pointcloud_encoder")
+        for name, _ in baseline.named_parameters()
+    )
+    assert not any(
+        name.startswith("cylindrical_encoder")
+        for name, _ in baseline.named_parameters()
+    )
+    assert not any(
+        "pointcloud_encoder" in name
+        or "cylindrical_encoder" in name
+        for name, _ in baseline_encoder.named_parameters()
+    )
+
+
+def test_optional_construction_preserves_downstream_rng_and_shared_weights():
+    torch.manual_seed(2026)
+    make_graph_node_feature()
+    baseline_next_random = torch.rand(8)
+    torch.manual_seed(2026)
+    make_graph_node_feature(True, True)
+    enhanced_next_random = torch.rand(8)
+    assert torch.equal(baseline_next_random, enhanced_next_random)
+
+    torch.manual_seed(2026)
+    baseline = make_brep_encoder()
+    torch.manual_seed(2026)
+    enhanced = make_brep_encoder(
+        use_face_pointcloud=True,
+        use_cylindrical_pos=True,
+    )
+    baseline_state = baseline.state_dict()
+    enhanced_state = enhanced.state_dict()
+    for name, value in baseline_state.items():
+        assert torch.equal(value, enhanced_state[name]), name
+
+
+def test_zero_geometry_scales_match_base_node_feature():
+    torch.manual_seed(2026)
+    baseline = make_graph_node_feature()
+    torch.manual_seed(2026)
+    enhanced = make_graph_node_feature(
+        True,
+        True,
+        pointcloud_scale=0.0,
+        cylindrical_scale=0.0,
+    )
+    enhanced.load_state_dict(baseline.state_dict(), strict=False)
+    inputs = graph_node_inputs()
+
+    with torch.no_grad():
+        baseline_outputs = baseline(
+            inputs["x"],
+            inputs["face_area"],
+            inputs["face_type"],
+            inputs["face_loop"],
+            inputs["face_degree"],
+            inputs["padding_mask"],
+        )
+        enhanced_outputs = enhanced(**inputs)
+
+    for baseline_output, enhanced_output in zip(
+        baseline_outputs, enhanced_outputs
+    ):
+        assert torch.allclose(
+            baseline_output,
+            enhanced_output,
+            atol=0.0,
+            rtol=0.0,
+        )
+
+
+class RecordingGraphAttnBias(nn.Module):
+    def __init__(self, num_heads):
+        super().__init__()
+        self.num_heads = num_heads
+        self.node_features = None
+
+    def forward(self, *args):
+        self.node_features = args[-1].detach().clone()
+        padding_mask = args[1]
+        batch_size, max_nodes, _ = padding_mask.shape
+        return self.node_features.new_zeros(
+            (batch_size, self.num_heads, max_nodes + 1, max_nodes + 1)
+        )
+
+
+class RecordingInstanceRelationBias(nn.Module):
+    def __init__(self, num_heads, mode="dynamic"):
+        super().__init__()
+        self.num_heads = num_heads
+        self.mode = mode
+        self.node_features = None
+        self.instance = "not called"
+        self.instance_available = "not called"
+
+    def forward(
+        self,
+        node_features,
+        padding_mask,
+        spatial_pos,
+        d2_distance,
+        angle_distance,
+        instance=None,
+        instance_available=None,
+    ):
+        self.node_features = node_features.detach().clone()
+        self.instance = instance
+        self.instance_available = instance_available
+        batch_size, max_nodes = padding_mask.shape
+        bias = node_features.new_zeros(
+            (batch_size, self.num_heads, max_nodes + 1, max_nodes + 1)
+        )
+        return bias, None
+
+
+class RecordingGraphLayer(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.node_features = None
+
+    def forward(self, node_features, **kwargs):
+        self.node_features = node_features.detach().clone()
+        return node_features, None
+
+
+def geometry_encoder_batch():
+    inputs = graph_node_inputs()
+    batch = {
+        "node_data": inputs["x"],
+        "face_area": inputs["face_area"],
+        "face_type": inputs["face_type"],
+        "face_loop": inputs["face_loop"],
+        "in_degree": inputs["face_degree"],
+        "padding_mask": inputs["padding_mask"],
+        "face_points": inputs["face_points"],
+        "face_point_mask": inputs["face_point_mask"],
+        "cylindrical_pos": inputs["cylindrical_pos"],
+        "attn_bias": None,
+        "spatial_pos": torch.zeros(1, 2, 2, dtype=torch.long),
+        "d2_distance": torch.zeros(1, 2, 2, 64),
+        "angle_distance": torch.zeros(1, 2, 2, 64),
+        "edge_data": None,
+        "edge_type": None,
+        "edge_len": None,
+        "edge_ang": None,
+        "edge_conv": None,
+        "edge_path": None,
+        "edge_padding_mask": None,
+        "graph": None,
+    }
+    return batch
+
+
+def test_enhanced_feature_reaches_graph_dynamic_and_transformer_paths():
+    model = make_brep_encoder(
+        use_face_pointcloud=True,
+        use_cylindrical_pos=True,
+    )
+    graph_bias = RecordingGraphAttnBias(num_heads=8)
+    relation_bias = RecordingInstanceRelationBias(num_heads=8)
+    graph_layer = RecordingGraphLayer()
+    model.graph_attn_bias = graph_bias
+    model.instance_relation_bias = relation_bias
+    model.layers = nn.ModuleList([graph_layer])
+
+    with torch.no_grad():
+        model(
+            geometry_encoder_batch(),
+            last_state_only=True,
+            return_instance_logits=True,
+        )
+
+    relation_faces = relation_bias.node_features[:, 1:, :]
+    assert torch.equal(graph_bias.node_features, relation_faces[0])
+    assert torch.equal(
+        relation_bias.node_features,
+        graph_layer.node_features.permute(1, 0, 2),
+    )
+    assert relation_bias.instance is None
+    assert relation_bias.instance_available is None
+
+
+def test_oracle_relation_path_still_receives_instance_labels():
+    model = make_brep_encoder(
+        use_face_pointcloud=True,
+        use_cylindrical_pos=True,
+    )
+    graph_bias = RecordingGraphAttnBias(num_heads=8)
+    relation_bias = RecordingInstanceRelationBias(
+        num_heads=8,
+        mode="oracle",
+    )
+    model.graph_attn_bias = graph_bias
+    model.instance_relation_bias = relation_bias
+    model.layers = nn.ModuleList([RecordingGraphLayer()])
+    batch = geometry_encoder_batch()
+    batch["instance"] = torch.ones(1, 2, 2)
+    batch["instance_available"] = torch.tensor([True])
+
+    with torch.no_grad():
+        model(batch, last_state_only=True)
+
+    assert relation_bias.instance is batch["instance"]
+    assert relation_bias.instance_available is batch["instance_available"]
+
+
+def test_brepseg_saves_and_threads_geometry_hyperparameters():
+    args = SimpleNamespace(
+        num_classes=24,
+        n_layers_encode=1,
+        dim_node=128,
+        d_model=128,
+        n_heads=8,
+        dropout=0.0,
+        attention_dropout=0.0,
+        act_dropout=0.0,
+        use_face_pointcloud=True,
+        use_cylindrical_pos=True,
+        pointcloud_scale=0.25,
+        cylindrical_scale=0.5,
+    )
+    model = BrepSeg(args)
+
+    assert model.hparams["use_face_pointcloud"] is True
+    assert model.hparams["use_cylindrical_pos"] is True
+    assert model.hparams["pointcloud_scale"] == 0.25
+    assert model.hparams["cylindrical_scale"] == 0.5
+    assert model.brep_encoder.graph_node_feature.pointcloud_scale == 0.25
+    assert model.brep_encoder.graph_node_feature.cylindrical_scale == 0.5

@@ -133,7 +133,10 @@ def write_valid_contract_bin(path: Path) -> None:
     )
 
 
-def contract_validator(path: Path, requirements, point_sampling) -> None:
+def contract_validator(
+    path: Path, expected_nodes=None, requirements=None, point_sampling=None
+) -> None:
+    assert expected_nodes is None
     assert requirements == FakeBinRequirements(True, True, True)
     assert isinstance(point_sampling, FakePointSamplingConfig)
     document = json.loads(path.read_text(encoding="utf-8"))
@@ -151,7 +154,7 @@ def fake_converter(convert_selected_samples, validator=contract_validator):
         PointSamplingConfig=FakePointSamplingConfig,
         ConversionOptions=FakeConversionOptions,
         BinRequirements=FakeBinRequirements,
-        validate_prepared_bin=validator,
+        validate_bin=validator,
         convert_selected_samples=convert_selected_samples,
     )
 

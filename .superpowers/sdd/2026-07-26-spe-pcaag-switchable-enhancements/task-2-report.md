@@ -60,8 +60,8 @@
   adapter and tests define the required result boundary, but conversion cannot
   execute until that API exists.
 - The Task 3 validator implementation is still pending. Its required lazy,
-  OCC-import-safe `validate_prepared_bin` boundary is now invoked by this task
-  for cache reuse and conversion publication, and Task 3 must implement the
+  OCC-import-safe `validate_bin` extension is now invoked by this task for
+  cache reuse and conversion publication, and Task 3 must implement the
   complete field/shape/dtype/finite/mask/sampling checks it receives.
 
 ## Fix Round 1
@@ -69,8 +69,8 @@
 ### Review findings addressed
 
 - Cache reuse and post-conversion publication now use the lazy Task 3 boundary
-  `validate_prepared_bin(path, requirements, point_sampling)`. The required
-  `BinRequirements` request instance, point-cloud, and cylindrical fields;
+  `validate_bin(path, expected_nodes=None, requirements=..., point_sampling=...)`.
+  The required `BinRequirements` request instance, point-cloud, and cylindrical fields;
   Task 3's validator contract is explicitly OCC-import-safe and must reject
   unreadable/corrupt BINs, missing required fields, invalid shapes/dtypes,
   non-finite values, inconsistent masks/counts, and incompatible sampling
@@ -114,3 +114,15 @@
   reported.
 - Python/pytest, generated code, conversion, training, validation, inference,
   and benchmarks remain intentionally unrun under the user constraint.
+
+## Fix Round 2
+
+- Replaced the unplanned validator name with Task 3's published
+  `validate_bin(path, expected_nodes=None, requirements=..., point_sampling=...)`
+  extension. The lazy cache and post-conversion checks now call it with
+  `expected_nodes=None` and typed `BinRequirements`/`PointSamplingConfig`
+  keyword arguments.
+- Updated the converter contract double to expose only `validate_bin` and to
+  assert the exact planned call shape and typed feature/sampling requirements.
+- `git diff --check` was run; Python/pytest, conversion, training, validation,
+  inference, and benchmarks remain intentionally unrun.

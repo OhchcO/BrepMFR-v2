@@ -399,8 +399,9 @@ def _validate_prepared_outputs(
 ) -> list:
     """Return structured output failures using Task 3's OCC-free BIN validator.
 
-    Task 3 must expose ``validate_prepared_bin(path, requirements,
-    point_sampling)``.  It may import DGL/Torch but must not import PyOCC;
+    Task 3 extends its published ``validate_bin`` as
+    ``validate_bin(path, expected_nodes=None, requirements=...,
+    point_sampling=...)``. It may import DGL/Torch but must not import PyOCC;
     cache reuse needs this feature-aware validation before conversion starts.
     """
     failures = []
@@ -434,7 +435,12 @@ def _validate_prepared_outputs(
                     )
                     continue
                 try:
-                    converter.validate_prepared_bin(bin_file, requirements, point_sampling)
+                    converter.validate_bin(
+                        bin_file,
+                        expected_nodes=None,
+                        requirements=requirements,
+                        point_sampling=point_sampling,
+                    )
                 except Exception as error:
                     failures.append(
                         {

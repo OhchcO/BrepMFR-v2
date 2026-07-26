@@ -359,6 +359,53 @@ def counts_for_indices(
     return matrix[indices].sum(axis=0).astype(np.int64)
 
 
+def validate_sample_percent(sample_percent: float) -> None:
+    """Reject subset percentages outside the public sampler contract."""
+    if not 0.0 < sample_percent <= 1.0:
+        raise ValueError("sample_percent must be in (0, 1]")
+
+
+def class_statistics(records: Sequence[SampleRecord]) -> np.ndarray:
+    """Return one instance-count row per model for reusable callers."""
+    if not records:
+        raise ValueError("Cannot calculate class statistics for no models")
+    return np.stack([record.instance_counts for record in records])
+
+
+def select_balanced_sample_ids(
+    dataset_root: Path,
+    sample_ids: Sequence[str],
+    sample_percent: float,
+    seed: int,
+    split_name: str,
+    swap_attempts: int = 20000,
+) -> Tuple[str, ...]:
+    """Select deterministic, instance-balanced IDs without writing files.
+
+    This is the import-safe boundary used by automatic preparation.  The CLI
+    retains its progress-reporting wrapper, while callers receive a sorted,
+    immutable ID sequence suitable for atomic manifest publication.
+    """
+    validate_sample_percent(sample_percent)
+    if swap_attempts < 0:
+        raise ValueError("swap_attempts must be non-negative")
+    normalized_ids = tuple(sample_ids)
+    if not normalized_ids or any(not sample_id for sample_id in normalized_ids):
+        raise ValueError("sample_ids must be non-empty")
+    if len(set(normalized_ids)) != len(normalized_ids):
+        raise ValueError("sample_ids must be unique")
+
+    records = tuple(
+        load_record(dataset_root / "labels", sample_id, DEFAULT_CLASSES)
+        for sample_id in normalized_ids
+    )
+    selection_size = max(1, int(math.floor(len(records) * sample_percent)))
+    selected, _, _ = select_balanced(
+        class_statistics(records), selection_size, seed, swap_attempts, split_name
+    )
+    return tuple(sorted(records[int(index)].sample_id for index in selected))
+
+
 def sample_split(
     dataset_root: Path,
     split_name: str,

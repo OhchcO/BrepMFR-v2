@@ -778,20 +778,32 @@ def validate_bin(
             )
         expected_point_dtypes = {
             "face_points": torch.float32,
-            "face_point_mask": torch.bool,
             "face_point_count": torch.int32,
             "point_sampling_mode": torch.int8,
             "point_sampling_config": torch.float32,
             "point_candidate_grid": torch.int32,
         }
         for key, tensor in point_tensors.items():
+            if key == "face_point_mask":
+                if tensor.dtype not in (torch.bool, torch.uint8):
+                    raise ValueError(
+                        "BIN dtype for face_point_mask is invalid; expected bool "
+                        "or DGL-serialized uint8"
+                    )
+                if tensor.dtype == torch.uint8 and not bool(
+                    ((tensor == 0) | (tensor == 1)).all()
+                ):
+                    raise ValueError(
+                        "BIN face_point_mask uint8 values must be binary 0/1"
+                    )
+                continue
             if tensor.dtype != expected_point_dtypes[key]:
                 raise ValueError("BIN dtype for {0} is invalid".format(key))
             if tensor.is_floating_point() and not bool(torch.isfinite(tensor).all()):
                 raise ValueError("BIN contains non-finite values in {0}".format(key))
 
         counts = graph.ndata["face_point_count"].to(torch.int64)
-        mask = graph.ndata["face_point_mask"]
+        mask = graph.ndata["face_point_mask"].to(torch.bool)
         if not bool(((counts >= 1) & (counts <= 96)).all()):
             raise ValueError("BIN face_point_count values must be in [1, 96]")
         expected_mask = (

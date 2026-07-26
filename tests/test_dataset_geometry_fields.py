@@ -129,10 +129,40 @@ def test_new_fields_are_concatenated_by_collator(new_bin_dataset):
 
     assert batch["face_points"].shape == (batch["node_data"].shape[0], 96, 6)
     assert batch["face_point_mask"].shape == (batch["node_data"].shape[0], 96)
+    assert batch["face_point_mask"].dtype == torch.bool
     assert batch["face_point_count"].shape == (batch["node_data"].shape[0],)
     assert batch["cylindrical_pos"].shape == (batch["node_data"].shape[0], 4)
     assert batch["data_ids"] == ("modern_part_001", "modern_part_002")
     assert isinstance(batch["data_ids"], tuple)
+
+
+def test_dataset_normalizes_dgl_roundtrip_uint8_mask_to_bool(new_bin_dataset):
+    path = new_bin_dataset / "bin" / "modern_part_001.bin"
+    serialized_graph = load_graphs(str(path))[0][0]
+    assert serialized_graph.ndata["face_point_mask"].dtype == torch.uint8
+
+    item = CADSynth(
+        new_bin_dataset, "train", require_face_pointcloud=True
+    )[0]
+
+    assert item.face_point_mask.dtype == torch.bool
+    assert set(item.face_point_mask.unique().tolist()) == {False, True}
+
+
+def test_dataset_rejects_nonbinary_uint8_mask(new_bin_dataset):
+    path = new_bin_dataset / "bin" / "modern_part_001.bin"
+
+    def make_nonbinary(graph):
+        assert graph.ndata["face_point_mask"].dtype == torch.uint8
+        graph.ndata["face_point_mask"][0, 0] = 2
+
+    _rewrite_bin(path, make_nonbinary)
+    dataset = CADSynth(
+        new_bin_dataset, "train", require_face_pointcloud=True
+    )
+
+    with pytest.raises(ValueError, match="face_point_mask.*binary"):
+        dataset[0]
 
 
 def test_collator_rejects_mixed_optional_geometry_batch(

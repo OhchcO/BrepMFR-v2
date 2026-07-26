@@ -5,7 +5,7 @@ import dgl
 import numpy as np
 import pytest
 import torch
-from dgl.data.utils import save_graphs
+from dgl.data.utils import load_graphs, save_graphs
 
 from tools import mfrinstseg_to_bin
 from tools.geometry_features import GeometryFeatureBatch, PointSamplingConfig
@@ -114,6 +114,38 @@ def test_geometry_bin_has_exact_shapes_and_dtypes_and_allows_extra_fields(tmp_pa
     assert metadata["point_sampling_mode"].dtype == torch.int8
     assert metadata["point_sampling_config"].dtype == torch.float32
     assert metadata["point_candidate_grid"].dtype == torch.int32
+
+
+def test_geometry_bin_accepts_dgl_roundtrip_uint8_logical_mask(tmp_path):
+    path = tmp_path / "roundtrip-mask.bin"
+    source_graph, _ = write_geometry_bin(path)
+
+    loaded_graph = load_graphs(str(path))[0][0]
+
+    assert source_graph.ndata["face_point_mask"].dtype == torch.bool
+    assert loaded_graph.ndata["face_point_mask"].dtype == torch.uint8
+    assert set(loaded_graph.ndata["face_point_mask"].unique().tolist()) == {0, 1}
+    validate_bin(
+        path,
+        requirements=geometry_requirements(),
+        point_sampling=PointSamplingConfig(),
+    )
+
+
+def test_geometry_bin_rejects_nonbinary_uint8_mask(tmp_path):
+    path = tmp_path / "nonbinary-mask.bin"
+    write_geometry_bin(path)
+    graphs, metadata = load_graphs(str(path))
+    assert graphs[0].ndata["face_point_mask"].dtype == torch.uint8
+    graphs[0].ndata["face_point_mask"][0, 0] = 2
+    save_graphs(str(path), graphs, metadata)
+
+    with pytest.raises(ValueError, match="face_point_mask.*binary"):
+        validate_bin(
+            path,
+            requirements=geometry_requirements(),
+            point_sampling=PointSamplingConfig(),
+        )
 
 
 @pytest.mark.parametrize(

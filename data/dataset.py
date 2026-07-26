@@ -157,8 +157,21 @@ class CADSynth(Dataset):
                         node_count, FACE_POINT_CAPACITY, tuple(mask.shape)
                     ),
                 )
-            if mask.dtype != torch.bool:
-                self._invalid_geometry(file_path, "face_point_mask", "expected bool")
+            if mask.dtype not in (torch.bool, torch.uint8):
+                self._invalid_geometry(
+                    file_path,
+                    "face_point_mask",
+                    "expected bool or DGL-serialized uint8",
+                )
+            if mask.dtype == torch.uint8 and not bool(
+                ((mask == 0) | (mask == 1)).all()
+            ):
+                self._invalid_geometry(
+                    file_path,
+                    "face_point_mask",
+                    "uint8 values must be binary 0/1",
+                )
+            logical_mask = mask.to(torch.bool)
             if tuple(counts.shape) != (node_count,):
                 self._invalid_geometry(
                     file_path,
@@ -177,17 +190,19 @@ class CADSynth(Dataset):
                 torch.arange(FACE_POINT_CAPACITY, device=counts.device)[None, :]
                 < counts.to(torch.int64)[:, None]
             )
-            if not torch.equal(mask, expected_mask):
+            if not torch.equal(logical_mask, expected_mask):
                 self._invalid_geometry(
                     file_path,
                     "face_point_mask",
                     "is inconsistent with face_point_count",
                 )
-            if not bool(points[~mask].eq(0).all()):
+            if not bool(points[~logical_mask].eq(0).all()):
                 self._invalid_geometry(
                     file_path, "face_points", "padded values must be zero"
                 )
-            normal_lengths = torch.linalg.norm(points[..., 3:6][mask], dim=1)
+            normal_lengths = torch.linalg.norm(
+                points[..., 3:6][logical_mask], dim=1
+            )
             if not torch.allclose(
                 normal_lengths,
                 torch.ones_like(normal_lengths),
@@ -199,7 +214,7 @@ class CADSynth(Dataset):
                 )
             geometry.update(
                 face_points=points,
-                face_point_mask=mask,
+                face_point_mask=logical_mask,
                 face_point_count=counts,
             )
 

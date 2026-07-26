@@ -59,7 +59,58 @@
 - Task 3 has not yet supplied `convert_selected_samples`; this task's lazy
   adapter and tests define the required result boundary, but conversion cannot
   execute until that API exists.
-- Cache reuse verifies the selected manifests and that every selected BIN is a
-  non-empty file. Task 3 should extend the shared BIN validator to check the
-  requested point-cloud and cylindrical fields during cache reuse without
-  importing PyOCC at module import time.
+- The Task 3 validator implementation is still pending. Its required lazy,
+  OCC-import-safe `validate_prepared_bin` boundary is now invoked by this task
+  for cache reuse and conversion publication, and Task 3 must implement the
+  complete field/shape/dtype/finite/mask/sampling checks it receives.
+
+## Fix Round 1
+
+### Review findings addressed
+
+- Cache reuse and post-conversion publication now use the lazy Task 3 boundary
+  `validate_prepared_bin(path, requirements, point_sampling)`. The required
+  `BinRequirements` request instance, point-cloud, and cylindrical fields;
+  Task 3's validator contract is explicitly OCC-import-safe and must reject
+  unreadable/corrupt BINs, missing required fields, invalid shapes/dtypes,
+  non-finite values, inconsistent masks/counts, and incompatible sampling
+  metadata. Contract doubles use a structured feature artifact rather than
+  treating non-empty bytes as valid.
+- Extractor and schema paths are independently streamed through SHA-256 and
+  recorded under `converter_sources`, which participates in the cache request
+  fingerprint.
+- Discovery now supports case-insensitive `.step` and `.stp` suffixes and
+  rejects duplicate STEP or label stems.
+- The lazy converter boundary now constructs Task 3's published
+  `PointSamplingConfig`, `ConversionOptions`, and `BinRequirements` types.
+  Automatic preparation consistently supplies one prepared root for selected
+  manifests and BINs; Task 3 must keep its old source/output path guard
+  CLI-only for this direct selected-ID API.
+- Tiny generated datasets use deterministic largest-remainder allocation and,
+  for three or more models, transfer models as necessary so every positive
+  split receives one. Empty split sequences are valid only where unavoidable;
+  blank/duplicate sample IDs remain invalid.
+- Full-percent train/validation subsets return their original official order.
+  Fractional balancing now reduces the objective to classes actually present
+  in that split instead of rejecting globally absent classes.
+- Malformed, legacy, and incomplete cache manifests normalize to a mismatch:
+  they fail closed normally and take the scoped atomic rebuild route with
+  `rebuild=True`. No recursive deletion is used.
+- Missing or feature-invalid converter outputs become structured failures in
+  both `conversion_failures.json` and `preparation_manifest.json` before
+  `PreparationError` is raised.
+
+### Added focused tests
+
+- Complete official manifest ordering/membership, `.stp` suffix handling and
+  duplicate stems, tiny-N counts, sparse fractional balancing, ratio bounds,
+  extractor/schema content invalidation, invalid cached BINs, typed converter
+  options/path contract, malformed/legacy rebuild without deletion, and
+  persisted missing-output failures.
+
+### Static checks and intentionally unrun commands
+
+- `git diff --check` was run after the changes; no whitespace errors were
+  reported.
+- Python/pytest, generated code, conversion, training, validation, inference,
+  and benchmarks remain intentionally unrun under the user constraint.

@@ -108,9 +108,13 @@ def _validate_split_ratios(split_ratios: Sequence[float]) -> None:
         raise ValueError("split_ratios must sum to 1.0")
 
 
-def _validate_sample_ids(sample_ids: Sequence[str]) -> Tuple[str, ...]:
+def _validate_sample_ids(
+    sample_ids: Sequence[str], allow_empty: bool = False
+) -> Tuple[str, ...]:
     normalized = tuple(sample_ids)
-    if not normalized or any(not sample_id or sample_id != sample_id.strip() for sample_id in normalized):
+    if (not allow_empty and not normalized) or any(
+        not sample_id or sample_id != sample_id.strip() for sample_id in normalized
+    ):
         raise ValueError("sample IDs must be non-empty")
     if len(set(normalized)) != len(normalized):
         raise ValueError("sample IDs must be unique")
@@ -124,8 +128,20 @@ def discover_raw_samples(raw_root: Path) -> Dict[str, RawSample]:
     labels_root = raw_root / "labels"
     if not steps_root.is_dir() or not labels_root.is_dir():
         raise FileNotFoundError("raw dataset must contain steps/ and labels/ directories")
-    step_files = {path.stem: path for path in steps_root.glob("*.step") if path.is_file()}
-    label_files = {path.stem: path for path in labels_root.glob("*.json") if path.is_file()}
+    step_files = {}
+    for path in steps_root.iterdir():
+        if not path.is_file() or path.suffix.lower() not in (".step", ".stp"):
+            continue
+        if path.stem in step_files:
+            raise ValueError("Duplicate STEP stem: {0}".format(path.stem))
+        step_files[path.stem] = path
+    label_files = {}
+    for path in labels_root.iterdir():
+        if not path.is_file() or path.suffix.lower() != ".json":
+            continue
+        if path.stem in label_files:
+            raise ValueError("Duplicate label stem: {0}".format(path.stem))
+        label_files[path.stem] = path
     if not step_files:
         raise ValueError("No STEP files were found under {0}".format(steps_root))
     if set(step_files) != set(label_files):
@@ -142,7 +158,7 @@ def _read_official_manifest(path: Path) -> Tuple[str, ...]:
     sample_ids = tuple(
         line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     )
-    return _validate_sample_ids(sample_ids)
+    return _validate_sample_ids(sample_ids, allow_empty=True)
 
 
 def _official_splits(raw_root: Path, known_ids: Tuple[str, ...]) -> Dict[str, Tuple[str, ...]]:
@@ -166,8 +182,17 @@ def _generated_splits(sample_ids: Tuple[str, ...], split_ratios: Sequence[float]
     random.Random(derive_seed(seed, "model_split")).shuffle(shuffled)
     expected = [len(shuffled) * ratio for ratio in split_ratios]
     counts = [int(math.floor(value)) for value in expected]
-    for index in sorted(range(3), key=lambda item: (expected[item] - counts[item], -item), reverse=True)[: len(shuffled) - sum(counts)]:
+    for index in sorted(
+        range(3), key=lambda item: (expected[item] - counts[item], -item), reverse=True
+    )[: len(shuffled) - sum(counts)]:
         counts[index] += 1
+    if len(shuffled) >= len(SPLIT_NAMES):
+        for target in range(len(SPLIT_NAMES)):
+            if counts[target] > 0:
+                continue
+            donor = max(range(len(SPLIT_NAMES)), key=lambda index: (counts[index], -index))
+            counts[donor] -= 1
+            counts[target] += 1
     boundary_one = counts[0]
     boundary_two = boundary_one + counts[1]
     return {
@@ -204,7 +229,10 @@ def select_split_subsets(
         raise ValueError("sample_percent must be in (0, 1]")
     if set(splits) != set(SPLIT_NAMES):
         raise ValueError("splits must contain train, val, and test")
-    normalized = {name: _validate_sample_ids(splits[name]) for name in SPLIT_NAMES}
+    normalized = {
+        name: _validate_sample_ids(splits[name], allow_empty=True)
+        for name in SPLIT_NAMES
+    }
     combined = tuple(sample_id for name in SPLIT_NAMES for sample_id in normalized[name])
     if len(set(combined)) != len(combined):
         raise ValueError("splits must be model-level disjoint")
@@ -215,17 +243,20 @@ def select_split_subsets(
     selected: Dict[str, Sequence[str]] = {}
     for split_name in ("train", "val"):
         ids = normalized[split_name]
-        selected[split_name] = (
-            select_balanced_sample_ids(
-                Path(raw_root),
-                ids,
-                sample_percent,
-                derive_seed(seed, "balanced_subset", split_name),
-                split_name,
+        if sample_percent == 1.0:
+            selected[split_name] = ids
+        else:
+            selected[split_name] = (
+                select_balanced_sample_ids(
+                    Path(raw_root),
+                    ids,
+                    sample_percent,
+                    derive_seed(seed, "balanced_subset", split_name),
+                    split_name,
+                )
+                if ids
+                else ()
             )
-            if ids
-            else ()
-        )
     selected["test"] = normalized["test"]
     return selected
 
@@ -240,6 +271,12 @@ def _sha256(path: Path) -> str:
 
 def _relative_path(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
+
+
+def _external_file_fingerprint(path: Path) -> dict:
+    if not path.is_file():
+        raise FileNotFoundError("Required converter input is missing: {0}".format(path))
+    return {"path": str(path), "sha256": _sha256(path)}
 
 
 def _conversion_options(config: PreparationConfig) -> dict:
@@ -265,7 +302,10 @@ def build_preparation_manifest(
     if set(selected_ids) != set(SPLIT_NAMES):
         raise ValueError("selected_ids must contain train, val, and test")
     samples = dict(samples or discover_raw_samples(config.raw_root))
-    normalized = {name: list(_validate_sample_ids(selected_ids[name])) for name in SPLIT_NAMES}
+    normalized = {
+        name: list(_validate_sample_ids(selected_ids[name], allow_empty=True))
+        for name in SPLIT_NAMES
+    }
     return {
         "format_version": FORMAT_VERSION,
         "converter_format_version": CONVERTER_FORMAT_VERSION,
@@ -284,6 +324,10 @@ def build_preparation_manifest(
                 },
             }
             for sample_id, sample in sorted(samples.items())
+        },
+        "converter_sources": {
+            "extractor": _external_file_fingerprint(config.extractor_file),
+            "schema": _external_file_fingerprint(config.schema_file),
         },
         "selected_ids": normalized,
         "output_features": {"face_pointcloud": True, "cylindrical_pos": True},
@@ -328,6 +372,7 @@ def _request_fingerprint(manifest: Mapping[str, object]) -> dict:
             "split_ratios",
             "sample_percent",
             "source_files",
+            "converter_sources",
             "selected_ids",
             "output_features",
             "conversion_options",
@@ -345,30 +390,66 @@ def _read_manifest(path: Path) -> dict:
     return document
 
 
-def _validate_cached_outputs(prepared_root: Path, manifest: Mapping[str, object]) -> bool:
+def _validate_prepared_outputs(
+    prepared_root: Path,
+    manifest: Mapping[str, object],
+    converter: object,
+    requirements: object,
+    point_sampling: object,
+) -> list:
+    """Return structured output failures using Task 3's OCC-free BIN validator.
+
+    Task 3 must expose ``validate_prepared_bin(path, requirements,
+    point_sampling)``.  It may import DGL/Torch but must not import PyOCC;
+    cache reuse needs this feature-aware validation before conversion starts.
+    """
+    failures = []
     try:
         successful = manifest["successful_ids"]
         selected = manifest["selected_ids"]
         failed_ids = manifest["failed_ids"]
         if failed_ids or not isinstance(successful, Mapping) or not isinstance(selected, Mapping):
-            return False
+            return [{"sample_id": None, "reason": "incomplete_manifest"}]
         for split_name in SPLIT_NAMES:
             selected_ids = tuple(selected[split_name])
             if tuple(successful[split_name]) != selected_ids:
-                return False
+                failures.append(
+                    {"split": split_name, "sample_id": None, "reason": "incomplete_success_manifest"}
+                )
+                continue
             split_file = prepared_root / (split_name + ".txt")
             actual_ids = tuple(
                 line.strip() for line in split_file.read_text(encoding="utf-8").splitlines() if line.strip()
             )
             if actual_ids != selected_ids:
-                return False
+                failures.append(
+                    {"split": split_name, "sample_id": None, "reason": "split_manifest_mismatch"}
+                )
+                continue
             for sample_id in selected_ids:
                 bin_file = prepared_root / "bin" / (sample_id + ".bin")
-                if not bin_file.is_file() or bin_file.stat().st_size == 0:
-                    return False
-    except (KeyError, OSError, TypeError, UnicodeError):
-        return False
-    return True
+                if not bin_file.is_file():
+                    failures.append(
+                        {"split": split_name, "sample_id": sample_id, "reason": "missing_or_invalid_bin"}
+                    )
+                    continue
+                try:
+                    converter.validate_prepared_bin(bin_file, requirements, point_sampling)
+                except Exception as error:
+                    failures.append(
+                        {
+                            "split": split_name,
+                            "sample_id": sample_id,
+                            "reason": "missing_or_invalid_bin",
+                            "exception_type": type(error).__name__,
+                            "message": str(error),
+                        }
+                    )
+    except (KeyError, OSError, TypeError, UnicodeError) as error:
+        failures.append(
+            {"sample_id": None, "reason": "incomplete_manifest", "message": str(error)}
+        )
+    return failures
 
 
 def _prepared_dataset(prepared_root: Path, selected_ids: Mapping[str, Sequence[str]], reused: bool) -> PreparedDataset:
@@ -386,6 +467,30 @@ def _load_converter():
     from tools import mfrinstseg_to_bin
 
     return mfrinstseg_to_bin
+
+
+def _converter_contract(config: PreparationConfig, converter: object) -> tuple[object, object, object]:
+    """Construct Task 3's typed options and feature requirements lazily."""
+    point_sampling = converter.PointSamplingConfig(
+        mode=config.point_sampling_mode,
+        fixed_count=config.fixed_point_count,
+        min_count=config.min_point_count,
+        max_count=config.max_point_count,
+        area_exponent=config.area_sampling_exponent,
+        candidate_grids=config.candidate_grids,
+    )
+    options = converter.ConversionOptions(
+        seed=config.seed,
+        point_sampling=point_sampling,
+        include_face_pointcloud=True,
+        include_cylindrical_pos=True,
+    )
+    requirements = converter.BinRequirements(
+        require_instance=True,
+        require_pointcloud=True,
+        require_cylindrical=True,
+    )
+    return point_sampling, options, requirements
 
 
 def _normalise_conversion_result(result: object, selected_ids: Mapping[str, Sequence[str]]) -> tuple[dict, list, dict]:
@@ -417,9 +522,18 @@ def ensure_prepared_dataset(config: PreparationConfig) -> PreparedDataset:
     manifest_path = config.prepared_root / "preparation_manifest.json"
 
     if manifest_path.exists():
-        existing = _read_manifest(manifest_path)
-        if _request_fingerprint(existing) == _request_fingerprint(request):
-            if _validate_cached_outputs(config.prepared_root, existing):
+        try:
+            existing = _read_manifest(manifest_path)
+            request_matches = _request_fingerprint(existing) == _request_fingerprint(request)
+        except (KeyError, TypeError, PreparationMismatchError):
+            request_matches = False
+        if request_matches:
+            converter = _load_converter()
+            point_sampling, _, requirements = _converter_contract(config, converter)
+            cache_failures = _validate_prepared_outputs(
+                config.prepared_root, existing, converter, requirements, point_sampling
+            )
+            if not cache_failures:
                 return _prepared_dataset(config.prepared_root, selected_ids, reused=True)
             if not config.rebuild:
                 raise PreparationMismatchError(
@@ -438,16 +552,27 @@ def ensure_prepared_dataset(config: PreparationConfig) -> PreparedDataset:
     failures: list = []
     try:
         converter = _load_converter()
+        point_sampling, options, requirements = _converter_contract(config, converter)
+        # Direct automatic preparation deliberately uses one prepared root for
+        # generated manifests and BINs.  Task 3 keeps the old source/output
+        # rejection as a CLI-only guard; this API receives selected IDs and
+        # never reads a separate subset directory.
         paths = converter.ConversionPaths(config.raw_root, config.prepared_root, config.prepared_root)
         result = converter.convert_selected_samples(
             selected_ids,
             paths,
             config.extractor_file,
             config.schema_file,
-            _conversion_options(config),
+            options,
             config.rebuild,
         )
         successful_ids, failures, conversion = _normalise_conversion_result(result, selected_ids)
+        if not failures:
+            request["successful_ids"] = successful_ids
+            validation_failures = _validate_prepared_outputs(
+                config.prepared_root, request, converter, requirements, point_sampling
+            )
+            failures.extend(validation_failures)
     except Exception as error:
         successful_ids = {name: [] for name in SPLIT_NAMES}
         conversion = {}
@@ -460,6 +585,4 @@ def ensure_prepared_dataset(config: PreparationConfig) -> PreparedDataset:
     _atomic_write_json(manifest_path, request)
     if failures:
         raise PreparationError("Prepared conversion failed; inspect conversion_failures.json")
-    if not _validate_cached_outputs(config.prepared_root, request):
-        raise PreparationError("Prepared conversion is incomplete or has missing output BIN files")
     return _prepared_dataset(config.prepared_root, selected_ids, reused=False)

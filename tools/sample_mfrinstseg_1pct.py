@@ -400,8 +400,12 @@ def select_balanced_sample_ids(
         for sample_id in normalized_ids
     )
     selection_size = max(1, int(math.floor(len(records) * sample_percent)))
+    matrix = class_statistics(records)
+    available_columns = np.flatnonzero(matrix.sum(axis=0) > 0)
+    if len(available_columns) == 0:
+        raise ValueError("No balancing classes are present in {0}".format(split_name))
     selected, _, _ = select_balanced(
-        class_statistics(records), selection_size, seed, swap_attempts, split_name
+        matrix[:, available_columns], selection_size, seed, swap_attempts, split_name
     )
     return tuple(sorted(records[int(index)].sample_id for index in selected))
 

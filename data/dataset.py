@@ -15,6 +15,12 @@ from utils.reproducibility import DEFAULT_SEED, make_torch_generator, seed_worke
 
 
 FACE_POINT_CAPACITY = 96
+POINTCLOUD_NODE_FIELDS = (
+    "face_points",
+    "face_point_mask",
+    "face_point_count",
+)
+CYLINDRICAL_NODE_FIELDS = ("cylindrical_pos",)
 
 
 class DataLoaderX(DataLoader):
@@ -52,8 +58,34 @@ class CADSynth(Dataset):
 
     def _get_filenames(self, root_dir, filelist):
         print(f"Loading data...")
-        with open(str(root_dir / f"{filelist}"), "r") as f:
-            file_list = [x.strip() for x in f.readlines()]
+        root_dir = pathlib.Path(root_dir).resolve()
+        manifest_path = (root_dir / filelist).resolve()
+        if not manifest_path.is_file():
+            raise FileNotFoundError(
+                "Split manifest does not exist: {}".format(manifest_path)
+            )
+        file_list = []
+        seen = set()
+        for line_number, raw_sample_id in enumerate(
+            manifest_path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            sample_id = raw_sample_id.strip()
+            if not sample_id:
+                raise ValueError(
+                    "blank sample ID in manifest {} at line {}".format(
+                        manifest_path, line_number
+                    )
+                )
+            if sample_id in seen:
+                raise ValueError(
+                    "duplicate sample ID {} in manifest {} at line {}".format(
+                        sample_id, manifest_path, line_number
+                    )
+                )
+            seen.add(sample_id)
+            file_list.append(sample_id)
+        if not file_list:
+            raise ValueError("empty manifest {}".format(manifest_path))
         requested = set(file_list)
         paths_by_stem = {}
         for x in tqdm(sorted(root_dir.rglob("*.bin"))):
@@ -63,11 +95,14 @@ class CADSynth(Dataset):
                         "Multiple BIN files share sample stem {}".format(x.stem)
                     )
                 paths_by_stem[x.stem] = x
-        self.file_paths = [
-            paths_by_stem[sample_id]
-            for sample_id in file_list
-            if sample_id in paths_by_stem
-        ]
+        missing_ids = [sample_id for sample_id in file_list if sample_id not in paths_by_stem]
+        if missing_ids:
+            raise ValueError(
+                "missing BIN sample IDs in manifest {} under root {}: {}".format(
+                    manifest_path, root_dir, ", ".join(missing_ids)
+                )
+            )
+        self.file_paths = [paths_by_stem[sample_id] for sample_id in file_list]
         print("Done loading {} files".format(len(self.file_paths)))
 
 
@@ -188,17 +223,60 @@ class CADSynth(Dataset):
                 self._invalid_geometry(
                     file_path, "cylindrical_pos", "contains non-finite values"
                 )
+            tolerance = 1e-5
+            radius = cylindrical[:, 0]
+            normalized_z = cylindrical[:, 3]
+            if not bool(
+                ((radius >= -tolerance) & (radius <= 1.0 + tolerance)).all()
+            ):
+                self._invalid_geometry(
+                    file_path,
+                    "cylindrical_pos",
+                    "normalized radius must be in [0, 1]",
+                )
+            if not bool(
+                ((normalized_z >= -tolerance) & (normalized_z <= 1.0 + tolerance)).all()
+            ):
+                self._invalid_geometry(
+                    file_path,
+                    "cylindrical_pos",
+                    "normalized z must be in [0, 1]",
+                )
+            angular_norm = cylindrical[:, 1].square() + cylindrical[:, 2].square()
+            if not torch.allclose(
+                angular_norm,
+                torch.ones_like(angular_norm),
+                rtol=1e-4,
+                atol=1e-4,
+            ):
+                self._invalid_geometry(
+                    file_path,
+                    "cylindrical_pos",
+                    "sine/cosine pair must have unit length",
+                )
             geometry["cylindrical_pos"] = cylindrical
 
         return geometry
+
+    def _normalize_graph_schema(self, graph):
+        """Remove optional node fields that this dataset item did not request."""
+        fields_to_remove = []
+        if not self.require_face_pointcloud:
+            fields_to_remove.extend(POINTCLOUD_NODE_FIELDS)
+        if not self.require_cylindrical_pos:
+            fields_to_remove.extend(CYLINDRICAL_NODE_FIELDS)
+        for field in fields_to_remove:
+            if field in graph.ndata:
+                del graph.ndata[field]
 
 
     def load_one_graph(self, file_path):
         graphfile = load_graphs(str(file_path))
         graph = graphfile[0][0]
         pyg_graph = PYGGraph()
-        pyg_graph.graph = graph
         geometry = self._load_optional_geometry(graph, file_path)
+        self._normalize_graph_schema(graph)
+        pyg_graph.graph = graph
         if(self.random_rotate):
             rotation = get_random_rotation()
             graph.ndata["x"] = rotate_uvgrid(graph.ndata["x"], rotation)
@@ -284,7 +362,7 @@ class CADSynth(Dataset):
         )
 
     def get_dataloader(self, batch_size, shuffle=True, num_workers=0, seed_purpose=None):
-        purpose = seed_purpose or "{}_loader".format(self.split)
+        purpose = "{}_loader".format(self.split) if seed_purpose is None else seed_purpose
         loader_args = dict(
             dataset=self,
             batch_size=batch_size,

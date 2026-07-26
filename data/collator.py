@@ -85,6 +85,25 @@ def pad_3d_unsqueeze(x, padlen1, padlen2, padlen3):  #x[num_nodes, num_nodes, ma
 
 
 def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, PYGGraph_1_mian}, {PYGGraph_2, PYGGraph_2_mian}, ..., PYGGraph_batchsize)
+    def collate_optional_group(fields, name):
+        per_item_values = [
+            [getattr(item, field, None) for field in fields] for item in items
+        ]
+        complete = [
+            all(value is not None for value in values) for values in per_item_values
+        ]
+        any_present = [
+            any(value is not None for value in values) for values in per_item_values
+        ]
+        if any(any_present) and not all(complete):
+            raise ValueError("{} must be provided as an atomic group".format(name))
+        if not any(complete):
+            return None
+        return tuple(
+            torch.cat([values[index] for values in per_item_values])
+            for index in range(len(fields))
+        )
+
     def collate_optional(field):
         values = [getattr(item, field, None) for item in items]
         present = [value is not None for value in values]
@@ -92,9 +111,9 @@ def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, P
             raise ValueError("{} is present for a mixed batch".format(field))
         return torch.cat(values) if all(present) else None
 
-    face_points = collate_optional("face_points")
-    face_point_mask = collate_optional("face_point_mask")
-    face_point_count = collate_optional("face_point_count")
+    pointcloud = collate_optional_group(
+        ("face_points", "face_point_mask", "face_point_count"), "face_points"
+    )
     cylindrical_pos = collate_optional("cylindrical_pos")
 
     items = [
@@ -252,10 +271,10 @@ def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, P
         instance = instance,
         instance_available = instance_available
     )
-    if face_points is not None:
-        batch_data["face_points"] = face_points
-        batch_data["face_point_mask"] = face_point_mask
-        batch_data["face_point_count"] = face_point_count
+    if pointcloud is not None:
+        batch_data["face_points"] = pointcloud[0]
+        batch_data["face_point_mask"] = pointcloud[1]
+        batch_data["face_point_count"] = pointcloud[2]
     if cylindrical_pos is not None:
         batch_data["cylindrical_pos"] = cylindrical_pos
     return batch_data

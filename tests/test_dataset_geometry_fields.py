@@ -1,7 +1,7 @@
 import dgl
 import pytest
 import torch
-from dgl.data.utils import save_graphs
+from dgl.data.utils import load_graphs, save_graphs
 from scipy.spatial.transform import Rotation
 
 import data.dataset as dataset_module
@@ -12,12 +12,16 @@ from utils.reproducibility import derive_seed
 def _core_graph(node_count=2):
     graph = dgl.graph(([0, 1], [1, 0]), num_nodes=node_count, idtype=torch.int64)
     graph.ndata["x"] = torch.zeros((node_count, 5, 5, 7), dtype=torch.float32)
+    graph.ndata["x"][..., 0] = 1.0
+    graph.ndata["x"][..., 4] = 1.0
     graph.ndata["y"] = torch.ones(node_count, dtype=torch.float32)
     graph.ndata["z"] = torch.zeros(node_count, dtype=torch.int32)
     graph.ndata["l"] = torch.ones(node_count, dtype=torch.int32)
     graph.ndata["a"] = torch.ones(node_count, dtype=torch.int32)
     graph.ndata["f"] = torch.arange(node_count, dtype=torch.int32)
     graph.edata["x"] = torch.zeros((2, 5, 7), dtype=torch.float32)
+    graph.edata["x"][..., 0] = 1.0
+    graph.edata["x"][..., 4] = 1.0
     graph.edata["t"] = torch.zeros(2, dtype=torch.int32)
     graph.edata["l"] = torch.ones(2, dtype=torch.float32)
     graph.edata["a"] = torch.zeros(2, dtype=torch.float32)
@@ -34,9 +38,9 @@ def _metadata(node_count=2):
     }
 
 
-def _write_bin(root, sample_id, include_geometry):
+def _write_bin(root, sample_id, include_points=False, include_cylindrical=False):
     graph = _core_graph()
-    if include_geometry:
+    if include_points:
         points = torch.zeros((2, 96, 6), dtype=torch.float32)
         points[:, :64, 0] = 1.0
         points[:, :64, 4] = 1.0
@@ -45,6 +49,7 @@ def _write_bin(root, sample_id, include_geometry):
             torch.arange(96)[None, :] < 64
         ).expand(2, -1).clone()
         graph.ndata["face_point_count"] = torch.full((2,), 64, dtype=torch.int32)
+    if include_cylindrical:
         graph.ndata["cylindrical_pos"] = torch.tensor(
             [[0.0, 0.0, 1.0, 0.0], [1.0, 1.0, 0.0, 1.0]],
             dtype=torch.float32,
@@ -55,11 +60,23 @@ def _write_bin(root, sample_id, include_geometry):
     return path
 
 
+def _write_manifest(root, split, sample_ids):
+    (root / (split + ".txt")).write_text(
+        "\n".join(sample_ids) + ("\n" if sample_ids else ""), encoding="utf-8"
+    )
+
+
+def _rewrite_bin(path, mutate):
+    graphs, metadata = load_graphs(str(path))
+    mutate(graphs[0])
+    save_graphs(str(path), graphs, metadata)
+
+
 @pytest.fixture
 def old_bin_dataset(tmp_path):
     sample_id = "legacy_part_001"
-    _write_bin(tmp_path, sample_id, include_geometry=False)
-    (tmp_path / "train.txt").write_text(sample_id + "\n", encoding="utf-8")
+    _write_bin(tmp_path, sample_id)
+    _write_manifest(tmp_path, "train", (sample_id,))
     return tmp_path
 
 
@@ -67,8 +84,8 @@ def old_bin_dataset(tmp_path):
 def new_bin_dataset(tmp_path):
     sample_ids = ("modern_part_001", "modern_part_002")
     for sample_id in sample_ids:
-        _write_bin(tmp_path, sample_id, include_geometry=True)
-    (tmp_path / "train.txt").write_text("\n".join(sample_ids) + "\n", encoding="utf-8")
+        _write_bin(tmp_path, sample_id, include_points=True, include_cylindrical=True)
+    _write_manifest(tmp_path, "train", sample_ids)
     return tmp_path
 
 
@@ -163,6 +180,8 @@ def test_random_rotation_rotates_face_point_positions_and_normals(new_bin_datase
     )
 
     assert torch.allclose(item.face_points[0, 0], expected)
+    assert torch.allclose(item.node_data[0, 0, 0, :6], expected)
+    assert torch.allclose(item.edge_data[0, 0, :6], expected)
 
 
 def test_loader_uses_seeded_generator_and_split_default_purpose(new_bin_dataset):
@@ -175,3 +194,218 @@ def test_loader_uses_seeded_generator_and_split_default_purpose(new_bin_dataset)
 
     assert torch.equal(actual, expected)
     assert loader.worker_init_fn.__name__ == "seed_worker"
+
+
+@pytest.mark.parametrize(
+    ("mutate", "requirements", "field"),
+    [
+        (
+            lambda graph: graph.ndata.__setitem__(
+                "face_points", torch.zeros((2, 96, 5), dtype=torch.float32)
+            ),
+            {"require_face_pointcloud": True},
+            "face_points",
+        ),
+        (
+            lambda graph: graph.ndata.__setitem__(
+                "face_points", graph.ndata["face_points"].to(torch.float64)
+            ),
+            {"require_face_pointcloud": True},
+            "face_points",
+        ),
+        (
+            lambda graph: graph.ndata["face_points"].__setitem__((0, 0, 0), float("nan")),
+            {"require_face_pointcloud": True},
+            "face_points",
+        ),
+        (
+            lambda graph: graph.ndata.__setitem__(
+                "face_point_mask", torch.zeros((2, 95), dtype=torch.bool)
+            ),
+            {"require_face_pointcloud": True},
+            "face_point_mask",
+        ),
+        (
+            lambda graph: graph.ndata.__setitem__(
+                "face_point_mask", graph.ndata["face_point_mask"].to(torch.int8)
+            ),
+            {"require_face_pointcloud": True},
+            "face_point_mask",
+        ),
+        (
+            lambda graph: graph.ndata.__setitem__(
+                "face_point_count", torch.zeros((2, 1), dtype=torch.int32)
+            ),
+            {"require_face_pointcloud": True},
+            "face_point_count",
+        ),
+        (
+            lambda graph: graph.ndata.__setitem__(
+                "face_point_count", graph.ndata["face_point_count"].to(torch.int64)
+            ),
+            {"require_face_pointcloud": True},
+            "face_point_count",
+        ),
+        (
+            lambda graph: graph.ndata.__setitem__(
+                "face_point_count", torch.zeros(2, dtype=torch.int32)
+            ),
+            {"require_face_pointcloud": True},
+            "face_point_count",
+        ),
+        (
+            lambda graph: graph.ndata["face_point_mask"].__setitem__((0, 0), False),
+            {"require_face_pointcloud": True},
+            "face_point_mask",
+        ),
+        (
+            lambda graph: graph.ndata["face_points"].__setitem__((0, 64, 0), 1.0),
+            {"require_face_pointcloud": True},
+            "face_points",
+        ),
+        (
+            lambda graph: graph.ndata["face_points"].__setitem__(
+                (0, 0, slice(3, 6)), torch.tensor([0.0, 0.0, 0.5])
+            ),
+            {"require_face_pointcloud": True},
+            "face_points",
+        ),
+        (
+            lambda graph: graph.ndata.__setitem__(
+                "cylindrical_pos", torch.zeros((2, 3), dtype=torch.float32)
+            ),
+            {"require_cylindrical_pos": True},
+            "cylindrical_pos",
+        ),
+        (
+            lambda graph: graph.ndata.__setitem__(
+                "cylindrical_pos", graph.ndata["cylindrical_pos"].to(torch.float64)
+            ),
+            {"require_cylindrical_pos": True},
+            "cylindrical_pos",
+        ),
+        (
+            lambda graph: graph.ndata["cylindrical_pos"].__setitem__((0, 0), float("inf")),
+            {"require_cylindrical_pos": True},
+            "cylindrical_pos",
+        ),
+        (
+            lambda graph: graph.ndata["cylindrical_pos"].__setitem__((0, 0), 1.1),
+            {"require_cylindrical_pos": True},
+            "cylindrical_pos",
+        ),
+        (
+            lambda graph: graph.ndata["cylindrical_pos"].__setitem__((0, 3), -0.1),
+            {"require_cylindrical_pos": True},
+            "cylindrical_pos",
+        ),
+        (
+            lambda graph: graph.ndata["cylindrical_pos"].__setitem__(
+                (0, slice(1, 3)), torch.tensor([0.0, 0.0])
+            ),
+            {"require_cylindrical_pos": True},
+            "cylindrical_pos",
+        ),
+    ],
+)
+def test_requested_geometry_rejects_invalid_contract_values(
+    new_bin_dataset, mutate, requirements, field
+):
+    path = new_bin_dataset / "bin" / "modern_part_001.bin"
+    _rewrite_bin(path, mutate)
+    dataset = CADSynth(new_bin_dataset, "train", **requirements)
+
+    with pytest.raises(ValueError, match=field) as error:
+        dataset[0]
+
+    assert str(path.resolve()) in str(error.value)
+
+
+def test_disabled_geometry_normalizes_mixed_bin_schemas(tmp_path):
+    _write_bin(tmp_path, "legacy")
+    _write_bin(tmp_path, "geometry", include_points=True, include_cylindrical=True)
+    _write_manifest(tmp_path, "train", ("legacy", "geometry"))
+    dataset = CADSynth(tmp_path, "train")
+    batch = dataset._collate([dataset[0], dataset[1]])
+
+    assert "face_points" not in batch["graph"].ndata
+    assert "cylindrical_pos" not in batch["graph"].ndata
+    assert "face_points" not in batch
+    assert "cylindrical_pos" not in batch
+
+
+def test_point_only_loading_normalizes_unrequested_cylindrical_field(tmp_path):
+    _write_bin(tmp_path, "point_only", include_points=True)
+    _write_bin(tmp_path, "point_and_cyl", include_points=True, include_cylindrical=True)
+    _write_manifest(tmp_path, "train", ("point_only", "point_and_cyl"))
+    dataset = CADSynth(tmp_path, "train", require_face_pointcloud=True)
+    batch = dataset._collate([dataset[0], dataset[1]])
+
+    assert batch["face_points"].shape == (4, 96, 6)
+    assert "cylindrical_pos" not in batch["graph"].ndata
+    assert "cylindrical_pos" not in batch
+
+
+def test_collator_treats_point_cloud_fields_as_an_atomic_group(new_bin_dataset):
+    item = CADSynth(new_bin_dataset, "train", require_face_pointcloud=True)[0]
+    item.face_point_mask = None
+
+    with pytest.raises(ValueError, match="face_points.*atomic"):
+        CADSynth(new_bin_dataset, "train")._collate([item])
+
+
+@pytest.mark.parametrize(
+    ("manifest", "message"),
+    [
+        ((), "empty"),
+        (("",), "blank"),
+        (("repeat", "repeat"), "duplicate"),
+        (("missing",), "missing"),
+    ],
+)
+def test_manifest_contract_fails_closed(tmp_path, manifest, message):
+    _write_bin(tmp_path, "repeat")
+    _write_manifest(tmp_path, "train", manifest)
+
+    with pytest.raises(ValueError, match=message) as error:
+        CADSynth(tmp_path, "train")
+
+    assert str((tmp_path / "train.txt").resolve()) in str(error.value)
+
+
+def test_manifest_preserves_exact_nonnumeric_order(tmp_path):
+    _write_bin(tmp_path, "first-nonnumeric")
+    _write_bin(tmp_path, "002-middle")
+    _write_bin(tmp_path, "last.part")
+    expected = ("last.part", "first-nonnumeric", "002-middle")
+    _write_manifest(tmp_path, "train", expected)
+    dataset = CADSynth(tmp_path, "train")
+
+    assert tuple(path.stem for path in dataset.file_paths) == expected
+
+
+@pytest.mark.parametrize(
+    ("split", "seed_purpose", "expected_purpose"),
+    [
+        ("val", None, "val_loader"),
+        ("test", None, "test_loader"),
+        ("train", "custom_loader", "custom_loader"),
+        ("train", "", ""),
+    ],
+)
+def test_loader_uses_split_and_explicit_seed_purposes(
+    tmp_path, split, seed_purpose, expected_purpose
+):
+    _write_bin(tmp_path, "sample")
+    _write_manifest(tmp_path, split, ("sample",))
+    loader = CADSynth(tmp_path, split, seed=123).get_dataloader(
+        batch_size=1, shuffle=True, num_workers=1, seed_purpose=seed_purpose
+    )
+    expected = torch.rand(
+        3, generator=torch.Generator().manual_seed(derive_seed(123, expected_purpose))
+    )
+    actual = torch.rand(3, generator=loader.generator)
+
+    assert torch.equal(actual, expected)
+    assert loader.worker_init_fn is dataset_module.seed_worker
+    assert loader.prefetch_factor == 2

@@ -13,6 +13,19 @@ from .modules.domain_adv.dann import DomainAdversarialLoss
 from .brepseg_model import BrepSeg
 
 
+def feature_result_path(output_path, sample_id):
+    """Build a result path from one validated full-stem string sample ID."""
+    if (
+        not isinstance(sample_id, str)
+        or not sample_id
+        or sample_id in (".", "..")
+        or "/" in sample_id
+        or "\\" in sample_id
+    ):
+        raise ValueError("sample ID is not safe for a result filename")
+    return pathlib.Path(output_path) / ("feature_" + sample_id + ".txt")
+
+
 class NonLinearClassifier(nn.Module):
     def __init__(self, input_dim, num_classes, dropout=0.3):
         super().__init__()
@@ -373,8 +386,9 @@ class DomainAdapt(pl.LightningModule):
             pred_feature = out_face_feature[i][:end_index + 1]  # (n_node)
 
             output_path = pathlib.Path("/home/zhang/datasets_segmentation/2_val")
-            file_name = "feature_" + str(batch["id"][n_graph + i].long().detach().cpu().numpy()) + ".txt"
-            file_path = os.path.join(output_path, file_name)
+            file_path = feature_result_path(
+                output_path, batch["data_ids"][n_graph + i]
+            )
             feature_file = open(file_path, mode="a")
             for j in range(end_index):
                 feature_file.write(str(pred_feature[j]))

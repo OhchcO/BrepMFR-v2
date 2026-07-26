@@ -1,3 +1,4 @@
+import ast
 import importlib
 import json
 import sys
@@ -346,3 +347,36 @@ def test_test_results_record_configuration_provenance(
         "prepared_dataset_path",
     ):
         assert "{}={}".format(key, result[key]) in log
+
+
+@pytest.mark.parametrize(
+    "script_name",
+    ("mfrinstseg_to_bin.py", "prepare_dataset.py"),
+)
+def test_direct_tool_scripts_bootstrap_project_root_before_project_imports(
+    script_name,
+):
+    script = Path(__file__).parents[1] / "tools" / script_name
+    tree = ast.parse(script.read_text(encoding="utf-8"))
+    bootstrap_lines = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "insert"
+        and isinstance(node.func.value, ast.Attribute)
+        and node.func.value.attr == "path"
+        and isinstance(node.func.value.value, ast.Name)
+        and node.func.value.value.id == "sys"
+    ]
+    project_import_lines = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module
+        and node.module.split(".", 1)[0] in ("tools", "utils")
+    ]
+
+    assert bootstrap_lines, "{} must bootstrap the project root".format(script)
+    assert project_import_lines
+    assert min(bootstrap_lines) < min(project_import_lines)

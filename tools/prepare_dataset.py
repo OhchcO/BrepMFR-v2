@@ -13,9 +13,15 @@ import hashlib
 import json
 import math
 import random
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Mapping, Optional, Sequence, Tuple
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.sample_mfrinstseg_1pct import select_balanced_sample_ids
 from utils.reproducibility import DEFAULT_SEED, derive_seed

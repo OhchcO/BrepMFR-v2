@@ -26,6 +26,11 @@ import torch
 from dgl.data.utils import load_graphs, save_graphs
 from tqdm import tqdm
 
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from tools.geometry_features import (
     GeometryFeatureBatch,
     PointSamplingConfig,

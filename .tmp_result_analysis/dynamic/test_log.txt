@@ -1,0 +1,39 @@
+BrepMFR test result
+checkpoint=D:\Code\BrepMFR\results\MFRInstSeg_1pct_dynamic_seed2026\0725\204101\best-v9.ckpt
+checkpoint_epoch=99
+experiment_mode=dynamic
+split=test
+samples=9370
+faces=254695
+elapsed_seconds=35.480
+test_loss=0.28688850
+per_face_accuracy=0.93352441
+mean_iou=0.80985225
+macro_f1=0.88377475
+
+per_class_metrics:
+class_00 support=3567 accuracy=0.83067003 iou=0.80472569 f1=0.89179834
+class_01 support=3434 accuracy=0.97146185 iou=0.93760540 f1=0.96779809
+class_02 support=10406 accuracy=0.89333077 iou=0.87582438 f1=0.93380211
+class_03 support=13615 accuracy=0.70973191 iou=0.67634913 f1=0.80693111
+class_04 support=20172 accuracy=0.99529050 iou=0.99209369 f1=0.99603116
+class_05 support=1428 accuracy=0.96708683 iou=0.46110184 f1=0.63117002
+class_06 support=2117 accuracy=0.93386868 iou=0.29626854 f1=0.45710983
+class_07 support=700 accuracy=0.95142857 iou=0.85824742 f1=0.92371706
+class_08 support=6859 accuracy=0.84954075 iou=0.68617522 f1=0.81388365
+class_09 support=10051 accuracy=0.84916924 iou=0.79573000 f1=0.88624682
+class_10 support=6613 accuracy=0.87373356 iou=0.68532796 f1=0.81328735
+class_11 support=9723 accuracy=0.95772910 iou=0.92316843 f1=0.96004949
+class_12 support=6305 accuracy=0.96494845 iou=0.84546971 f1=0.91626506
+class_13 support=12108 accuracy=0.98059134 iou=0.96599138 f1=0.98270154
+class_14 support=16050 accuracy=0.89327103 iou=0.88806987 f1=0.94071717
+class_15 support=21050 accuracy=0.99448931 iou=0.98773238 f1=0.99382833
+class_16 support=15526 accuracy=0.96251449 iou=0.94636185 f1=0.97244184
+class_17 support=2454 accuracy=0.84107579 iou=0.57525084 f1=0.73036093
+class_18 support=2464 accuracy=0.90543831 iou=0.85022866 f1=0.91905252
+class_19 support=2561 accuracy=0.89301054 iou=0.85431453 f1=0.92143433
+class_20 support=6670 accuracy=0.90344828 iou=0.84091543 f1=0.91358399
+class_21 support=6487 accuracy=0.97826422 iou=0.93186490 f1=0.96473092
+class_22 support=9875 accuracy=0.79696203 iou=0.74831226 f1=0.85603959
+class_23 support=3415 accuracy=0.88081991 iou=0.82705527 f1=0.90534236
+class_24 support=61045 accuracy=0.99842739 iou=0.99212150 f1=0.99604517

@@ -7,6 +7,7 @@ import pathlib
 import os
 
 from .modules.brep_encoder import BrepEncoder
+from .modules.instance_bias import EXPERIMENT_MODES
 from .modules.utils.macro import *
 
 class NonLinearClassifier(nn.Module):
@@ -68,6 +69,45 @@ def CrossEntropyLoss(label, predict_prob, class_level_weight=None, instance_leve
     return torch.sum(instance_level_weight * ce * class_level_weight) / float(N)
 
 
+def balanced_affinity_loss(logits, target, padding_mask, available=None):
+    """Balanced pairwise BCE over valid upper-triangular face pairs."""
+    graph_losses = []
+    batch_size, max_nodes, _ = logits.shape
+    upper_triangle = torch.triu(
+        torch.ones(
+            (max_nodes, max_nodes),
+            device=logits.device,
+            dtype=torch.bool,
+        ),
+        diagonal=1,
+    )
+
+    for graph_index in range(batch_size):
+        if available is not None and not bool(available[graph_index].item()):
+            continue
+        valid_nodes = ~padding_mask[graph_index]
+        valid_pairs = (
+            valid_nodes.unsqueeze(1) & valid_nodes.unsqueeze(0) & upper_triangle
+        )
+        graph_logits = logits[graph_index][valid_pairs]
+        graph_target = target[graph_index][valid_pairs].to(logits.dtype)
+        if graph_logits.numel() == 0:
+            continue
+
+        positive = graph_target > 0.5
+        negative = ~positive
+        terms = []
+        if bool(positive.any().item()):
+            terms.append(F.softplus(-graph_logits[positive]).mean())
+        if bool(negative.any().item()):
+            terms.append(F.softplus(graph_logits[negative]).mean())
+        graph_losses.append(torch.stack(terms).mean())
+
+    if not graph_losses:
+        return logits.sum() * 0.0
+    return torch.stack(graph_losses).mean()
+
+
 class Attention(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
@@ -87,6 +127,15 @@ class BrepSeg(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.num_classes = args.num_classes
+        self.experiment_mode = getattr(args, "experiment_mode", "baseline")
+        if self.experiment_mode not in EXPERIMENT_MODES:
+            raise ValueError(
+                "Unsupported experiment mode: {}".format(self.experiment_mode)
+            )
+        self.affinity_loss_weight = getattr(args, "affinity_loss_weight", 0.1)
+        self.affinity_warmup_epochs = getattr(
+            args, "affinity_warmup_epochs", 10
+        )
 
         self.brep_encoder = BrepEncoder(
             # < for graphormer
@@ -109,6 +158,10 @@ class BrepSeg(pl.LightningModule):
             # apply layernorm before self-attention and ffn. Without this, post layernorm will used
             apply_params_init=True,  # use custom param initialization for Graphormer
             activation_fn="gelu",  # activation function to use
+            experiment_mode=self.experiment_mode,
+            affinity_dim=getattr(args, "affinity_dim", 64),
+            affinity_temperature=getattr(args, "affinity_temperature", 0.2),
+            instance_bias_scale=getattr(args, "instance_bias_scale", 1.0),
         )
 
         self.attention = Attention(args.dim_node)
@@ -118,6 +171,24 @@ class BrepSeg(pl.LightningModule):
         self.pred = []
         self.label = []
 
+    def forward(self, batch):
+        """Return per-face semantic probabilities for inference."""
+        node_emb, graph_emb = self.brep_encoder(
+            batch,
+            last_state_only=True,
+        )
+        node_emb = node_emb[0].permute(1, 0, 2)
+        node_emb = node_emb[:, 1:, :]
+        padding_mask = batch["padding_mask"]
+        node_pos = torch.where(padding_mask == False)
+        node_z = node_emb[node_pos]
+        num_nodes_per_graph = torch.sum((~padding_mask).long(), dim=-1)
+        graph_z = graph_emb.repeat_interleave(
+            num_nodes_per_graph, dim=0
+        ).to(graph_emb.device)
+        z = self.attention([node_z, graph_z])
+        return self.classifier(z)
+
 
     def training_step(self, batch, batch_idx):
         self.brep_encoder.train()
@@ -126,7 +197,11 @@ class BrepSeg(pl.LightningModule):
         torch.cuda.empty_cache()
 
         # brep encoder----------------------------------------------------------------------------------
-        node_emb, graph_emb = self.brep_encoder(batch, last_state_only=True)
+        node_emb, graph_emb, instance_logits = self.brep_encoder(
+            batch,
+            last_state_only=True,
+            return_instance_logits=True,
+        )
 
         # node classifier--------------------------------------------------------------------------------
         node_emb = node_emb[0].permute(1, 0, 2)  # node_emb [batch_size, max_node_num+1, dim] with global node dim=0
@@ -143,7 +218,46 @@ class BrepSeg(pl.LightningModule):
         # loss-------------------------------------------------------------------------------------------
         labels = batch["label_feature"].long()
         labels_onehot = F.one_hot(labels, self.num_classes)
-        loss = CrossEntropyLoss(labels_onehot, node_seg)
+        semantic_loss = CrossEntropyLoss(labels_onehot, node_seg)
+        loss = semantic_loss
+        self.log("train_semantic_loss", semantic_loss, on_step=False, on_epoch=True)
+        if self.experiment_mode == "dynamic_affinity":
+            if instance_logits is None:
+                raise RuntimeError(
+                    "dynamic_affinity mode did not produce affinity logits"
+                )
+            if not bool(batch["instance_available"].all().item()):
+                raise ValueError(
+                    "dynamic_affinity training requires instance annotations"
+                )
+            affinity_loss = balanced_affinity_loss(
+                instance_logits,
+                batch["instance"],
+                batch["padding_mask"],
+                batch["instance_available"],
+            )
+            if self.affinity_warmup_epochs > 0:
+                warmup = min(
+                    1.0,
+                    float(self.current_epoch + 1)
+                    / float(self.affinity_warmup_epochs),
+                )
+            else:
+                warmup = 1.0
+            affinity_weight = self.affinity_loss_weight * warmup
+            loss = semantic_loss + affinity_weight * affinity_loss
+            self.log(
+                "train_affinity_loss",
+                affinity_loss,
+                on_step=False,
+                on_epoch=True,
+            )
+            self.log(
+                "train_affinity_weight",
+                affinity_weight,
+                on_step=False,
+                on_epoch=True,
+            )
         self.log("train_loss", loss, on_step=False, on_epoch=True)
         return loss
 
@@ -158,7 +272,11 @@ class BrepSeg(pl.LightningModule):
         self.classifier.eval()
         torch.cuda.empty_cache()
 
-        node_emb, graph_emb = self.brep_encoder(batch, last_state_only=True)  # logits [total_nodes, num_classes]
+        node_emb, graph_emb, _ = self.brep_encoder(
+            batch,
+            last_state_only=True,
+            return_instance_logits=True,
+        )  # logits [total_nodes, num_classes]
 
         node_emb = node_emb[0].permute(1, 0, 2)  # node_emb [batch_size, max_node_num+1, dim] with global node dim=0
         node_emb = node_emb[:, 1:, :]            # node_emb [batch_size, max_node_num, dim] without global node
@@ -189,8 +307,33 @@ class BrepSeg(pl.LightningModule):
         labels_np = np.array(self.label)
         self.pred = []
         self.label = []
-        per_face_comp = (preds_np == labels_np).astype(np.int)
+        per_face_comp = (preds_np == labels_np).astype(np.float32)
         self.log("per_face_accuracy", np.mean(per_face_comp))
+
+        class_ious = []
+        class_f1s = []
+        for class_index in range(self.num_classes):
+            predicted = preds_np == class_index
+            expected = labels_np == class_index
+            true_positive = np.logical_and(predicted, expected).sum()
+            false_positive = np.logical_and(predicted, ~expected).sum()
+            false_negative = np.logical_and(~predicted, expected).sum()
+            union = true_positive + false_positive + false_negative
+            if union > 0:
+                class_iou = true_positive / float(union)
+                class_ious.append(class_iou)
+                self.log(
+                    "iou_class_{:02d}".format(class_index),
+                    float(class_iou),
+                )
+            f1_denominator = 2 * true_positive + false_positive + false_negative
+            if f1_denominator > 0:
+                class_f1s.append(2 * true_positive / float(f1_denominator))
+
+        if class_ious:
+            self.log("mean_iou", float(np.mean(class_ious)))
+        if class_f1s:
+            self.log("macro_f1", float(np.mean(class_f1s)))
 
     def test_step(self, batch, batch_idx):
         self.brep_encoder.eval()
@@ -198,7 +341,11 @@ class BrepSeg(pl.LightningModule):
         self.classifier.eval()
 
         # brep encoder----------------------------------------------------------------------------------
-        node_emb, graph_emb = self.brep_encoder(batch, last_state_only=True)  # logits [total_nodes, num_classes]
+        node_emb, graph_emb, _ = self.brep_encoder(
+            batch,
+            last_state_only=True,
+            return_instance_logits=True,
+        )  # logits [total_nodes, num_classes]
 
         # node classifier-------------------------------------------------------------------------------
         node_emb = node_emb[0].permute(1, 0, 2)  # node_emb [batch_size, max_node_num+1, dim] with global node dim=0

@@ -6,6 +6,7 @@ from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 
 from .layers.multihead_attention import MultiheadAttention
 from .layers.brep_encoder_layer import GraphEncoderLayer, GraphNodeFeature, GraphAttnBias
+from .instance_bias import InstanceRelationBias
 
 
 def init_params(module):
@@ -53,6 +54,10 @@ class BrepEncoder(nn.Module):
         traceable: bool = False,
         q_noise: float = 0.0,
         qn_block_size: int = 8,
+        experiment_mode: str = "baseline",
+        affinity_dim: int = 64,
+        affinity_temperature: float = 0.2,
+        instance_bias_scale: float = 1.0,
     ) -> None:
         super().__init__()
 
@@ -80,7 +85,6 @@ class BrepEncoder(nn.Module):
             multi_hop_max_dist=multi_hop_max_dist,
             n_layers=num_encoder_layers,
         )
-
         self.embed_scale = embed_scale
         
         self.tanh = nn.Tanh()
@@ -129,6 +133,23 @@ class BrepEncoder(nn.Module):
         if self.apply_params_init:
             self.apply(init_params)
 
+        # Initialize the experiment-only branch without advancing the RNG used
+        # by the shared encoder/classifier. This keeps shared initial weights
+        # identical across modes when the same seed is used.
+        shared_rng_state = torch.random.get_rng_state()
+        self.instance_relation_bias = InstanceRelationBias(
+            embedding_dim=embedding_dim,
+            num_heads=num_attention_heads,
+            mode=experiment_mode,
+            affinity_dim=affinity_dim,
+            temperature=affinity_temperature,
+            bias_scale=instance_bias_scale,
+            num_spatial=num_spatial,
+        )
+        if self.apply_params_init:
+            self.instance_relation_bias.apply(init_params)
+        torch.random.set_rng_state(shared_rng_state)
+
         def freeze_module_params(m):
             if m is not None:
                 for p in m.parameters():
@@ -175,6 +196,7 @@ class BrepEncoder(nn.Module):
         last_state_only: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
         attn_mask: Optional[torch.Tensor] = None,
+        return_instance_logits: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         padding_mask = batch_data["padding_mask"]
         n_graph, n_node = padding_mask.size()[:2]
@@ -207,6 +229,19 @@ class BrepEncoder(nn.Module):
                                          batch_data["graph"],
                                          x_0
                                          )  #attn_bias[n_graph, n_head, max_node_num, max_node_num]
+        instance_logits = None
+        if self.instance_relation_bias.mode != "baseline":
+            instance_bias, instance_logits = self.instance_relation_bias(
+                node_features=x,
+                padding_mask=batch_data["padding_mask"],
+                spatial_pos=batch_data["spatial_pos"],
+                d2_distance=batch_data["d2_distance"],
+                angle_distance=batch_data["angle_distance"],
+                instance=batch_data.get("instance"),
+                instance_available=batch_data.get("instance_available"),
+            )
+            # Keep the graph token untouched and add the prior exactly once.
+            attn_bias = attn_bias + instance_bias
 
         # compute padding mask. This is needed for multi-head attention
         padding_mask_cls = torch.zeros(n_graph, 1, device=padding_mask.device, dtype=padding_mask.dtype)
@@ -249,6 +284,9 @@ class BrepEncoder(nn.Module):
             inner_states = [x]
 
         if self.traceable:
-            return torch.stack(inner_states), graph_rep
+            encoder_states = torch.stack(inner_states)
         else:
-            return inner_states, graph_rep
+            encoder_states = inner_states
+        if return_instance_logits:
+            return encoder_states, graph_rep, instance_logits
+        return encoder_states, graph_rep

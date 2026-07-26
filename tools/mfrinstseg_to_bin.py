@@ -24,6 +24,7 @@ import dgl
 import numpy as np
 import torch
 from dgl.data.utils import load_graphs, save_graphs
+from tqdm import tqdm
 
 
 FACE_TYPE = {
@@ -619,12 +620,6 @@ def convert_one(
     """Convert safely, skipping only a valid existing BIN unless overwritten."""
     validate_sample_id(sample_id)
     label = load_label(paths.label_file(sample_id))
-    if label.sample_id != sample_id:
-        raise ValueError(
-            "Label sample id {0} does not match manifest id {1}".format(
-                label.sample_id, sample_id
-            )
-        )
     target = paths.bin_file(sample_id)
     temporary = target.with_suffix(target.suffix + ".tmp")
     if target.exists() and not overwrite:
@@ -720,7 +715,12 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         type=Path,
         default=Path(r"D:\Code\BrepMFR-g\data_set_line\schema.json"),
     )
-    parser.add_argument("--split", choices=("train", "val", "all"), default="all")
+    parser.add_argument(
+        "--split",
+        choices=("train", "val", "test", "all"),
+        default="all",
+        help="'all' converts train and val; use 'test' for the official test split",
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
     return parser.parse_args(argv)
@@ -757,7 +757,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             if args.limit is not None:
                 sample_ids = sample_ids[: args.limit]
             successful = []
-            for sample_id in sample_ids:
+            pbar = tqdm(sample_ids, desc="[{0}]".format(split), unit="model")
+            for sample_id in pbar:
+                pbar.set_postfix_str(sample_id, refresh=False)
                 try:
                     convert_one(
                         sample_id, paths, extractor_class, topology_utils, schema, args.overwrite

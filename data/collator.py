@@ -48,6 +48,17 @@ def pad_spatial_pos_unsqueeze(x, padlen):  # x[num_nodes, num_nodes]
         x = new_x
     return x.unsqueeze(0)
 
+def pad_square_unsqueeze(x, padlen):
+    """Zero-pad a square node-pair matrix to the batch node count."""
+    xlen = x.size(0)
+    if tuple(x.shape) != (xlen, xlen):
+        raise ValueError("Expected a square pair matrix, got {}".format(tuple(x.shape)))
+    if xlen < padlen:
+        new_x = x.new_zeros([padlen, padlen], dtype=x.dtype)
+        new_x[:xlen, :xlen] = x
+        x = new_x
+    return x.unsqueeze(0)
+
 def pad_d2_pos_unsqueeze(x, padlen): # x[num_nodes, num_nodes, 32]
     xlen = x.size(0)
     if xlen < padlen:
@@ -94,7 +105,9 @@ def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, P
             item.angle_distance,
             item.edge_path[:, :, :multi_hop_max_dist],  #[num_nodes, num_nodes, max_dist]
             item.label_feature,  #[num_nodes]
-            item.data_id
+            item.data_id,
+            item.instance,
+            item.instance_available
         )
         for item in items
     ]
@@ -118,7 +131,9 @@ def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, P
         angle_distances,
         edge_paths,
         label_features,
-        data_ids
+        data_ids,
+        instances,
+        instance_available
     ) = zip(*items)  #解压缩
 
     for idx, _ in enumerate(attn_biases):
@@ -178,6 +193,10 @@ def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, P
     angle_distance = torch.cat(
         [pad_ang_pos_unsqueeze(i, max_node_num) for i in angle_distances]
     )
+    instance = torch.cat(
+        [pad_square_unsqueeze(i, max_node_num) for i in instances]
+    )
+    instance_available = torch.tensor(instance_available, dtype=torch.bool)
     
     #中心性编码
     # in_degree = torch.cat([pad_1d_unsqueeze(i, max_node_num) for i in in_degrees]) #in_degree(batch_size, [num_nodes])
@@ -216,7 +235,9 @@ def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, P
         edge_path = edge_path,             #[batch_size, max_node_num, max_node_num, max_dist] 空位用-1填充
 
         label_feature = batched_label_feature, #[total_node_num]
-        id = data_ids
+        id = data_ids,
+        instance = instance,
+        instance_available = instance_available
     )
     return batch_data
 

@@ -1,0 +1,39 @@
+BrepMFR test result
+checkpoint=D:\Code\BrepMFR\results\MFRInstSeg_1pct_oracle_seed2026\0725\203036\best-v6.ckpt
+checkpoint_epoch=87
+experiment_mode=oracle
+split=test
+samples=9370
+faces=254695
+elapsed_seconds=35.393
+test_loss=0.26037612
+per_face_accuracy=0.94757651
+mean_iou=0.83362681
+macro_f1=0.90153530
+
+per_class_metrics:
+class_00 support=3567 accuracy=0.89543033 iou=0.84676564 f1=0.91702555
+class_01 support=3434 accuracy=0.92748981 iou=0.91681059 f1=0.95660009
+class_02 support=10406 accuracy=0.99461849 iou=0.97228746 f1=0.98594904
+class_03 support=13615 accuracy=0.78472273 iou=0.77724429 f1=0.87466230
+class_04 support=20172 accuracy=0.99692643 iou=0.99588966 f1=0.99794060
+class_05 support=1428 accuracy=0.89705882 iou=0.79122915 f1=0.88344828
+class_06 support=2117 accuracy=0.90127539 iou=0.38812042 f1=0.55920281
+class_07 support=700 accuracy=0.95571429 iou=0.81684982 f1=0.89919355
+class_08 support=6859 accuracy=0.81134276 iou=0.74768239 f1=0.85562731
+class_09 support=10051 accuracy=0.96189434 iou=0.86336846 f1=0.92667497
+class_10 support=6613 accuracy=0.76606684 iou=0.72247576 f1=0.83888061
+class_11 support=9723 accuracy=0.96719120 iou=0.93367752 f1=0.96570138
+class_12 support=6305 accuracy=0.93227597 iou=0.88858655 f1=0.94100696
+class_13 support=12108 accuracy=0.99496201 iou=0.97365231 f1=0.98665029
+class_14 support=16050 accuracy=0.91426791 iou=0.90446252 f1=0.94983494
+class_15 support=21050 accuracy=0.99349169 iou=0.98562541 f1=0.99276068
+class_16 support=15526 accuracy=0.94332088 iou=0.92984572 f1=0.96364773
+class_17 support=2454 accuracy=0.95884271 iou=0.48990214 f1=0.65762996
+class_18 support=2464 accuracy=0.95616883 iou=0.75319693 f1=0.85922684
+class_19 support=2561 accuracy=0.94845763 iou=0.75061805 f1=0.85754634
+class_20 support=6670 accuracy=0.94392804 iou=0.88451812 f1=0.93872074
+class_21 support=6487 accuracy=0.94435024 iou=0.90474081 f1=0.94998837
+class_22 support=9875 accuracy=0.85083544 iou=0.79271629 f1=0.88437451
+class_23 support=3415 accuracy=0.90746706 iou=0.81810982 f1=0.89995644
+class_24 support=61045 accuracy=0.99991809 iou=0.99229444 f1=0.99613232

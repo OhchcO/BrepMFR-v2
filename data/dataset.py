@@ -26,12 +26,14 @@ class CADSynth(Dataset):
         split="train",
         random_rotate=False,
         num_class=25,
+        require_instance=False,
     ):  
         assert split in ("train", "val", "test")
         path = pathlib.Path(root_dir)
         self.split = split
         self.num_class = num_class
         self.random_rotate = random_rotate
+        self.require_instance = require_instance
         self.file_paths = []
         self._get_filenames(path, filelist=split+".txt")
 
@@ -78,6 +80,31 @@ class CADSynth(Dataset):
         pyg_graph.d2_distance = graphfile[1]["d2_distance"]        # d2_distance[num_nodes, num_nodes, 64]
         pyg_graph.angle_distance = graphfile[1]["angle_distance"]  # angle_distance[num_nodes, num_nodes, 64]
 
+        instance = graphfile[1].get("instance")
+        n_nodes = graph.num_nodes()
+        if instance is None:
+            if self.require_instance:
+                raise KeyError(
+                    "Instance annotation is required but missing in {}".format(file_path)
+                )
+            pyg_graph.instance = torch.zeros(
+                (n_nodes, n_nodes), dtype=torch.float32
+            )
+            pyg_graph.instance_available = False
+        else:
+            if tuple(instance.shape) != (n_nodes, n_nodes):
+                raise ValueError(
+                    "Invalid instance shape {} for {} nodes in {}".format(
+                        tuple(instance.shape), n_nodes, file_path
+                    )
+                )
+            if not torch.equal(instance, instance.transpose(0, 1)):
+                raise ValueError(
+                    "Instance matrix must be symmetric in {}".format(file_path)
+                )
+            pyg_graph.instance = (instance > 0).type(torch.float32)
+            pyg_graph.instance_available = True
+
         _, file_extension = os.path.splitext(file_path)
         basename = os.path.basename(file_path).replace(file_extension, "")
         pyg_graph.data_id = int(basename.split("_")[-1])
@@ -103,17 +130,19 @@ class CADSynth(Dataset):
         )
 
     def get_dataloader(self, batch_size, shuffle=True, num_workers=0):
-        return DataLoaderX(
+        loader_args = dict(
             dataset=self,
             batch_size=batch_size,
             shuffle=shuffle,
             collate_fn=self._collate,
             num_workers=num_workers,
-            drop_last=True,
+            drop_last=(self.split == "train"),
             pin_memory=True,
-            prefetch_factor=2,
             persistent_workers=False
         )
+        if num_workers > 0:
+            loader_args["prefetch_factor"] = 2
+        return DataLoaderX(**loader_args)
 
 
 class TransferDataset(Dataset):

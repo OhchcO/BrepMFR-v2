@@ -44,6 +44,103 @@ STEP
   -> 面语义分类
 ```
 
+### 2.1 原始数据集输入
+
+训练入口允许只提供以下目录：
+
+```text
+raw_dataset/
+├─ steps/
+│  ├─ <sample_id>.step
+│  └─ ...
+└─ labels/
+   ├─ <sample_id>.json
+   └─ ...
+```
+
+STEP 与标签使用文件主名严格一一对应。标签只要求语义标签 `seg` 和实例标签 `inst`；不读取、不生成也不验证 `bottom`。标签解析器同时兼容当前 MFRInstSeg 外层样本包装格式和直接的 `{"seg": ..., "inst": ...}` 格式，并在进入转换流程前规范化为同一个内部结构。
+
+训练入口新增：
+
+```text
+--raw_dataset_path
+--prepared_dataset_path
+--auto_prepare
+--sample_percent 0.01
+--split_ratios 0.8 0.1 0.1
+```
+
+`--auto_prepare` 的含义是训练进程在创建 Lightning Trainer 之前调用一次预处理管线，不是在 `Dataset.__getitem__` 或训练批次中解析 STEP。
+
+### 2.2 自动划分与预处理
+
+当原始数据根目录存在 `train.txt/val.txt/test.txt` 时，优先使用现有模型级划分。当不存在任何划分文件时：
+
+1. 扫描并验证 `steps/` 与 `labels/` 的样本ID集合完全一致；
+2. 按完整 STEP 模型进行确定性的 80%/10%/10% 划分；
+3. 使用唯一的全局 `--seed` 控制划分；
+4. 先固定 train/val/test，再从 train 和 val 内按语义类别与实例特征统计执行 `sample_percent` 平衡抽样；
+5. test 始终保持完整，不执行百分比抽样；
+6. 对航空机匣必须先按完整机匣划分，再从各自划分中的机匣生成局部子图，禁止同一机匣的子图跨越训练、验证和测试集合。
+
+默认 `sample_percent=0.01`；设为 `1.0` 时使用完整 train 和 val。生成的划分清单写入准备目录并固定，后续运行不得重新随机划分。
+
+### 2.3 准备缓存
+
+自动准备生成：
+
+```text
+prepared_dataset/
+├─ bin/
+├─ train.txt
+├─ val.txt
+├─ test.txt
+├─ preparation_manifest.json
+└─ conversion_failures.json
+```
+
+`preparation_manifest.json` 记录：
+
+- 原始 STEP 与标签的相对路径和内容指纹；
+- 转换器格式版本；
+- 全局随机种子；
+- 模型级划分比例；
+- 小样本百分比和平衡抽样参数；
+- 点云采样模式与点数参数；
+- 柱坐标配置；
+- 成功样本ID和失败样本ID。
+
+训练启动时，若缓存完整且指纹与当前配置一致，则直接复用 BIN。若指纹或配置不一致，训练停止并提示使用新的准备目录或显式重建，禁止静默复用不匹配的 BIN。任何样本转换失败时默认不进入训练。
+
+### 2.4 统一随机种子契约
+
+全代码只接受一个可配置基础参数：
+
+```text
+--seed 2026
+```
+
+`2026` 只是默认值，业务代码不得再写其他硬编码随机种子。该基础种子统一控制：
+
+- train/val/test 模型级划分；
+- train 和 val 的平衡小样本抽样；
+- 点云候选采样中确实需要随机性的步骤；
+- 模型参数初始化；
+- Python `random`、NumPy、PyTorch、CUDA 和 DGL；
+- DataLoader 的 generator 与 worker seed；
+- 随机旋转及其他数据增强；
+- 训练、验证和测试入口。
+
+与单个样本有关的随机过程使用稳定派生种子：
+
+```text
+derived_seed = SHA256(base_seed + purpose + sample_id) mod 2^32
+```
+
+禁止使用 Python 进程相关的 `hash()` 派生种子。这样即使转换中断后续跑、样本处理顺序改变或只补齐缺失 BIN，同一个样本仍得到相同结果。日志、检查点超参数和 `preparation_manifest.json` 均记录基础种子。
+
+在相同代码、输入数据、依赖版本和硬件环境下启用 PyTorch 确定性配置；若底层算子只能使用非确定性实现，代码必须显式警告，不能宣称跨驱动或跨硬件逐位一致。
+
 ## 3. 点云采样设计
 
 ### 3.1 采样模式
@@ -206,6 +303,8 @@ node_feature =
 --cylindrical-scale 1.0
 ```
 
+上述模型开关与 `--raw_dataset_path/--prepared_dataset_path/--auto_prepare/--seed` 共用同一个训练入口。转换参数写入准备缓存指纹，模型开关开启时必须验证准备目录中存在对应字段。
+
 保留现有：
 
 ```text
@@ -260,6 +359,7 @@ full
 - 旧 BIN 只保留用于复现当前 Baseline、Oracle、Dynamic 和 Dynamic+Affinity 结果。
 - 正式的新一轮消融实验统一使用重新生成的新 BIN；其中 Baseline 和 Instance 模式忽略新增字段，从而保证所有对照组使用完全相同的模型清单和底层几何数据。
 - 新 BIN 输出到独立目录，例如 `D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG`，默认不得覆盖当前 `MFRInstSeg_BrepMFR`。
+- 自动准备只在 Lightning Trainer 创建前运行一次；禁止在 DataLoader worker、`__getitem__`、训练 step 或每个 epoch 中调用 PyOCC。
 - 启用点云但缺少 `face_points/face_point_mask/face_point_count` 时，数据加载器立即给出包含 BIN 路径和缺失字段的错误。
 - 启用柱坐标但缺少 `cylindrical_pos` 时立即报错。
 - 字段第一维必须等于面节点数；点云形状必须为 `[N,96,6]`；柱坐标形状必须为 `[N,4]`。
@@ -278,6 +378,7 @@ models/modules/pointcloud_encoder.py
 models/modules/cylindrical_encoder.py
 models/modules/instance_bias.py
 tools/mfrinstseg_to_bin.py
+tools/prepare_dataset.py
 data/dataset.py
 data/collator.py
 models/modules/brep_encoder.py
@@ -289,11 +390,14 @@ tools/run_mfrinstseg_test.ps1
 
 转换器中的采样计算应拆为无状态函数，避免继续扩大 `convert_one`。模型编码器只接收已经整理好的张量，不读取 STEP 或解释采样配置。
 
+`tools/prepare_dataset.py` 负责原始目录扫描、模型级划分、平衡抽样、准备指纹、缓存复用判断和转换器调用；`segmentation.py` 只负责在训练前调用该接口并在准备成功后把 `prepared_dataset_path` 交给数据加载器。转换器仍保留独立命令行入口，便于只准备数据而不训练。
+
 ## 10. 静态交付与用户执行
 
 本次由代码生成阶段交付：
 
 - 修改后的转换器；
+- 从 `steps/ + labels/` 自动划分、转换和缓存的准备模块；
 - 新增的点云与柱坐标编码模块；
 - 数据加载与批处理支持；
 - 训练与测试开关；

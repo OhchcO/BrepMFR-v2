@@ -85,6 +85,18 @@ def pad_3d_unsqueeze(x, padlen1, padlen2, padlen3):  #x[num_nodes, num_nodes, ma
 
 
 def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, PYGGraph_1_mian}, {PYGGraph_2, PYGGraph_2_mian}, ..., PYGGraph_batchsize)
+    def collate_optional(field):
+        values = [getattr(item, field, None) for item in items]
+        present = [value is not None for value in values]
+        if any(present) and not all(present):
+            raise ValueError("{} is present for a mixed batch".format(field))
+        return torch.cat(values) if all(present) else None
+
+    face_points = collate_optional("face_points")
+    face_point_mask = collate_optional("face_point_mask")
+    face_point_count = collate_optional("face_point_count")
+    cylindrical_pos = collate_optional("cylindrical_pos")
+
     items = [
         (
             item.graph,
@@ -207,7 +219,7 @@ def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, P
     # face feature type
     batched_label_feature = torch.cat([i for i in label_features])
 
-    data_ids = torch.tensor([i for i in data_ids])
+    data_ids = tuple(data_ids)
 
     batch_data = dict(
         padding_mask = padding_mask,       #[batch_size, max_node_num]
@@ -236,9 +248,16 @@ def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, P
 
         label_feature = batched_label_feature, #[total_node_num]
         id = data_ids,
+        data_ids = data_ids,
         instance = instance,
         instance_available = instance_available
     )
+    if face_points is not None:
+        batch_data["face_points"] = face_points
+        batch_data["face_point_mask"] = face_point_mask
+        batch_data["face_point_count"] = face_point_count
+    if cylindrical_pos is not None:
+        batch_data["cylindrical_pos"] = cylindrical_pos
     return batch_data
 
 
@@ -383,7 +402,7 @@ def collator_st(items, multi_hop_max_dist, spatial_pos_max):
 
     batched_label_feature = torch.cat([i for i in label_features])
 
-    data_ids = torch.tensor([i for i in data_ids])
+    data_ids = tuple(data_ids)
 
     batch_data = dict(
         padding_mask=padding_mask,  # [batch_size, max_node_num]
@@ -411,6 +430,7 @@ def collator_st(items, multi_hop_max_dist, spatial_pos_max):
         edge_path=edge_path,  # [batch_size, max_node_num, max_node_num, max_dist] 空位用-1填充
 
         label_feature=batched_label_feature,  # [total_node_num]
-        id=data_ids
+        id=data_ids,
+        data_ids=data_ids
     )
     return batch_data

@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import os
 import pathlib
 from tqdm import tqdm
 import random
@@ -12,6 +11,10 @@ from prefetch_generator import BackgroundGenerator
 
 from .collator import collator, collator_st
 from .utils import get_random_rotation, rotate_uvgrid
+from utils.reproducibility import DEFAULT_SEED, make_torch_generator, seed_worker
+
+
+FACE_POINT_CAPACITY = 96
 
 
 class DataLoaderX(DataLoader):
@@ -27,13 +30,23 @@ class CADSynth(Dataset):
         random_rotate=False,
         num_class=25,
         require_instance=False,
-    ):  
+        require_face_pointcloud=False,
+        require_cylindrical_pos=False,
+        seed=DEFAULT_SEED,
+    ):
         assert split in ("train", "val", "test")
+        if random_rotate and require_cylindrical_pos:
+            raise ValueError(
+                "random_rotate cannot be used with require_cylindrical_pos"
+            )
         path = pathlib.Path(root_dir)
         self.split = split
         self.num_class = num_class
         self.random_rotate = random_rotate
         self.require_instance = require_instance
+        self.require_face_pointcloud = require_face_pointcloud
+        self.require_cylindrical_pos = require_cylindrical_pos
+        self.seed = int(seed)
         self.file_paths = []
         self._get_filenames(path, filelist=split+".txt")
 
@@ -41,10 +54,143 @@ class CADSynth(Dataset):
         print(f"Loading data...")
         with open(str(root_dir / f"{filelist}"), "r") as f:
             file_list = [x.strip() for x in f.readlines()]
-        for x in tqdm(root_dir.rglob(f"*[0-9].bin")):
-            if x.stem in file_list:
-                self.file_paths.append(x)
+        requested = set(file_list)
+        paths_by_stem = {}
+        for x in tqdm(sorted(root_dir.rglob("*.bin"))):
+            if x.stem in requested:
+                if x.stem in paths_by_stem:
+                    raise ValueError(
+                        "Multiple BIN files share sample stem {}".format(x.stem)
+                    )
+                paths_by_stem[x.stem] = x
+        self.file_paths = [
+            paths_by_stem[sample_id]
+            for sample_id in file_list
+            if sample_id in paths_by_stem
+        ]
         print("Done loading {} files".format(len(self.file_paths)))
+
+
+    @staticmethod
+    def _required_node_field(graph, key, file_path):
+        if key not in graph.ndata:
+            raise KeyError(
+                "{} is required for sample {}".format(
+                    key, pathlib.Path(file_path).resolve()
+                )
+            )
+        return graph.ndata[key]
+
+    @staticmethod
+    def _invalid_geometry(file_path, key, detail):
+        raise ValueError(
+            "Invalid {} for sample {}: {}".format(
+                key, pathlib.Path(file_path).resolve(), detail
+            )
+        )
+
+    def _load_optional_geometry(self, graph, file_path):
+        geometry = {
+            "face_points": None,
+            "face_point_mask": None,
+            "face_point_count": None,
+            "cylindrical_pos": None,
+        }
+        node_count = graph.num_nodes()
+
+        if self.require_face_pointcloud:
+            points = self._required_node_field(graph, "face_points", file_path)
+            mask = self._required_node_field(graph, "face_point_mask", file_path)
+            counts = self._required_node_field(graph, "face_point_count", file_path)
+            if tuple(points.shape) != (node_count, FACE_POINT_CAPACITY, 6):
+                self._invalid_geometry(
+                    file_path,
+                    "face_points",
+                    "expected shape ({}, {}, 6), got {}".format(
+                        node_count, FACE_POINT_CAPACITY, tuple(points.shape)
+                    ),
+                )
+            if points.dtype != torch.float32:
+                self._invalid_geometry(file_path, "face_points", "expected float32")
+            if not bool(torch.isfinite(points).all()):
+                self._invalid_geometry(file_path, "face_points", "contains non-finite values")
+            if tuple(mask.shape) != (node_count, FACE_POINT_CAPACITY):
+                self._invalid_geometry(
+                    file_path,
+                    "face_point_mask",
+                    "expected shape ({}, {}), got {}".format(
+                        node_count, FACE_POINT_CAPACITY, tuple(mask.shape)
+                    ),
+                )
+            if mask.dtype != torch.bool:
+                self._invalid_geometry(file_path, "face_point_mask", "expected bool")
+            if tuple(counts.shape) != (node_count,):
+                self._invalid_geometry(
+                    file_path,
+                    "face_point_count",
+                    "expected shape ({},), got {}".format(node_count, tuple(counts.shape)),
+                )
+            if counts.dtype != torch.int32:
+                self._invalid_geometry(file_path, "face_point_count", "expected int32")
+            if not bool(((counts >= 1) & (counts <= FACE_POINT_CAPACITY)).all()):
+                self._invalid_geometry(
+                    file_path,
+                    "face_point_count",
+                    "values must be in [1, {}]".format(FACE_POINT_CAPACITY),
+                )
+            expected_mask = (
+                torch.arange(FACE_POINT_CAPACITY, device=counts.device)[None, :]
+                < counts.to(torch.int64)[:, None]
+            )
+            if not torch.equal(mask, expected_mask):
+                self._invalid_geometry(
+                    file_path,
+                    "face_point_mask",
+                    "is inconsistent with face_point_count",
+                )
+            if not bool(points[~mask].eq(0).all()):
+                self._invalid_geometry(
+                    file_path, "face_points", "padded values must be zero"
+                )
+            normal_lengths = torch.linalg.norm(points[..., 3:6][mask], dim=1)
+            if not torch.allclose(
+                normal_lengths,
+                torch.ones_like(normal_lengths),
+                rtol=1e-4,
+                atol=1e-4,
+            ):
+                self._invalid_geometry(
+                    file_path, "face_points", "valid normals must be unit length"
+                )
+            geometry.update(
+                face_points=points,
+                face_point_mask=mask,
+                face_point_count=counts,
+            )
+
+        if self.require_cylindrical_pos:
+            cylindrical = self._required_node_field(
+                graph, "cylindrical_pos", file_path
+            )
+            if tuple(cylindrical.shape) != (node_count, 4):
+                self._invalid_geometry(
+                    file_path,
+                    "cylindrical_pos",
+                    "expected shape ({}, 4), got {}".format(
+                        node_count, tuple(cylindrical.shape)
+                    ),
+                )
+            if cylindrical.dtype != torch.float32:
+                self._invalid_geometry(
+                    file_path, "cylindrical_pos", "expected float32"
+                )
+            if not bool(torch.isfinite(cylindrical).all()):
+                self._invalid_geometry(
+                    file_path, "cylindrical_pos", "contains non-finite values"
+                )
+            geometry["cylindrical_pos"] = cylindrical
+
+        return geometry
 
 
     def load_one_graph(self, file_path):
@@ -52,12 +198,22 @@ class CADSynth(Dataset):
         graph = graphfile[0][0]
         pyg_graph = PYGGraph()
         pyg_graph.graph = graph
+        geometry = self._load_optional_geometry(graph, file_path)
         if(self.random_rotate):
             rotation = get_random_rotation()
             graph.ndata["x"] = rotate_uvgrid(graph.ndata["x"], rotation)
             graph.edata["x"] = rotate_uvgrid(graph.edata["x"], rotation)
+            if self.require_face_pointcloud:
+                geometry["face_points"] = rotate_uvgrid(
+                    geometry["face_points"], rotation
+                )
         pyg_graph.node_data = graph.ndata["x"].type(FloatTensor)  # node_data[num_nodes, U_grid, V_grid, pnt_feature]
         pyg_graph.edge_data = graph.edata["x"].type(FloatTensor)  # edge_data[num_edges, U_grid, pnt_feature]
+
+        pyg_graph.face_points = geometry["face_points"]
+        pyg_graph.face_point_mask = geometry["face_point_mask"]
+        pyg_graph.face_point_count = geometry["face_point_count"]
+        pyg_graph.cylindrical_pos = geometry["cylindrical_pos"]
 
         pyg_graph.face_type = graph.ndata["z"].type(torch.int)   # face_type[num_nodes]
         pyg_graph.face_area = graph.ndata["y"].type(torch.float) # face_area[num_nodes]
@@ -105,9 +261,7 @@ class CADSynth(Dataset):
             pyg_graph.instance = (instance > 0).type(torch.float32)
             pyg_graph.instance_available = True
 
-        _, file_extension = os.path.splitext(file_path)
-        basename = os.path.basename(file_path).replace(file_extension, "")
-        pyg_graph.data_id = int(basename.split("_")[-1])
+        pyg_graph.data_id = pathlib.Path(file_path).stem
 
         if(torch.max(pyg_graph.label_feature) > 24 or torch.max(pyg_graph.label_feature) < 0):
             print(pyg_graph.data_id)
@@ -129,7 +283,8 @@ class CADSynth(Dataset):
             spatial_pos_max=32,     # spatial_pos_max: max distance of multi-hop edges 大于该值认为这两个节点没有关系，空间编码降为0
         )
 
-    def get_dataloader(self, batch_size, shuffle=True, num_workers=0):
+    def get_dataloader(self, batch_size, shuffle=True, num_workers=0, seed_purpose=None):
+        purpose = seed_purpose or "{}_loader".format(self.split)
         loader_args = dict(
             dataset=self,
             batch_size=batch_size,
@@ -138,7 +293,9 @@ class CADSynth(Dataset):
             num_workers=num_workers,
             drop_last=(self.split == "train"),
             pin_memory=True,
-            persistent_workers=False
+            persistent_workers=False,
+            generator=make_torch_generator(self.seed, purpose),
+            worker_init_fn=seed_worker,
         )
         if num_workers > 0:
             loader_args["prefetch_factor"] = 2
@@ -182,7 +339,7 @@ class TransferDataset(Dataset):
         print(f"Loading source data...")
         with open(str(source_dir / f"{filelist_s}"), "r") as f:
             s_file_list = [x.strip() for x in f.readlines()]
-        for x in tqdm(source_dir.rglob(f"*[0-9].bin")):
+        for x in tqdm(source_dir.rglob("*.bin")):
             if x.stem in s_file_list:
                 if (self.open_set):
                     bin_file = load_graphs(str(x))
@@ -195,7 +352,7 @@ class TransferDataset(Dataset):
         print(f"Loading target data...")
         with open(str(target_dir / f"{filelist_t}"), "r") as f:
             t_file_list = [x.strip() for x in f.readlines()]
-        for x in tqdm(target_dir.rglob(f"*[0-9].bin")):
+        for x in tqdm(target_dir.rglob("*.bin")):
             if x.stem in t_file_list:
                 if (self.open_set):
                     bin_file = load_graphs(str(x))
@@ -243,9 +400,7 @@ class TransferDataset(Dataset):
         pyg_graph.d2_distance = graphfile[1]["d2_distance"]  # d2_distance[num_nodes, num_nodes, 64]
         pyg_graph.angle_distance = graphfile[1]["angle_distance"]  # angle_distance[num_nodes, num_nodes, 64]
 
-        _, file_extension = os.path.splitext(file_path)
-        basename = os.path.basename(file_path).replace(file_extension, "")
-        pyg_graph.data_id = int(basename.split("_")[-1])
+        pyg_graph.data_id = pathlib.Path(file_path).stem
 
         return pyg_graph
 

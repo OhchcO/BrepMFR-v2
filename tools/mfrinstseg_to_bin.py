@@ -16,7 +16,7 @@ import json
 import math
 import sys
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -25,6 +25,13 @@ import numpy as np
 import torch
 from dgl.data.utils import load_graphs, save_graphs
 from tqdm import tqdm
+
+from tools.geometry_features import (
+    GeometryFeatureBatch,
+    PointSamplingConfig,
+    extract_geometry_features,
+)
+from utils.reproducibility import DEFAULT_SEED
 
 
 FACE_TYPE = {
@@ -48,8 +55,14 @@ REQUIRED_METADATA_KEYS = {
     "spatial_pos",
     "d2_distance",
     "angle_distance",
-    "instance",
 }
+POINTCLOUD_NODE_KEYS = {"face_points", "face_point_mask", "face_point_count"}
+POINTCLOUD_METADATA_KEYS = {
+    "point_sampling_mode",
+    "point_sampling_config",
+    "point_candidate_grid",
+}
+CYLINDRICAL_NODE_KEYS = {"cylindrical_pos"}
 GRID_SIZE = 5
 FEATURE_CHANNELS = 7
 MAX_HOPS = 6
@@ -119,6 +132,41 @@ class ConversionPaths:
     def bin_file(self, sample_id: str) -> Path:
         validate_sample_id(sample_id)
         return self.bins_root / (sample_id + ".bin")
+
+
+@dataclass(frozen=True)
+class BinRequirements:
+    """Optional fields that a caller requires from a BIN."""
+
+    require_instance: bool = True
+    require_pointcloud: bool = False
+    require_cylindrical: bool = False
+
+
+@dataclass(frozen=True)
+class ConversionOptions:
+    """Reproducible geometry switches shared by CLI and automatic preparation."""
+
+    seed: int = DEFAULT_SEED
+    point_sampling: PointSamplingConfig = field(default_factory=PointSamplingConfig)
+    include_face_pointcloud: bool = False
+    include_cylindrical_pos: bool = False
+
+    def __post_init__(self) -> None:
+        if isinstance(self.seed, bool):
+            raise ValueError("seed must be an integer")
+        object.__setattr__(self, "seed", int(self.seed))
+        if not isinstance(self.point_sampling, PointSamplingConfig):
+            raise TypeError("point_sampling must be a PointSamplingConfig")
+
+
+@dataclass(frozen=True)
+class ConversionReport:
+    """Per-split successes, structured failures, and aggregate counts."""
+
+    successful_ids: Mapping[str, Sequence[str]]
+    failed_ids: Sequence[Mapping[str, object]]
+    conversion: Mapping[str, object]
 
 
 def validate_sample_id(sample_id: str) -> None:
@@ -513,20 +561,106 @@ def shortest_path_metadata(graph, node_grid: np.ndarray) -> Dict[str, torch.Tens
     }
 
 
-def validate_bin(path: Path, expected_nodes: int) -> None:
-    """Reload one BIN and validate its exact owned field contract."""
+def geometry_metadata(config: PointSamplingConfig) -> Dict[str, torch.Tensor]:
+    """Serialize the point-sampling request into exact BIN metadata tensors."""
+    return {
+        "point_sampling_mode": torch.tensor(
+            [0 if config.mode == "fixed" else 1], dtype=torch.int8
+        ),
+        "point_sampling_config": torch.tensor(
+            [
+                config.fixed_count,
+                config.min_count,
+                config.max_count,
+                config.area_exponent,
+            ],
+            dtype=torch.float32,
+        ),
+        "point_candidate_grid": torch.tensor(
+            [config.candidate_grids[0]], dtype=torch.int32
+        ),
+    }
+
+
+def _geometry_batch_arrays(
+    batch: GeometryFeatureBatch, node_count: int
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    points = np.asarray(batch.face_points)
+    mask = np.asarray(batch.face_point_mask)
+    counts = np.asarray(batch.face_point_count)
+    cylindrical = np.asarray(batch.cylindrical_pos)
+    expected_shapes = (
+        (node_count, 96, 6),
+        (node_count, 96),
+        (node_count,),
+        (node_count, 4),
+    )
+    actual_shapes = (
+        tuple(points.shape),
+        tuple(mask.shape),
+        tuple(counts.shape),
+        tuple(cylindrical.shape),
+    )
+    if actual_shapes != expected_shapes:
+        raise ValueError(
+            "GeometryFeatureBatch shapes differ from the contract: {0}".format(
+                actual_shapes
+            )
+        )
+    if not np.isfinite(points).all() or not np.isfinite(cylindrical).all():
+        raise ValueError("GeometryFeatureBatch contains non-finite values")
+    return points, mask, counts, cylindrical
+
+
+def attach_geometry_features(
+    graph, batch: GeometryFeatureBatch, options: ConversionOptions
+) -> None:
+    """Attach requested geometry node tensors in complete face order."""
+    points, mask, counts, cylindrical = _geometry_batch_arrays(
+        batch, graph.num_nodes()
+    )
+    if options.include_face_pointcloud:
+        graph.ndata["face_points"] = torch.from_numpy(points).to(torch.float32)
+        graph.ndata["face_point_mask"] = torch.from_numpy(mask).to(torch.bool)
+        graph.ndata["face_point_count"] = torch.from_numpy(counts).to(torch.int32)
+    if options.include_cylindrical_pos:
+        graph.ndata["cylindrical_pos"] = torch.from_numpy(cylindrical).to(
+            torch.float32
+        )
+
+
+def _require_fields(actual: Iterable[str], required: set, owner: str) -> None:
+    missing = sorted(required.difference(actual))
+    if missing:
+        raise ValueError(
+            "BIN {0} is missing required fields: {1}".format(owner, ", ".join(missing))
+        )
+
+
+def validate_bin(
+    path: Path,
+    expected_nodes: Optional[int] = None,
+    requirements: BinRequirements = BinRequirements(),
+    point_sampling: PointSamplingConfig = PointSamplingConfig(),
+) -> None:
+    """Reload one BIN and validate required core and optional feature contracts."""
     graphs, metadata = load_graphs(str(path))
     if len(graphs) != 1:
         raise ValueError("BIN must contain exactly one graph: {0}".format(path))
     graph = graphs[0]
-    if graph.num_nodes() != expected_nodes:
+    if expected_nodes is not None and graph.num_nodes() != expected_nodes:
         raise ValueError("BIN node count differs from label count: {0}".format(path))
-    if set(graph.ndata) != REQUIRED_NODE_KEYS:
-        raise ValueError("BIN node fields differ from the contract: {0}".format(path))
-    if set(graph.edata) != REQUIRED_EDGE_KEYS:
-        raise ValueError("BIN edge fields differ from the contract: {0}".format(path))
-    if set(metadata) != REQUIRED_METADATA_KEYS:
-        raise ValueError("BIN metadata fields differ from the contract: {0}".format(path))
+    _require_fields(set(graph.ndata), REQUIRED_NODE_KEYS, "node data")
+    _require_fields(set(graph.edata), REQUIRED_EDGE_KEYS, "edge data")
+    _require_fields(set(metadata), REQUIRED_METADATA_KEYS, "metadata")
+    if requirements.require_instance:
+        _require_fields(set(metadata), {"instance"}, "metadata")
+    if requirements.require_pointcloud:
+        _require_fields(set(graph.ndata), POINTCLOUD_NODE_KEYS, "node data")
+        _require_fields(set(metadata), POINTCLOUD_METADATA_KEYS, "metadata")
+    if requirements.require_cylindrical:
+        _require_fields(set(graph.ndata), CYLINDRICAL_NODE_KEYS, "node data")
+
     count, edge_count = graph.num_nodes(), graph.num_edges()
     shapes = {
         "node_x": tuple(graph.ndata["x"].shape),
@@ -544,7 +678,6 @@ def validate_bin(path: Path, expected_nodes: int) -> None:
         "edges_path": tuple(metadata["edges_path"].shape),
         "d2_distance": tuple(metadata["d2_distance"].shape),
         "angle_distance": tuple(metadata["angle_distance"].shape),
-        "instance": tuple(metadata["instance"].shape),
     }
     expected = {
         "node_x": (count, GRID_SIZE, GRID_SIZE, FEATURE_CHANNELS),
@@ -562,7 +695,6 @@ def validate_bin(path: Path, expected_nodes: int) -> None:
         "edges_path": (count, count, MAX_HOPS),
         "d2_distance": (count, count, RBF_BINS),
         "angle_distance": (count, count, RBF_BINS),
-        "instance": (count, count),
     }
     if shapes != expected:
         raise ValueError("BIN shapes differ from the contract: {0}".format(shapes))
@@ -582,7 +714,6 @@ def validate_bin(path: Path, expected_nodes: int) -> None:
         "edges_path": torch.int64,
         "d2_distance": torch.float32,
         "angle_distance": torch.float32,
-        "instance": torch.int8,
     }
     actual_tensors = {
         "node_x": graph.ndata["x"],
@@ -600,13 +731,100 @@ def validate_bin(path: Path, expected_nodes: int) -> None:
         "edges_path": metadata["edges_path"],
         "d2_distance": metadata["d2_distance"],
         "angle_distance": metadata["angle_distance"],
-        "instance": metadata["instance"],
     }
+    if requirements.require_instance:
+        if tuple(metadata["instance"].shape) != (count, count):
+            raise ValueError("BIN instance shape differs from the contract")
+        expected_dtypes["instance"] = torch.int8
+        actual_tensors["instance"] = metadata["instance"]
+
     for key, tensor in actual_tensors.items():
         if tensor.dtype != expected_dtypes[key]:
             raise ValueError("BIN dtype for {0} is invalid".format(key))
-        if tensor.is_floating_point() and not torch.isfinite(tensor).all():
+        if tensor.is_floating_point() and not bool(torch.isfinite(tensor).all()):
             raise ValueError("BIN contains non-finite values in {0}".format(key))
+
+    if requirements.require_pointcloud:
+        point_tensors = {
+            "face_points": graph.ndata["face_points"],
+            "face_point_mask": graph.ndata["face_point_mask"],
+            "face_point_count": graph.ndata["face_point_count"],
+            "point_sampling_mode": metadata["point_sampling_mode"],
+            "point_sampling_config": metadata["point_sampling_config"],
+            "point_candidate_grid": metadata["point_candidate_grid"],
+        }
+        point_shapes = {
+            key: tuple(tensor.shape) for key, tensor in point_tensors.items()
+        }
+        expected_point_shapes = {
+            "face_points": (count, 96, 6),
+            "face_point_mask": (count, 96),
+            "face_point_count": (count,),
+            "point_sampling_mode": (1,),
+            "point_sampling_config": (4,),
+            "point_candidate_grid": (1,),
+        }
+        if point_shapes != expected_point_shapes:
+            raise ValueError(
+                "BIN point-cloud shapes differ from the contract: {0}".format(
+                    point_shapes
+                )
+            )
+        expected_point_dtypes = {
+            "face_points": torch.float32,
+            "face_point_mask": torch.bool,
+            "face_point_count": torch.int32,
+            "point_sampling_mode": torch.int8,
+            "point_sampling_config": torch.float32,
+            "point_candidate_grid": torch.int32,
+        }
+        for key, tensor in point_tensors.items():
+            if tensor.dtype != expected_point_dtypes[key]:
+                raise ValueError("BIN dtype for {0} is invalid".format(key))
+            if tensor.is_floating_point() and not bool(torch.isfinite(tensor).all()):
+                raise ValueError("BIN contains non-finite values in {0}".format(key))
+
+        counts = graph.ndata["face_point_count"].to(torch.int64)
+        mask = graph.ndata["face_point_mask"]
+        if not bool(((counts >= 1) & (counts <= 96)).all()):
+            raise ValueError("BIN face_point_count values must be in [1, 96]")
+        expected_mask = (
+            torch.arange(96, device=counts.device)[None, :] < counts[:, None]
+        )
+        if not torch.equal(mask, expected_mask):
+            raise ValueError("BIN face_point_mask and face_point_count are inconsistent")
+        if not bool(graph.ndata["face_points"][~mask].eq(0).all()):
+            raise ValueError("BIN padded face_points must be zero")
+        if point_sampling.mode == "fixed":
+            if not bool((counts == point_sampling.fixed_count).all()):
+                raise ValueError("BIN fixed face_point_count values are invalid")
+        elif not bool(
+            (
+                (counts >= point_sampling.min_count)
+                & (counts <= point_sampling.max_count)
+                & (counts.remainder(8) == 0)
+            ).all()
+        ):
+            raise ValueError(
+                "BIN adaptive face_point_count values must be in range and a multiple of 8"
+            )
+
+        requested_metadata = geometry_metadata(point_sampling)
+        for key, expected_tensor in requested_metadata.items():
+            actual = metadata[key]
+            if not torch.equal(actual.cpu(), expected_tensor):
+                raise ValueError(
+                    "BIN {0} does not match the requested point sampling".format(key)
+                )
+
+    if requirements.require_cylindrical:
+        cylindrical = graph.ndata["cylindrical_pos"]
+        if tuple(cylindrical.shape) != (count, 4):
+            raise ValueError("BIN cylindrical_pos shape differs from the contract")
+        if cylindrical.dtype != torch.float32:
+            raise ValueError("BIN dtype for cylindrical_pos is invalid")
+        if not bool(torch.isfinite(cylindrical).all()):
+            raise ValueError("BIN contains non-finite values in cylindrical_pos")
 
 
 def convert_one(
@@ -615,6 +833,7 @@ def convert_one(
     extractor_class: object,
     topology_utils: object,
     schema: dict,
+    options: ConversionOptions,
     overwrite: bool,
 ) -> str:
     """Convert safely, skipping only a valid existing BIN unless overwritten."""
@@ -622,8 +841,24 @@ def convert_one(
     label = load_label(paths.label_file(sample_id))
     target = paths.bin_file(sample_id)
     temporary = target.with_suffix(target.suffix + ".tmp")
+    requirements = BinRequirements(
+        require_instance=True,
+        require_pointcloud=options.include_face_pointcloud,
+        require_cylindrical=options.include_cylindrical_pos,
+    )
     if target.exists() and not overwrite:
-        validate_bin(target, len(label.semantic))
+        try:
+            validate_bin(
+                target,
+                len(label.semantic),
+                requirements=requirements,
+                point_sampling=options.point_sampling,
+            )
+        except ValueError as error:
+            raise ValueError(
+                "Existing BIN is incompatible with the requested features; "
+                "choose a new output directory or use --overwrite: {0}".format(target)
+            ) from error
         return "skipped"
     step_file = paths.step_file(sample_id)
     if not step_file.is_file():
@@ -635,8 +870,23 @@ def convert_one(
         graph = build_graph(extraction, label, schema, topology_utils)
         metadata = shortest_path_metadata(graph, graph.ndata["x"].cpu().numpy())
         metadata["instance"] = torch.from_numpy(label.instance).to(torch.int8)
+        if options.include_face_pointcloud or options.include_cylindrical_pos:
+            geometry = extract_geometry_features(
+                extraction,
+                options.point_sampling,
+                options.seed,
+                sample_id,
+            )
+            attach_geometry_features(graph, geometry, options)
+        if options.include_face_pointcloud:
+            metadata.update(geometry_metadata(options.point_sampling))
         save_graphs(str(temporary), [graph], metadata)
-        validate_bin(temporary, len(label.semantic))
+        validate_bin(
+            temporary,
+            len(label.semantic),
+            requirements=requirements,
+            point_sampling=options.point_sampling,
+        )
         temporary.replace(target)
         return "converted"
     finally:
@@ -695,6 +945,92 @@ def _global_failure(error: Exception) -> dict:
     }
 
 
+def convert_selected_samples(
+    sample_ids_by_split: Mapping[str, Sequence[str]],
+    paths: ConversionPaths,
+    extractor_file: Path,
+    schema_file: Path,
+    options: ConversionOptions,
+    overwrite: bool,
+) -> ConversionReport:
+    """Convert explicit split selections through the shared atomic BIN path."""
+    if not isinstance(sample_ids_by_split, Mapping) or not sample_ids_by_split:
+        raise ValueError("sample_ids_by_split must be a non-empty mapping")
+    unknown_splits = sorted(set(sample_ids_by_split).difference(("train", "val", "test")))
+    if unknown_splits:
+        raise ValueError("Unsupported split names: {0}".format(unknown_splits))
+
+    normalized: Dict[str, Tuple[str, ...]] = {}
+    all_ids: List[str] = []
+    for split, sample_ids in sample_ids_by_split.items():
+        current = tuple(sample_ids)
+        for sample_id in current:
+            validate_sample_id(sample_id)
+        if len(set(current)) != len(current):
+            raise ValueError("Split {0} contains duplicate sample IDs".format(split))
+        normalized[split] = current
+        all_ids.extend(current)
+    if len(set(all_ids)) != len(all_ids):
+        raise ValueError("Selected splits must be model-level disjoint")
+
+    schema = load_schema(Path(schema_file))
+    extractor_class, topology_utils = load_extractor(Path(extractor_file))
+    paths.output_root.mkdir(parents=True, exist_ok=True)
+    successful_ids: Dict[str, List[str]] = {}
+    failures: List[dict] = []
+    converted = 0
+    skipped = 0
+
+    for split, sample_ids in normalized.items():
+        successful: List[str] = []
+        progress = tqdm(sample_ids, desc="[{0}]".format(split), unit="model")
+        for sample_id in progress:
+            progress.set_postfix_str(sample_id, refresh=False)
+            try:
+                outcome = convert_one(
+                    sample_id,
+                    paths,
+                    extractor_class,
+                    topology_utils,
+                    schema,
+                    options,
+                    overwrite,
+                )
+                converted += int(outcome == "converted")
+                skipped += int(outcome == "skipped")
+                successful.append(sample_id)
+            except Exception as error:
+                failures.append(
+                    {
+                        "split": split,
+                        "sample_id": sample_id,
+                        "exception_type": type(error).__name__,
+                        "message": str(error),
+                    }
+                )
+        successful_ids[split] = successful
+        _atomic_write_text(
+            paths.output_root / (split + ".txt"),
+            "\n".join(successful) + ("\n" if successful else ""),
+        )
+
+    _write_failures(paths.output_root, failures)
+    return ConversionReport(
+        successful_ids=successful_ids,
+        failed_ids=failures,
+        conversion={
+            "selected": len(all_ids),
+            "converted": converted,
+            "skipped": skipped,
+            "failed": len(failures),
+            "base_seed": options.seed,
+            "point_sampling_mode": options.point_sampling.mode,
+            "include_face_pointcloud": options.include_face_pointcloud,
+            "include_cylindrical_pos": options.include_cylindrical_pos,
+        },
+    )
+
+
 def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     """Parse the sampled-subset conversion CLI."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -723,6 +1059,24 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument("--include-face-pointcloud", action="store_true")
+    parser.add_argument("--include-cylindrical-pos", action="store_true")
+    parser.add_argument(
+        "--point-sampling-mode",
+        choices=("fixed", "area_adaptive"),
+        default="area_adaptive",
+    )
+    parser.add_argument("--fixed-point-count", type=int, default=64)
+    parser.add_argument("--min-point-count", type=int, default=32)
+    parser.add_argument("--max-point-count", type=int, default=96)
+    parser.add_argument("--area-sampling-exponent", type=float, default=0.5)
+    parser.add_argument(
+        "--candidate-grids",
+        type=int,
+        nargs="+",
+        default=[20, 32, 48, 64, 80],
+    )
     return parser.parse_args(argv)
 
 
@@ -735,61 +1089,42 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     except ValueError as error:
         print("Error: {0}".format(error), file=sys.stderr)
         return 2
-    failures: List[dict] = []
+
     try:
         if args.limit is not None and args.limit < 1:
             raise ValueError("--limit must be positive")
-        schema = load_schema(args.schema_file)
-        extractor_class, topology_utils = load_extractor(args.extractor_file)
-    except Exception as error:
-        failures.append(_global_failure(error))
-        try:
-            _write_failures(paths.output_root, failures)
-        except OSError as report_error:
-            print("Error writing failure report: {0}".format(report_error), file=sys.stderr)
-        print("Error: {0}".format(error), file=sys.stderr)
-        return 2
-    try:
-        paths.output_root.mkdir(parents=True, exist_ok=True)
         splits = ("train", "val") if args.split == "all" else (args.split,)
+        selected_ids: Dict[str, Sequence[str]] = {}
         for split in splits:
             sample_ids = _read_ids(paths.subset_root / (split + ".txt"))
             if args.limit is not None:
                 sample_ids = sample_ids[: args.limit]
-            successful = []
-            pbar = tqdm(sample_ids, desc="[{0}]".format(split), unit="model")
-            for sample_id in pbar:
-                pbar.set_postfix_str(sample_id, refresh=False)
-                try:
-                    convert_one(
-                        sample_id, paths, extractor_class, topology_utils, schema, args.overwrite
-                    )
-                    successful.append(sample_id)
-                except Exception as error:
-                    try:
-                        validate_sample_id(sample_id)
-                        temporary = paths.bin_file(sample_id).with_suffix(".bin.tmp")
-                        if temporary.exists():
-                            temporary.unlink()
-                    except (OSError, ValueError):
-                        # Never let cleanup obscure the original per-model failure.
-                        pass
-                    failures.append(
-                        {
-                            "split": split,
-                            "sample_id": sample_id,
-                            "exception_type": type(error).__name__,
-                            "message": str(error),
-                        }
-                    )
-            _atomic_write_text(
-                paths.output_root / (split + ".txt"),
-                "\n".join(successful) + ("\n" if successful else ""),
-            )
-        _write_failures(paths.output_root, failures)
-        return 1 if failures else 0
-    except (FileNotFoundError, ImportError, OSError, ValueError) as error:
-        failures.append(_global_failure(error))
+            selected_ids[split] = sample_ids
+        point_sampling = PointSamplingConfig(
+            mode=args.point_sampling_mode,
+            fixed_count=args.fixed_point_count,
+            min_count=args.min_point_count,
+            max_count=args.max_point_count,
+            area_exponent=args.area_sampling_exponent,
+            candidate_grids=tuple(args.candidate_grids),
+        )
+        options = ConversionOptions(
+            seed=args.seed,
+            point_sampling=point_sampling,
+            include_face_pointcloud=args.include_face_pointcloud,
+            include_cylindrical_pos=args.include_cylindrical_pos,
+        )
+        report = convert_selected_samples(
+            selected_ids,
+            paths,
+            args.extractor_file,
+            args.schema_file,
+            options,
+            args.overwrite,
+        )
+        return 1 if report.failed_ids else 0
+    except Exception as error:
+        failures = [_global_failure(error)]
         try:
             _write_failures(paths.output_root, failures)
         except OSError as report_error:

@@ -1,0 +1,285 @@
+# 使用说明
+# 1. 每次只复制一个实验标题下面的完整代码块到 PowerShell。
+# 2. 每组固定使用 1% 数据、随机种子 2026、100 轮、BatchSize 16。
+# 3. 训练结束后会自动寻找该实验最新的 best-*.ckpt，然后运行完整 test.txt。
+# 4. 所有实验共用已有 BIN 缓存，不要添加 -RebuildPreparedData。
+# 5. oracle 使用 GT 实例信息，只表示理论性能上界，不能作为正常推理结果。
+
+
+# ============================================================
+# 1. baseline：纯基线（已完成，可按需重新运行）
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode baseline `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_baseline_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for baseline"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 2. dynamic_no_loss：动态实例偏置，不使用实例亲和损失
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode dynamic_no_loss `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_dynamic_no_loss_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for dynamic_no_loss"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 3. affinity_only：仅使用实例亲和损失，不向注意力加入实例偏置
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode affinity_only `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_affinity_only_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for affinity_only"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 4. instance：动态实例偏置 + 实例亲和损失
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode instance `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_instance_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for instance"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 5. oracle：GT 实例偏置理论上界
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode oracle `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_oracle_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for oracle"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 6. cyl：仅柱坐标编码
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode cyl `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_cyl_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for cyl"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 7. point：仅面点云编码
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode point `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_point_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for point"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 8. spe_pcaag：柱坐标 + 面点云编码
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode spe_pcaag `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_spe_pcaag_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for spe_pcaag"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 9. full：SPE-PCAAG + 动态实例偏置 + 实例亲和损失
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode full `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_full_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for full"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0

@@ -25,7 +25,7 @@
 
 ## TXT 启动文件
 
-创建 `tools/mfrinstseg_experiment_commands.txt`，包含：
+直接维护用户指定的 `tools/实验.txt`，包含：
 
 1. 推荐实验顺序。
 2. 单组训练通用 PowerShell 模板。
@@ -33,7 +33,7 @@
 4. 单组测试通用 PowerShell 模板。
 5. 已完成 baseline 的现有权重测试示例。
 
-模板不自动连续运行多组实验。每次由用户设置一个 `$Mode`，复制训练块；训练完成后再复制测试块。所有组固定使用同一数据路径、`SamplePercent=0.01`、`Seed=2026`、`NumWorkers=0` 和 `MaxEpochs=100`。
+文件为每个 Mode 提供一段相互独立、可直接复制的代码。每次只复制一个实验块；该块先训练，随后自动查找本组最新的最优权重并运行测试。所有组固定使用同一数据路径、`SamplePercent=0.01`、`Seed=2026`、`NumWorkers=0` 和 `MaxEpochs=100`。
 
 ## 数据与结果约束
 
@@ -48,4 +48,3 @@
 - 扩展别名映射单元测试，验证 `dynamic_no_loss` 和 `oracle` 的实际开关。
 - 检查 PowerShell 的 Mode 白名单包含新增值。
 - 对 TXT 中的 PowerShell 片段做语法解析检查，但不执行训练。
-

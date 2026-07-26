@@ -77,7 +77,7 @@ git commit -m "feat: expose missing instance-bias experiments"
 
 **Files:**
 - Create: `tests/test_experiment_commands.py`
-- Create: `tools/mfrinstseg_experiment_commands.txt`
+- Modify: `tools/实验.txt`
 
 **Interfaces:**
 - Consumes: one editable PowerShell variable `$Mode`
@@ -88,16 +88,17 @@ git commit -m "feat: expose missing instance-bias experiments"
 Create `tests/test_experiment_commands.py` to require:
 
 ```python
+import re
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-COMMAND_FILE = PROJECT_ROOT / "tools" / "mfrinstseg_experiment_commands.txt"
+COMMAND_FILE = PROJECT_ROOT / "tools" / "实验.txt"
 
 
-def test_command_file_covers_every_formal_experiment():
+def test_experiment_file_has_one_copyable_train_and_test_block_per_mode():
     text = COMMAND_FILE.read_text(encoding="utf-8")
-    for mode in (
+    expected_modes = [
         "baseline",
         "dynamic_no_loss",
         "affinity_only",
@@ -107,20 +108,13 @@ def test_command_file_covers_every_formal_experiment():
         "point",
         "spe_pcaag",
         "full",
-    ):
-        assert mode in text
+    ]
+    actual_modes = re.findall(r"(?m)^\s+-Mode ([a-z_]+) `?$", text)
 
-
-def test_command_file_uses_one_mode_and_latest_best_checkpoint():
-    text = COMMAND_FILE.read_text(encoding="utf-8")
-    assert '$Mode = "dynamic_no_loss"' in text
-    assert "run_mfrinstseg_experiments.ps1" in text
-    assert "-Mode $Mode" in text
-    assert 'MFRInstSeg_1pct_${Mode}_seed2026' in text
-    assert 'Get-ChildItem' in text
-    assert 'best-*.ckpt' in text
-    assert "run_mfrinstseg_test.ps1" in text
-    assert "-Checkpoint $Checkpoint" in text
+    assert actual_modes == expected_modes
+    assert text.count("run_mfrinstseg_test.ps1") == len(expected_modes)
+    assert text.count("Get-ChildItem -LiteralPath") == len(expected_modes)
+    assert "最优best模型的完整路径" not in text
 ```
 
 - [ ] **Step 2: Run the new test and verify RED**
@@ -131,29 +125,29 @@ Run:
 python -m pytest tests/test_experiment_commands.py -v
 ```
 
-Expected: failure because `tools/mfrinstseg_experiment_commands.txt` does not exist.
+Expected: failure because the existing `tools/实验.txt` covers only part of the experiment matrix.
 
 - [ ] **Step 3: Write the TXT command template**
 
-Create a UTF-8 TXT containing:
+Update the user-specified UTF-8 TXT with:
 
 - the recommended mode sequence;
-- `$Mode = "dynamic_no_loss"` as the only experiment selector;
-- the existing training launcher with the fixed shared paths and parameters;
-- checkpoint lookup beneath `results\MFRInstSeg_1pct_${Mode}_seed2026`;
+- one self-contained copyable block per experiment Mode;
+- the existing training launcher with the fixed shared paths and parameters in every block;
+- checkpoint lookup beneath the corresponding `results\MFRInstSeg_1pct_<mode>_seed2026`;
 - a guard that throws if no `best-*.ckpt` exists;
 - the existing test launcher using `$Checkpoint`;
 - a note that Oracle is a GT-only upper bound.
 
-The lookup must use:
+Each block's lookup follows this form with its literal Mode:
 
 ```powershell
-$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_${Mode}_seed2026"
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_dynamic_no_loss_seed2026"
 $Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" |
   Sort-Object LastWriteTime -Descending |
   Select-Object -First 1 -ExpandProperty FullName
 if (-not $Checkpoint) {
-  throw "No best checkpoint found for mode: $Mode"
+  throw "No best checkpoint found for dynamic_no_loss"
 }
 ```
 
@@ -186,7 +180,6 @@ Run the alias configuration tests, command-file tests, Python compilation, `git 
 - [ ] **Step 6: Commit Task 2**
 
 ```powershell
-git add tools/mfrinstseg_experiment_commands.txt tests/test_experiment_commands.py
+git add tools/实验.txt tests/test_experiment_commands.py
 git commit -m "docs: add copy-ready MFRInstSeg experiment commands"
 ```
-

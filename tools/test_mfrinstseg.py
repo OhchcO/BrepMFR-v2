@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import sys
 import time
+from typing import Mapping
 
 import numpy as np
 import torch
@@ -19,6 +21,50 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from data.dataset import CADSynth
 from models.brepseg_model import BrepSeg
+
+
+@dataclass(frozen=True)
+class GeometryRequirements:
+    """Strict BIN fields selected by checkpoint-saved model switches."""
+
+    require_face_pointcloud: bool
+    require_cylindrical_pos: bool
+
+
+def _configuration_value(configuration, name, default):
+    if isinstance(configuration, Mapping):
+        return configuration.get(name, default)
+    return getattr(configuration, name, default)
+
+
+def geometry_requirements(hparams):
+    """Translate checkpoint hyperparameters into strict dataset requirements."""
+    return GeometryRequirements(
+        require_face_pointcloud=bool(
+            _configuration_value(hparams, "use_face_pointcloud", False)
+        ),
+        require_cylindrical_pos=bool(
+            _configuration_value(hparams, "use_cylindrical_pos", False)
+        ),
+    )
+
+
+def requires_instance_for_test(experiment_mode):
+    """Only oracle inference consumes ground-truth instance annotations."""
+    return experiment_mode == "oracle"
+
+
+def seed_everything(seed):
+    """Use the same project-wide deterministic seed setup as training."""
+    from utils.reproducibility import seed_everything as seed_project
+
+    seed_project(seed)
+
+
+def _model_configuration_value(model, name, default):
+    if hasattr(model, name):
+        return getattr(model, name)
+    return _configuration_value(getattr(model, "hparams", {}), name, default)
 
 
 def parse_args():
@@ -122,6 +168,16 @@ def write_results(output_dir, result):
         "checkpoint={}".format(result["checkpoint"]),
         "checkpoint_epoch={}".format(result["checkpoint_epoch"]),
         "experiment_mode={}".format(result["experiment_mode"]),
+        "seed={}".format(result["seed"]),
+        "prepared_dataset_path={}".format(result["prepared_dataset_path"]),
+        "use_face_pointcloud={}".format(result["use_face_pointcloud"]),
+        "use_cylindrical_pos={}".format(result["use_cylindrical_pos"]),
+        "pointcloud_scale={}".format(result["pointcloud_scale"]),
+        "cylindrical_scale={}".format(result["cylindrical_scale"]),
+        "require_instance={}".format(result["require_instance"]),
+        "batch_size={}".format(result["batch_size"]),
+        "num_workers={}".format(result["num_workers"]),
+        "device={}".format(result["device"]),
         "split={}".format(result["split"]),
         "samples={}".format(result["samples"]),
         "faces={}".format(result["faces"]),
@@ -171,29 +227,42 @@ def main():
     manifest = args.dataset_path / (args.split + ".txt")
     if not manifest.is_file():
         raise FileNotFoundError(
-            "BIN manifest not found: {}. Convert the official test split first.".format(
+            "Prepared BIN manifest not found: {}. Prepare the shared dataset cache first.".format(
                 manifest
             )
         )
 
-    torch.manual_seed(args.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(args.seed)
+    seed_everything(args.seed)
     device = select_device(args.device)
 
     checkpoint_document = torch.load(args.checkpoint, map_location="cpu")
-    checkpoint_epoch = int(checkpoint_document.get("epoch", -1)) + 1
+    checkpoint_epoch = (
+        int(checkpoint_document.get("epoch", -1)) + 1
+        if isinstance(checkpoint_document, Mapping)
+        else -1
+    )
     model = BrepSeg.load_from_checkpoint(
         str(args.checkpoint),
         map_location="cpu",
     )
-    mode = model.experiment_mode
+    mode = _model_configuration_value(model, "experiment_mode", "baseline")
+    requirements = geometry_requirements(model)
+    pointcloud_scale = float(
+        _model_configuration_value(model, "pointcloud_scale", 1.0)
+    )
+    cylindrical_scale = float(
+        _model_configuration_value(model, "cylindrical_scale", 1.0)
+    )
+    require_instance = requires_instance_for_test(mode)
     dataset = CADSynth(
         root_dir=args.dataset_path,
         split=args.split,
         random_rotate=False,
         num_class=args.num_classes,
-        require_instance=(mode == "oracle"),
+        require_instance=require_instance,
+        require_face_pointcloud=requirements.require_face_pointcloud,
+        require_cylindrical_pos=requirements.require_cylindrical_pos,
+        seed=args.seed,
     )
     if len(dataset) == 0:
         raise RuntimeError("No BIN files were loaded for split {}".format(args.split))
@@ -201,6 +270,7 @@ def main():
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
+        seed_purpose="test_loader",
     )
 
     model.to(device)
@@ -256,6 +326,16 @@ def main():
         "checkpoint": str(args.checkpoint.resolve()),
         "checkpoint_epoch": checkpoint_epoch,
         "experiment_mode": mode,
+        "seed": args.seed,
+        "prepared_dataset_path": str(args.dataset_path.resolve()),
+        "use_face_pointcloud": requirements.require_face_pointcloud,
+        "use_cylindrical_pos": requirements.require_cylindrical_pos,
+        "pointcloud_scale": pointcloud_scale,
+        "cylindrical_scale": cylindrical_scale,
+        "require_instance": require_instance,
+        "batch_size": args.batch_size,
+        "num_workers": args.num_workers,
+        "device": str(device),
         "split": args.split,
         "samples": len(dataset),
         "faces": face_count,

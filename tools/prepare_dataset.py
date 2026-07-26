@@ -8,6 +8,7 @@ after a new cache has been selected for conversion.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import math
@@ -592,3 +593,83 @@ def ensure_prepared_dataset(config: PreparationConfig) -> PreparedDataset:
     if failures:
         raise PreparationError("Prepared conversion failed; inspect conversion_failures.json")
     return _prepared_dataset(config.prepared_root, selected_ids, reused=False)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the standalone cache-preparation CLI used by launch scripts."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--raw-dataset", type=Path, required=True)
+    parser.add_argument("--prepared-dataset", type=Path, required=True)
+    parser.add_argument("--extractor-file", type=Path, required=True)
+    parser.add_argument("--schema-file", type=Path, required=True)
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument(
+        "--split-ratios",
+        type=float,
+        nargs=3,
+        default=[0.8, 0.1, 0.1],
+        metavar=("TRAIN", "VAL", "TEST"),
+    )
+    parser.add_argument("--sample-percent", type=float, default=0.01)
+    parser.add_argument(
+        "--point-sampling-mode",
+        choices=("fixed", "area_adaptive"),
+        default="area_adaptive",
+    )
+    parser.add_argument("--fixed-point-count", type=int, default=64)
+    parser.add_argument("--min-point-count", type=int, default=32)
+    parser.add_argument("--max-point-count", type=int, default=96)
+    parser.add_argument("--area-sampling-exponent", type=float, default=0.5)
+    parser.add_argument(
+        "--candidate-grids",
+        type=int,
+        nargs="+",
+        default=list(DEFAULT_CANDIDATE_GRIDS),
+    )
+    parser.add_argument("--rebuild", action="store_true")
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = build_parser().parse_args(argv)
+    prepared = ensure_prepared_dataset(
+        PreparationConfig(
+            raw_root=args.raw_dataset,
+            prepared_root=args.prepared_dataset,
+            extractor_file=args.extractor_file,
+            schema_file=args.schema_file,
+            seed=args.seed,
+            split_ratios=tuple(args.split_ratios),
+            sample_percent=args.sample_percent,
+            point_sampling_mode=args.point_sampling_mode,
+            fixed_point_count=args.fixed_point_count,
+            min_point_count=args.min_point_count,
+            max_point_count=args.max_point_count,
+            area_sampling_exponent=args.area_sampling_exponent,
+            candidate_grids=tuple(args.candidate_grids),
+            face_pointcloud=True,
+            cylindrical_pos=True,
+            rebuild=args.rebuild,
+        )
+    )
+    print(
+        json.dumps(
+            {
+                "prepared_dataset_path": str(prepared.root.resolve()),
+                "preparation_reuse_status": (
+                    "reused" if prepared.reused else "built"
+                ),
+                "selected_split_counts": {
+                    "train": len(prepared.train_ids),
+                    "val": len(prepared.val_ids),
+                    "test": len(prepared.test_ids),
+                },
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

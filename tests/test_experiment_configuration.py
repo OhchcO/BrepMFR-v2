@@ -1,4 +1,5 @@
 import importlib
+import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -57,6 +58,22 @@ def segmentation(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["pytest", "--unexpected-pytest-option"])
     sys.modules.pop("segmentation", None)
     return importlib.import_module("segmentation")
+
+
+@pytest.fixture
+def test_mfrinstseg(monkeypatch):
+    """Import the evaluator without loading dataset/model dependencies."""
+    monkeypatch.setitem(sys.modules, "torch", _module("torch"))
+    monkeypatch.setitem(
+        sys.modules, "data.dataset", _module("data.dataset", CADSynth=object)
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "models.brepseg_model",
+        _module("models.brepseg_model", BrepSeg=object),
+    )
+    sys.modules.pop("tools.test_mfrinstseg", None)
+    return importlib.import_module("tools.test_mfrinstseg")
 
 
 def test_importing_segmentation_does_not_parse_process_arguments(segmentation):
@@ -270,3 +287,62 @@ def test_main_orders_seed_preparation_components_then_trainer(
     assert all(options["require_face_pointcloud"] for options in dataset_options)
     assert all(options["require_cylindrical_pos"] for options in dataset_options)
     assert all(options["random_rotate"] is False for options in dataset_options)
+
+
+def test_test_dataset_requirements_come_from_checkpoint_hparams(test_mfrinstseg):
+    hparams = {"use_face_pointcloud": True, "use_cylindrical_pos": False}
+
+    requirements = test_mfrinstseg.geometry_requirements(hparams)
+
+    assert requirements.require_face_pointcloud is True
+    assert requirements.require_cylindrical_pos is False
+
+
+def test_dynamic_full_test_does_not_require_instance_labels(test_mfrinstseg):
+    assert test_mfrinstseg.requires_instance_for_test("dynamic_affinity") is False
+    assert test_mfrinstseg.requires_instance_for_test("oracle") is True
+
+
+def test_test_results_record_configuration_provenance(
+    test_mfrinstseg, tmp_path
+):
+    result = {
+        "checkpoint": "best.ckpt",
+        "checkpoint_epoch": 3,
+        "experiment_mode": "dynamic_affinity",
+        "split": "test",
+        "samples": 1,
+        "faces": 2,
+        "elapsed_seconds": 0.25,
+        "test_loss": 0.5,
+        "per_face_accuracy": 1.0,
+        "mean_iou": 1.0,
+        "macro_f1": 1.0,
+        "per_class": [],
+        "confusion_matrix": [[2]],
+        "seed": 2026,
+        "use_face_pointcloud": True,
+        "use_cylindrical_pos": True,
+        "pointcloud_scale": 1.0,
+        "cylindrical_scale": 1.0,
+        "prepared_dataset_path": "prepared",
+        "require_instance": False,
+        "batch_size": 1,
+        "num_workers": 0,
+        "device": "cpu",
+    }
+
+    log_path, json_path = test_mfrinstseg.write_results(tmp_path, result)
+
+    saved = json.loads(json_path.read_text(encoding="utf-8"))
+    log = log_path.read_text(encoding="utf-8")
+    assert saved["seed"] == 2026
+    for key in (
+        "seed",
+        "use_face_pointcloud",
+        "use_cylindrical_pos",
+        "pointcloud_scale",
+        "cylindrical_scale",
+        "prepared_dataset_path",
+    ):
+        assert "{}={}".format(key, result[key]) in log

@@ -84,28 +84,33 @@ def test_importing_segmentation_does_not_parse_process_arguments(segmentation):
 
 
 @pytest.mark.parametrize(
-    ("alias", "mode", "point", "cyl", "bias_scale"),
+    ("alias", "mode", "uv", "point", "cyl", "bias_scale"),
     [
-        ("baseline", "baseline", False, False, 1.0),
-        ("cyl", "baseline", False, True, 1.0),
-        ("cyl_affinity", "dynamic_affinity", False, True, 0.0),
-        ("point", "baseline", True, False, 1.0),
-        ("spe_pcaag", "baseline", True, True, 1.0),
-        ("dynamic_no_loss", "dynamic", False, False, 1.0),
-        ("instance", "dynamic_affinity", False, False, 1.0),
-        ("affinity_only", "dynamic_affinity", False, False, 0.0),
-        ("oracle", "oracle", False, False, 1.0),
-        ("full", "dynamic_affinity", True, True, 1.0),
+        ("baseline", "baseline", True, False, False, 1.0),
+        ("topo_aag", "baseline", False, False, False, 1.0),
+        ("uv_aag", "baseline", True, False, False, 1.0),
+        ("pc_aag", "baseline", False, True, False, 1.0),
+        ("uv_pc_aag", "baseline", True, True, False, 1.0),
+        ("cyl", "baseline", True, False, True, 1.0),
+        ("cyl_affinity", "dynamic_affinity", True, False, True, 0.0),
+        ("point", "baseline", True, True, False, 1.0),
+        ("spe_pcaag", "baseline", True, True, True, 1.0),
+        ("dynamic_no_loss", "dynamic", True, False, False, 1.0),
+        ("instance", "dynamic_affinity", True, False, False, 1.0),
+        ("affinity_only", "dynamic_affinity", True, False, False, 0.0),
+        ("oracle", "oracle", True, False, False, 1.0),
+        ("full", "dynamic_affinity", True, True, True, 1.0),
     ],
 )
-def test_alias_mapping(segmentation, alias, mode, point, cyl, bias_scale):
+def test_alias_mapping(segmentation, alias, mode, uv, point, cyl, bias_scale):
     switches = segmentation.resolve_experiment_alias(alias)
     assert (
         switches.experiment_mode,
+        switches.use_face_uv,
         switches.use_face_pointcloud,
         switches.use_cylindrical_pos,
         switches.instance_bias_scale,
-    ) == (mode, point, cyl, bias_scale)
+    ) == (mode, uv, point, cyl, bias_scale)
 
 
 def test_launcher_accepts_all_formal_experiment_modes():
@@ -134,6 +139,10 @@ $attribute.ValidValues | ConvertTo-Json -Compress
 
     assert accepted_modes == [
         "baseline",
+        "topo_aag",
+        "uv_aag",
+        "pc_aag",
+        "uv_pc_aag",
         "dynamic_no_loss",
         "affinity_only",
         "instance",
@@ -159,7 +168,11 @@ def test_parser_exposes_preparation_and_geometry_defaults(segmentation):
     assert args.candidate_grids == [20, 32, 48, 64, 80]
     assert args.pointcloud_scale == 1.0
     assert args.cylindrical_scale == 1.0
+    assert args.use_face_uv is True
     assert args.random_rotate is False
+
+    no_uv_args = segmentation.build_parser().parse_args(["train", "--no_face_uv"])
+    assert no_uv_args.use_face_uv is False
 
 
 def test_automatic_preparation_always_requests_full_geometry_contract(
@@ -334,17 +347,31 @@ def test_main_orders_seed_preparation_components_then_trainer(
 
 
 def test_test_dataset_requirements_come_from_checkpoint_hparams(test_mfrinstseg):
-    hparams = {"use_face_pointcloud": True, "use_cylindrical_pos": False}
+    hparams = {
+        "use_face_uv": False,
+        "use_face_pointcloud": True,
+        "use_cylindrical_pos": False,
+    }
 
     requirements = test_mfrinstseg.geometry_requirements(hparams)
 
+    assert requirements.use_face_uv is False
     assert requirements.require_face_pointcloud is True
     assert requirements.require_cylindrical_pos is False
+
+
+def test_old_checkpoint_defaults_to_uv_enabled(test_mfrinstseg):
+    requirements = test_mfrinstseg.geometry_requirements({})
+
+    assert requirements.use_face_uv is True
 
 
 def test_dynamic_full_test_does_not_require_instance_labels(test_mfrinstseg):
     assert test_mfrinstseg.requires_instance_for_test("dynamic_affinity") is False
     assert test_mfrinstseg.requires_instance_for_test("oracle") is True
+    assert test_mfrinstseg.supports_instance_evaluation("dynamic") is True
+    assert test_mfrinstseg.supports_instance_evaluation("dynamic_affinity") is True
+    assert test_mfrinstseg.supports_instance_evaluation("baseline") is False
 
 
 def test_test_results_record_configuration_provenance(
@@ -365,6 +392,7 @@ def test_test_results_record_configuration_provenance(
         "per_class": [],
         "confusion_matrix": [[2]],
         "seed": 2026,
+        "use_face_uv": False,
         "use_face_pointcloud": True,
         "use_cylindrical_pos": True,
         "pointcloud_scale": 1.0,
@@ -383,6 +411,7 @@ def test_test_results_record_configuration_provenance(
     assert saved["seed"] == 2026
     for key in (
         "seed",
+        "use_face_uv",
         "use_face_pointcloud",
         "use_cylindrical_pos",
         "pointcloud_scale",

@@ -1,0 +1,215 @@
+import numpy as np
+
+from tools.test_mfrinstseg import (
+    adjusted_rand_index,
+    cluster_instances,
+    clustering_metrics,
+    evaluate_instance_graph,
+    pairwise_counts,
+    pairwise_metrics,
+    summarize_instance_results,
+)
+
+
+def test_pairwise_metrics_exclude_background_and_use_upper_triangle_once():
+    target = np.array(
+        [
+            [0, 1, 0, 0],
+            [1, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+        ],
+        dtype=bool,
+    )
+    probability = np.array(
+        [
+            [0.0, 0.9, 0.8, 0.9],
+            [0.9, 0.0, 0.1, 0.9],
+            [0.8, 0.1, 0.0, 0.9],
+            [0.9, 0.9, 0.9, 0.0],
+        ]
+    )
+    semantic = np.array([1, 1, 2, 24])
+
+    counts = pairwise_counts(
+        probability,
+        target,
+        semantic != 24,
+        threshold=0.5,
+    )
+
+    assert counts == {"true_positive": 1, "false_positive": 1, "false_negative": 0}
+    assert pairwise_metrics(counts) == {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1": 2.0 / 3.0,
+    }
+
+
+def test_predicted_clustering_requires_topology_semantics_and_affinity():
+    probability = np.array(
+        [
+            [0.0, 0.9, 0.95, 0.0],
+            [0.9, 0.0, 0.9, 0.0],
+            [0.95, 0.9, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ]
+    )
+    adjacency = np.array(
+        [
+            [0, 1, 0, 0],
+            [1, 0, 1, 0],
+            [0, 1, 0, 0],
+            [0, 0, 0, 0],
+        ],
+        dtype=bool,
+    )
+    predicted_semantic = np.array([3, 3, 4, 24])
+
+    clusters = cluster_instances(
+        probability,
+        predicted_semantic,
+        threshold=0.5,
+        background_class_id=24,
+        adjacency=adjacency,
+    )
+
+    assert clusters.tolist() == [0, 0, 1, -1]
+
+
+def test_clustering_metrics_report_perfect_partition_and_instance_count():
+    target_affinity = np.array(
+        [
+            [0, 1, 0, 0],
+            [1, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+        ],
+        dtype=bool,
+    )
+    gt_semantic = np.array([3, 3, 4, 24])
+    predicted_clusters = np.array([0, 0, 1, -1])
+
+    result = clustering_metrics(
+        predicted_clusters,
+        target_affinity,
+        gt_semantic,
+        background_class_id=24,
+    )
+
+    assert result["pairwise"] == {
+        "true_positive": 1,
+        "false_positive": 0,
+        "false_negative": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+    }
+    assert result["adjusted_rand_index"] == 1.0
+    assert result["predicted_instance_count"] == 2
+    assert result["ground_truth_instance_count"] == 2
+    assert result["instance_count_absolute_error"] == 0
+
+
+def test_adjusted_rand_index_penalizes_merged_instances():
+    truth = np.array([0, 0, 1, 1])
+    predicted = np.array([0, 0, 0, 0])
+
+    assert adjusted_rand_index(truth, predicted) == 0.0
+
+
+def test_instance_graph_result_contains_feature_face_groups():
+    logits = np.array(
+        [
+            [0.0, 4.0, -4.0],
+            [4.0, 0.0, -4.0],
+            [-4.0, -4.0, 0.0],
+        ]
+    )
+    target = np.array(
+        [
+            [0, 1, 0],
+            [1, 0, 0],
+            [0, 0, 0],
+        ]
+    )
+    spatial_pos = np.array(
+        [
+            [0, 1, 2],
+            [1, 0, 1],
+            [2, 1, 0],
+        ]
+    )
+
+    result = evaluate_instance_graph(
+        sample_id="part-1",
+        affinity_logits=logits,
+        predicted_semantic=np.array([5, 5, 24]),
+        ground_truth_semantic=np.array([5, 5, 24]),
+        target_affinity=target,
+        spatial_pos=spatial_pos,
+        threshold=0.5,
+        background_class_id=24,
+    )
+
+    assert result["sample_id"] == "part-1"
+    assert result["instances"] == [
+        {
+            "instance_id": 0,
+            "semantic_class": 5,
+            "face_indices": [0, 1],
+        }
+    ]
+    assert result["raw_pairwise"]["f1"] == 1.0
+    assert result["clustering"]["adjusted_rand_index"] == 1.0
+
+
+def test_instance_summary_micro_averages_pairs_and_means_graph_metrics():
+    records = [
+        {
+            "raw_pairwise": {
+                "true_positive": 2,
+                "false_positive": 0,
+                "false_negative": 0,
+            },
+            "clustering": {
+                "pairwise": {
+                    "true_positive": 1,
+                    "false_positive": 0,
+                    "false_negative": 1,
+                },
+                "adjusted_rand_index": 0.5,
+                "predicted_instance_count": 3,
+                "ground_truth_instance_count": 2,
+                "instance_count_absolute_error": 1,
+            },
+        },
+        {
+            "raw_pairwise": {
+                "true_positive": 1,
+                "false_positive": 1,
+                "false_negative": 0,
+            },
+            "clustering": {
+                "pairwise": {
+                    "true_positive": 1,
+                    "false_positive": 1,
+                    "false_negative": 0,
+                },
+                "adjusted_rand_index": 1.0,
+                "predicted_instance_count": 1,
+                "ground_truth_instance_count": 1,
+                "instance_count_absolute_error": 0,
+            },
+        },
+    ]
+
+    summary = summarize_instance_results(records)
+
+    assert summary["raw_pairwise"]["true_positive"] == 3
+    assert summary["raw_pairwise"]["f1"] == 6.0 / 7.0
+    assert summary["clustering_pairwise"]["f1"] == 2.0 / 3.0
+    assert summary["mean_adjusted_rand_index"] == 0.75
+    assert summary["instance_count_mae"] == 0.5
+    assert summary["predicted_instance_count"] == 4
+    assert summary["ground_truth_instance_count"] == 3

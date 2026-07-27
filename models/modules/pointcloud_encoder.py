@@ -47,7 +47,7 @@ class PointCloudFaceEncoder(nn.Module):
 
         valid_counts = face_point_mask.sum(dim=1)
         if torch.any(valid_counts == 0):
-            raise ValueError("each face must contain at least one valid point")
+            raise ValueError("face_points contains a face with zero valid points")
 
         valid = face_point_mask.unsqueeze(-1)
         xyz = face_points[..., :3]

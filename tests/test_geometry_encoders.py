@@ -63,12 +63,14 @@ def make_graph_node_feature(
     use_cylindrical_pos=False,
     pointcloud_scale=1.0,
     cylindrical_scale=1.0,
+    use_face_uv=True,
 ):
     return GraphNodeFeature(
         num_heads=8,
         num_degree=128,
         hidden_dim=128,
         n_layers=1,
+        use_face_uv=use_face_uv,
         use_face_pointcloud=use_face_pointcloud,
         use_cylindrical_pos=use_cylindrical_pos,
         pointcloud_scale=pointcloud_scale,
@@ -131,6 +133,36 @@ def test_all_geometry_switches_off_preserve_original_parameter_names():
         or "cylindrical_encoder" in name
         for name, _ in baseline_encoder.named_parameters()
     )
+
+
+def test_disabling_uv_does_not_construct_or_consume_surface_encoder():
+    feature = make_graph_node_feature(use_face_uv=False)
+    inputs = graph_node_inputs()
+    changed_inputs = dict(inputs)
+    changed_inputs["x"] = torch.full_like(inputs["x"], float("nan"))
+
+    assert feature.surf_encoder is None
+    with torch.no_grad():
+        original = feature(
+            inputs["x"],
+            inputs["face_area"],
+            inputs["face_type"],
+            inputs["face_loop"],
+            inputs["face_degree"],
+            inputs["padding_mask"],
+        )
+        changed = feature(
+            changed_inputs["x"],
+            inputs["face_area"],
+            inputs["face_type"],
+            inputs["face_loop"],
+            inputs["face_degree"],
+            inputs["padding_mask"],
+        )
+
+    for original_output, changed_output in zip(original, changed):
+        assert original_output.shape[-1] == 128
+        assert torch.equal(original_output, changed_output)
 
 
 def test_optional_construction_preserves_downstream_rng_and_shared_weights():
@@ -335,6 +367,7 @@ def test_brepseg_saves_and_threads_geometry_hyperparameters():
         dropout=0.0,
         attention_dropout=0.0,
         act_dropout=0.0,
+        use_face_uv=False,
         use_face_pointcloud=True,
         use_cylindrical_pos=True,
         pointcloud_scale=0.25,
@@ -342,9 +375,52 @@ def test_brepseg_saves_and_threads_geometry_hyperparameters():
     )
     model = BrepSeg(args)
 
+    assert model.hparams["use_face_uv"] is False
     assert model.hparams["use_face_pointcloud"] is True
     assert model.hparams["use_cylindrical_pos"] is True
     assert model.hparams["pointcloud_scale"] == 0.25
     assert model.hparams["cylindrical_scale"] == 0.5
     assert model.brep_encoder.graph_node_feature.pointcloud_scale == 0.25
     assert model.brep_encoder.graph_node_feature.cylindrical_scale == 0.5
+    assert model.brep_encoder.graph_node_feature.surf_encoder is None
+
+
+def test_predict_with_affinity_returns_semantics_and_relation_logits():
+    args = SimpleNamespace(
+        num_classes=3,
+        n_layers_encode=1,
+        dim_node=128,
+        d_model=128,
+        n_heads=8,
+        dropout=0.0,
+        attention_dropout=0.0,
+        act_dropout=0.0,
+        experiment_mode="dynamic",
+    )
+    model = BrepSeg(args).eval()
+    expected_logits = torch.tensor(
+        [[[0.0, 2.0], [2.0, 0.0]]], dtype=torch.float32
+    )
+
+    class FakeEncoder(nn.Module):
+        def forward(
+            self,
+            batch,
+            last_state_only=True,
+            return_instance_logits=False,
+        ):
+            state = torch.randn(3, 1, 128)
+            graph = torch.randn(1, 128)
+            if return_instance_logits:
+                return [state], graph, expected_logits
+            return [state], graph
+
+    model.brep_encoder = FakeEncoder()
+    batch = {"padding_mask": torch.tensor([[False, False]])}
+
+    with torch.no_grad():
+        probabilities, logits = model.predict_with_affinity(batch)
+
+    assert probabilities.shape == (2, 3)
+    assert torch.allclose(probabilities.sum(dim=1), torch.ones(2))
+    assert logits is expected_logits

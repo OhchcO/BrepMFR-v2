@@ -27,6 +27,10 @@ ensure_prepared_dataset = None
 
 EXPERIMENT_ALIASES = (
     "baseline",
+    "topo_aag",
+    "uv_aag",
+    "pc_aag",
+    "uv_pc_aag",
     "dynamic_no_loss",
     "affinity_only",
     "instance",
@@ -42,26 +46,37 @@ EXPERIMENT_ALIASES = (
 @dataclass(frozen=True)
 class ExperimentSwitches:
     experiment_mode: str
+    use_face_uv: bool
     use_face_pointcloud: bool
     use_cylindrical_pos: bool
     instance_bias_scale: float
 
 
 _EXPERIMENT_SWITCHES = {
-    "baseline": ExperimentSwitches("baseline", False, False, 1.0),
-    "dynamic_no_loss": ExperimentSwitches("dynamic", False, False, 1.0),
+    "baseline": ExperimentSwitches("baseline", True, False, False, 1.0),
+    "topo_aag": ExperimentSwitches("baseline", False, False, False, 1.0),
+    "uv_aag": ExperimentSwitches("baseline", True, False, False, 1.0),
+    "pc_aag": ExperimentSwitches("baseline", False, True, False, 1.0),
+    "uv_pc_aag": ExperimentSwitches("baseline", True, True, False, 1.0),
+    "dynamic_no_loss": ExperimentSwitches(
+        "dynamic", True, False, False, 1.0
+    ),
     "affinity_only": ExperimentSwitches(
-        "dynamic_affinity", False, False, 0.0
+        "dynamic_affinity", True, False, False, 0.0
     ),
-    "instance": ExperimentSwitches("dynamic_affinity", False, False, 1.0),
-    "oracle": ExperimentSwitches("oracle", False, False, 1.0),
-    "cyl": ExperimentSwitches("baseline", False, True, 1.0),
+    "instance": ExperimentSwitches(
+        "dynamic_affinity", True, False, False, 1.0
+    ),
+    "oracle": ExperimentSwitches("oracle", True, False, False, 1.0),
+    "cyl": ExperimentSwitches("baseline", True, False, True, 1.0),
     "cyl_affinity": ExperimentSwitches(
-        "dynamic_affinity", False, True, 0.0
+        "dynamic_affinity", True, False, True, 0.0
     ),
-    "point": ExperimentSwitches("baseline", True, False, 1.0),
-    "spe_pcaag": ExperimentSwitches("baseline", True, True, 1.0),
-    "full": ExperimentSwitches("dynamic_affinity", True, True, 1.0),
+    "point": ExperimentSwitches("baseline", True, True, False, 1.0),
+    "spe_pcaag": ExperimentSwitches("baseline", True, True, True, 1.0),
+    "full": ExperimentSwitches(
+        "dynamic_affinity", True, True, True, 1.0
+    ),
 }
 
 
@@ -110,6 +125,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--extractor_file", type=Path)
     parser.add_argument("--schema_file", type=Path)
+    parser.add_argument(
+        "--use_face_uv",
+        dest="use_face_uv",
+        action="store_true",
+        help="Use the per-face UV grid encoder (enabled by default)",
+    )
+    parser.add_argument(
+        "--no_face_uv",
+        dest="use_face_uv",
+        action="store_false",
+        help="Disable the per-face UV grid encoder for Topo/PC-AAG ablations",
+    )
+    parser.set_defaults(use_face_uv=True)
     parser.add_argument("--use_face_pointcloud", action="store_true")
     parser.add_argument("--use_cylindrical_pos", action="store_true")
     parser.add_argument("--pointcloud_scale", type=float, default=1.0)
@@ -291,6 +319,7 @@ def _apply_alias(args: argparse.Namespace) -> None:
         return
     switches = resolve_experiment_alias(args.experiment_alias)
     args.experiment_mode = switches.experiment_mode
+    args.use_face_uv = switches.use_face_uv
     args.use_face_pointcloud = switches.use_face_pointcloud
     args.use_cylindrical_pos = switches.use_cylindrical_pos
     args.instance_bias_scale = switches.instance_bias_scale

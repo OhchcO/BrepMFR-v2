@@ -7,6 +7,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COMMAND_FILE = PROJECT_ROOT / "tools" / "实验.txt"
 EXPECTED_MODES = [
     "baseline",
+    "topo_aag",
+    "uv_aag",
+    "pc_aag",
+    "uv_pc_aag",
     "dynamic_no_loss",
     "affinity_only",
     "instance",

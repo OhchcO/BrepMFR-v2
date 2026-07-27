@@ -27,6 +27,7 @@ from models.brepseg_model import BrepSeg
 class GeometryRequirements:
     """Strict BIN fields selected by checkpoint-saved model switches."""
 
+    use_face_uv: bool
     require_face_pointcloud: bool
     require_cylindrical_pos: bool
 
@@ -40,6 +41,7 @@ def _configuration_value(configuration, name, default):
 def geometry_requirements(hparams):
     """Translate checkpoint hyperparameters into strict dataset requirements."""
     return GeometryRequirements(
+        use_face_uv=bool(_configuration_value(hparams, "use_face_uv", True)),
         require_face_pointcloud=bool(
             _configuration_value(hparams, "use_face_pointcloud", False)
         ),
@@ -52,6 +54,11 @@ def geometry_requirements(hparams):
 def requires_instance_for_test(experiment_mode):
     """Only oracle inference consumes ground-truth instance annotations."""
     return experiment_mode == "oracle"
+
+
+def supports_instance_evaluation(experiment_mode):
+    """Dynamic modes expose predicted affinity logits at inference."""
+    return experiment_mode in ("dynamic", "dynamic_affinity")
 
 
 def seed_everything(seed):
@@ -84,6 +91,13 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--num-classes", type=int, default=25)
+    parser.add_argument(
+        "--evaluate-instances",
+        action="store_true",
+        help="Evaluate dynamic affinity and topology-constrained instances",
+    )
+    parser.add_argument("--affinity-threshold", type=float, default=0.5)
+    parser.add_argument("--background-class-id", type=int, default=24)
     parser.add_argument(
         "--device",
         choices=("auto", "cuda", "cpu"),
@@ -153,6 +167,348 @@ def metrics_from_confusion(confusion):
     return support, class_accuracy, class_iou, class_f1
 
 
+def _validate_square_matrix(matrix, name):
+    matrix = np.asarray(matrix)
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        raise ValueError("{} must be a square matrix".format(name))
+    return matrix
+
+
+def pairwise_counts(predicted, target, valid_nodes, threshold=0.5):
+    """Count unordered valid face pairs for one graph."""
+    predicted = _validate_square_matrix(predicted, "predicted affinity")
+    target = _validate_square_matrix(target, "target affinity")
+    if predicted.shape != target.shape:
+        raise ValueError("predicted and target affinities must have equal shape")
+    valid_nodes = np.asarray(valid_nodes, dtype=bool)
+    if valid_nodes.shape != (predicted.shape[0],):
+        raise ValueError("valid_nodes must have one entry per face")
+
+    pair_mask = np.triu(
+        valid_nodes[:, None] & valid_nodes[None, :],
+        k=1,
+    )
+    predicted_pairs = np.asarray(predicted >= threshold, dtype=bool)[pair_mask]
+    target_pairs = np.asarray(target > 0, dtype=bool)[pair_mask]
+    return {
+        "true_positive": int(np.count_nonzero(predicted_pairs & target_pairs)),
+        "false_positive": int(np.count_nonzero(predicted_pairs & ~target_pairs)),
+        "false_negative": int(np.count_nonzero(~predicted_pairs & target_pairs)),
+    }
+
+
+def pairwise_metrics(counts):
+    """Convert accumulated TP/FP/FN counts into stable pairwise metrics."""
+    true_positive = int(counts["true_positive"])
+    false_positive = int(counts["false_positive"])
+    false_negative = int(counts["false_negative"])
+    precision_denominator = true_positive + false_positive
+    recall_denominator = true_positive + false_negative
+    precision = (
+        true_positive / float(precision_denominator)
+        if precision_denominator
+        else 0.0
+    )
+    recall = (
+        true_positive / float(recall_denominator)
+        if recall_denominator
+        else 0.0
+    )
+    f1_denominator = precision + recall
+    return {
+        "precision": precision,
+        "recall": recall,
+        "f1": (
+            2.0 * precision * recall / f1_denominator
+            if f1_denominator
+            else 0.0
+        ),
+    }
+
+
+def cluster_instances(
+    affinity,
+    semantic,
+    threshold=0.5,
+    background_class_id=24,
+    adjacency=None,
+):
+    """Cluster same-semantic faces with deterministic union-find."""
+    affinity = _validate_square_matrix(affinity, "affinity")
+    semantic = np.asarray(semantic)
+    node_count = affinity.shape[0]
+    if semantic.shape != (node_count,):
+        raise ValueError("semantic must have one entry per face")
+    if adjacency is None:
+        adjacency = np.ones_like(affinity, dtype=bool)
+        np.fill_diagonal(adjacency, False)
+    else:
+        adjacency = _validate_square_matrix(adjacency, "adjacency")
+        if adjacency.shape != affinity.shape:
+            raise ValueError("adjacency and affinity must have equal shape")
+        adjacency = np.asarray(adjacency, dtype=bool)
+
+    parent = np.arange(node_count, dtype=np.int64)
+
+    def find(node):
+        while parent[node] != node:
+            parent[node] = parent[parent[node]]
+            node = int(parent[node])
+        return node
+
+    def union(left, right):
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parent[max(left_root, right_root)] = min(left_root, right_root)
+
+    active = semantic != background_class_id
+    eligible = (
+        (affinity >= threshold)
+        & (adjacency | adjacency.T)
+        & active[:, None]
+        & active[None, :]
+        & (semantic[:, None] == semantic[None, :])
+    )
+    for left, right in zip(*np.where(np.triu(eligible, k=1))):
+        union(int(left), int(right))
+
+    clusters = np.full(node_count, -1, dtype=np.int64)
+    root_to_cluster = {}
+    for node in range(node_count):
+        if not active[node]:
+            continue
+        root = find(node)
+        if root not in root_to_cluster:
+            root_to_cluster[root] = len(root_to_cluster)
+        clusters[node] = root_to_cluster[root]
+    return clusters
+
+
+def _cluster_affinity(clusters):
+    clusters = np.asarray(clusters)
+    return (
+        (clusters[:, None] == clusters[None, :])
+        & (clusters[:, None] >= 0)
+        & (clusters[None, :] >= 0)
+    )
+
+
+def adjusted_rand_index(truth, predicted):
+    """Compute ARI without adding a scikit-learn runtime dependency."""
+    truth = np.asarray(truth)
+    predicted = np.asarray(predicted)
+    if truth.shape != predicted.shape or truth.ndim != 1:
+        raise ValueError("truth and predicted must be equal-length vectors")
+    sample_count = truth.size
+    if sample_count < 2:
+        return 1.0
+
+    _, truth_inverse = np.unique(truth, return_inverse=True)
+    _, predicted_inverse = np.unique(predicted, return_inverse=True)
+    contingency = np.zeros(
+        (
+            int(truth_inverse.max()) + 1,
+            int(predicted_inverse.max()) + 1,
+        ),
+        dtype=np.int64,
+    )
+    np.add.at(contingency, (truth_inverse, predicted_inverse), 1)
+
+    def combinations_of_two(values):
+        values = np.asarray(values, dtype=np.float64)
+        return float(np.sum(values * (values - 1.0) / 2.0))
+
+    index = combinations_of_two(contingency)
+    truth_pairs = combinations_of_two(contingency.sum(axis=1))
+    predicted_pairs = combinations_of_two(contingency.sum(axis=0))
+    total_pairs = sample_count * (sample_count - 1.0) / 2.0
+    expected = truth_pairs * predicted_pairs / total_pairs
+    maximum = 0.5 * (truth_pairs + predicted_pairs)
+    denominator = maximum - expected
+    if abs(denominator) < 1e-12:
+        return 1.0
+    return float((index - expected) / denominator)
+
+
+def clustering_metrics(
+    predicted_clusters,
+    target_affinity,
+    ground_truth_semantic,
+    background_class_id=24,
+):
+    """Compare one predicted partition with the annotation partition."""
+    target_affinity = _validate_square_matrix(
+        target_affinity, "target affinity"
+    )
+    ground_truth_semantic = np.asarray(ground_truth_semantic)
+    predicted_clusters = np.asarray(predicted_clusters, dtype=np.int64)
+    node_count = target_affinity.shape[0]
+    if ground_truth_semantic.shape != (node_count,):
+        raise ValueError("ground_truth_semantic must have one entry per face")
+    if predicted_clusters.shape != (node_count,):
+        raise ValueError("predicted_clusters must have one entry per face")
+
+    valid_nodes = ground_truth_semantic != background_class_id
+    ground_truth_clusters = cluster_instances(
+        target_affinity,
+        ground_truth_semantic,
+        threshold=0.5,
+        background_class_id=background_class_id,
+    )
+    counts = pairwise_counts(
+        _cluster_affinity(predicted_clusters),
+        _cluster_affinity(ground_truth_clusters),
+        valid_nodes,
+        threshold=0.5,
+    )
+    pairwise = dict(counts)
+    pairwise.update(pairwise_metrics(counts))
+
+    true_labels = ground_truth_clusters[valid_nodes]
+    predicted_labels = predicted_clusters[valid_nodes].copy()
+    next_label = int(predicted_labels[predicted_labels >= 0].max()) + 1 if bool(
+        np.any(predicted_labels >= 0)
+    ) else 0
+    for index in np.flatnonzero(predicted_labels < 0):
+        predicted_labels[index] = next_label
+        next_label += 1
+
+    predicted_count = int(np.unique(predicted_clusters[predicted_clusters >= 0]).size)
+    ground_truth_count = int(
+        np.unique(ground_truth_clusters[ground_truth_clusters >= 0]).size
+    )
+    return {
+        "pairwise": pairwise,
+        "adjusted_rand_index": adjusted_rand_index(
+            true_labels, predicted_labels
+        ),
+        "predicted_instance_count": predicted_count,
+        "ground_truth_instance_count": ground_truth_count,
+        "instance_count_absolute_error": abs(
+            predicted_count - ground_truth_count
+        ),
+    }
+
+
+def evaluate_instance_graph(
+    sample_id,
+    affinity_logits,
+    predicted_semantic,
+    ground_truth_semantic,
+    target_affinity,
+    spatial_pos,
+    threshold=0.5,
+    background_class_id=24,
+):
+    """Evaluate and serialize one graph's predicted feature instances."""
+    affinity_logits = _validate_square_matrix(
+        affinity_logits, "affinity logits"
+    )
+    probability = 1.0 / (
+        1.0 + np.exp(-np.clip(affinity_logits, -60.0, 60.0))
+    )
+    predicted_semantic = np.asarray(predicted_semantic, dtype=np.int64)
+    ground_truth_semantic = np.asarray(
+        ground_truth_semantic, dtype=np.int64
+    )
+    spatial_pos = _validate_square_matrix(spatial_pos, "spatial_pos")
+    if spatial_pos.shape != affinity_logits.shape:
+        raise ValueError("spatial_pos and affinity logits must have equal shape")
+
+    valid_nodes = ground_truth_semantic != background_class_id
+    raw_counts = pairwise_counts(
+        probability,
+        target_affinity,
+        valid_nodes,
+        threshold=threshold,
+    )
+    raw_pairwise = dict(raw_counts)
+    raw_pairwise.update(pairwise_metrics(raw_counts))
+
+    predicted_clusters = cluster_instances(
+        probability,
+        predicted_semantic,
+        threshold=threshold,
+        background_class_id=background_class_id,
+        adjacency=spatial_pos == 1,
+    )
+    cluster_result = clustering_metrics(
+        predicted_clusters,
+        target_affinity,
+        ground_truth_semantic,
+        background_class_id=background_class_id,
+    )
+    instances = []
+    for instance_id in np.unique(
+        predicted_clusters[predicted_clusters >= 0]
+    ):
+        faces = np.flatnonzero(predicted_clusters == instance_id)
+        instances.append(
+            {
+                "instance_id": int(instance_id),
+                "semantic_class": int(predicted_semantic[faces[0]]),
+                "face_indices": [int(face) for face in faces],
+            }
+        )
+    return {
+        "sample_id": str(sample_id),
+        "raw_pairwise": raw_pairwise,
+        "clustering": cluster_result,
+        "instances": instances,
+    }
+
+
+def summarize_instance_results(records):
+    """Aggregate per-graph instance metrics without graph-size weighting."""
+    if not records:
+        raise ValueError("at least one instance evaluation record is required")
+
+    def accumulated_pairwise(key):
+        counts = {
+            "true_positive": 0,
+            "false_positive": 0,
+            "false_negative": 0,
+        }
+        for record in records:
+            source = (
+                record["raw_pairwise"]
+                if key == "raw_pairwise"
+                else record["clustering"]["pairwise"]
+            )
+            for name in counts:
+                counts[name] += int(source[name])
+        result = dict(counts)
+        result.update(pairwise_metrics(counts))
+        return result
+
+    clustering = [record["clustering"] for record in records]
+    return {
+        "evaluated_graphs": len(records),
+        "raw_pairwise": accumulated_pairwise("raw_pairwise"),
+        "clustering_pairwise": accumulated_pairwise("clustering_pairwise"),
+        "mean_adjusted_rand_index": float(
+            np.mean(
+                [item["adjusted_rand_index"] for item in clustering]
+            )
+        ),
+        "instance_count_mae": float(
+            np.mean(
+                [
+                    item["instance_count_absolute_error"]
+                    for item in clustering
+                ]
+            )
+        ),
+        "predicted_instance_count": int(
+            sum(item["predicted_instance_count"] for item in clustering)
+        ),
+        "ground_truth_instance_count": int(
+            sum(item["ground_truth_instance_count"] for item in clustering)
+        ),
+    }
+
+
 def write_results(output_dir, result):
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "test_metrics.json"
@@ -170,11 +526,24 @@ def write_results(output_dir, result):
         "experiment_mode={}".format(result["experiment_mode"]),
         "seed={}".format(result["seed"]),
         "prepared_dataset_path={}".format(result["prepared_dataset_path"]),
+        "use_face_uv={}".format(result["use_face_uv"]),
         "use_face_pointcloud={}".format(result["use_face_pointcloud"]),
         "use_cylindrical_pos={}".format(result["use_cylindrical_pos"]),
         "pointcloud_scale={}".format(result["pointcloud_scale"]),
         "cylindrical_scale={}".format(result["cylindrical_scale"]),
         "require_instance={}".format(result["require_instance"]),
+        "instance_evaluation_requested={}".format(
+            result.get("instance_evaluation_requested", False)
+        ),
+        "instance_evaluation_enabled={}".format(
+            result.get("instance_evaluation_enabled", False)
+        ),
+        "instance_labels_used_by_model={}".format(
+            result.get("instance_labels_used_by_model", False)
+        ),
+        "instance_labels_used_for_metrics={}".format(
+            result.get("instance_labels_used_for_metrics", False)
+        ),
         "batch_size={}".format(result["batch_size"]),
         "num_workers={}".format(result["num_workers"]),
         "device={}".format(result["device"]),
@@ -186,9 +555,46 @@ def write_results(output_dir, result):
         "per_face_accuracy={:.8f}".format(result["per_face_accuracy"]),
         "mean_iou={:.8f}".format(result["mean_iou"]),
         "macro_f1={:.8f}".format(result["macro_f1"]),
-        "",
-        "per_class_metrics:",
     ]
+    instance_evaluation = result.get("instance_evaluation")
+    if instance_evaluation is not None:
+        raw = instance_evaluation["raw_pairwise"]
+        clustered = instance_evaluation["clustering_pairwise"]
+        lines.extend(
+            [
+                "affinity_threshold={:.8f}".format(
+                    result["affinity_threshold"]
+                ),
+                "background_class_id={}".format(
+                    result["background_class_id"]
+                ),
+                "affinity_pairwise_precision={:.8f}".format(
+                    raw["precision"]
+                ),
+                "affinity_pairwise_recall={:.8f}".format(raw["recall"]),
+                "affinity_pairwise_f1={:.8f}".format(raw["f1"]),
+                "cluster_pairwise_precision={:.8f}".format(
+                    clustered["precision"]
+                ),
+                "cluster_pairwise_recall={:.8f}".format(
+                    clustered["recall"]
+                ),
+                "cluster_pairwise_f1={:.8f}".format(clustered["f1"]),
+                "mean_adjusted_rand_index={:.8f}".format(
+                    instance_evaluation["mean_adjusted_rand_index"]
+                ),
+                "instance_count_mae={:.8f}".format(
+                    instance_evaluation["instance_count_mae"]
+                ),
+                "predicted_instance_count={}".format(
+                    instance_evaluation["predicted_instance_count"]
+                ),
+                "ground_truth_instance_count={}".format(
+                    instance_evaluation["ground_truth_instance_count"]
+                ),
+            ]
+        )
+    lines.extend(["", "per_class_metrics:"])
     for item in result["per_class"]:
         lines.append(
             "class_{class_id:02d} support={support} accuracy={accuracy} "
@@ -216,12 +622,35 @@ def write_results(output_dir, result):
     return log_path, json_path
 
 
+def write_instance_predictions(output_dir, records):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "predicted_instances.json"
+    document = [
+        {
+            "sample_id": record["sample_id"],
+            "instances": record["instances"],
+        }
+        for record in records
+    ]
+    path.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def main():
     args = parse_args()
     if args.batch_size < 1:
         raise ValueError("--batch-size must be positive")
     if args.num_workers < 0:
         raise ValueError("--num-workers must be non-negative")
+    if not 0.0 <= args.affinity_threshold <= 1.0:
+        raise ValueError("--affinity-threshold must be between 0 and 1")
+    if not 0 <= args.background_class_id < args.num_classes:
+        raise ValueError(
+            "--background-class-id must be within the semantic class range"
+        )
     if not args.checkpoint.is_file():
         raise FileNotFoundError("Checkpoint not found: {}".format(args.checkpoint))
     manifest = args.dataset_path / (args.split + ".txt")
@@ -253,7 +682,17 @@ def main():
     cylindrical_scale = float(
         _model_configuration_value(model, "cylindrical_scale", 1.0)
     )
-    require_instance = requires_instance_for_test(mode)
+    instance_evaluation_enabled = (
+        args.evaluate_instances and supports_instance_evaluation(mode)
+    )
+    if args.evaluate_instances and not instance_evaluation_enabled:
+        print(
+            "Instance evaluation skipped: checkpoint mode '{}' does not "
+            "produce dynamic affinity logits.".format(mode)
+        )
+    require_instance = (
+        requires_instance_for_test(mode) or instance_evaluation_enabled
+    )
     dataset = CADSynth(
         root_dir=args.dataset_path,
         split=args.split,
@@ -280,12 +719,13 @@ def main():
     )
     loss_sum = 0.0
     face_count = 0
+    instance_records = []
     started_at = time.perf_counter()
 
     with torch.inference_mode():
         for batch in loader:
             batch = move_batch(batch, device)
-            probabilities = model(batch)
+            probabilities, affinity_logits = model.predict_with_affinity(batch)
             labels = batch["label_feature"].long()
             predictions = probabilities.argmax(dim=-1)
             loss_sum += float(
@@ -303,6 +743,55 @@ def main():
                 indices,
                 minlength=args.num_classes * args.num_classes,
             ).reshape(args.num_classes, args.num_classes)
+
+            if instance_evaluation_enabled:
+                if affinity_logits is None:
+                    raise RuntimeError(
+                        "Dynamic checkpoint did not produce affinity logits"
+                    )
+                counts = (~batch["padding_mask"]).sum(dim=1).tolist()
+                offset = 0
+                for graph_index, node_count in enumerate(counts):
+                    node_count = int(node_count)
+                    next_offset = offset + node_count
+                    instance_records.append(
+                        evaluate_instance_graph(
+                            sample_id=batch["data_ids"][graph_index],
+                            affinity_logits=affinity_logits[
+                                graph_index, :node_count, :node_count
+                            ]
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                            predicted_semantic=predictions[
+                                offset:next_offset
+                            ]
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                            ground_truth_semantic=labels[
+                                offset:next_offset
+                            ]
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                            target_affinity=batch["instance"][
+                                graph_index, :node_count, :node_count
+                            ]
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                            spatial_pos=batch["spatial_pos"][
+                                graph_index, :node_count, :node_count
+                            ]
+                            .detach()
+                            .cpu()
+                            .numpy(),
+                            threshold=args.affinity_threshold,
+                            background_class_id=args.background_class_id,
+                        )
+                    )
+                    offset = next_offset
 
     elapsed_seconds = time.perf_counter() - started_at
     confusion_np = confusion.numpy()
@@ -328,11 +817,23 @@ def main():
         "experiment_mode": mode,
         "seed": args.seed,
         "prepared_dataset_path": str(args.dataset_path.resolve()),
+        "use_face_uv": requirements.use_face_uv,
         "use_face_pointcloud": requirements.require_face_pointcloud,
         "use_cylindrical_pos": requirements.require_cylindrical_pos,
         "pointcloud_scale": pointcloud_scale,
         "cylindrical_scale": cylindrical_scale,
         "require_instance": require_instance,
+        "instance_evaluation_requested": args.evaluate_instances,
+        "instance_evaluation_enabled": instance_evaluation_enabled,
+        "instance_labels_used_by_model": mode == "oracle",
+        "instance_labels_used_for_metrics": instance_evaluation_enabled,
+        "affinity_threshold": args.affinity_threshold,
+        "background_class_id": args.background_class_id,
+        "instance_evaluation": (
+            summarize_instance_results(instance_records)
+            if instance_evaluation_enabled
+            else None
+        ),
         "batch_size": args.batch_size,
         "num_workers": args.num_workers,
         "device": str(device),
@@ -348,12 +849,33 @@ def main():
         "confusion_matrix": confusion_np.astype(int).tolist(),
     }
     output_dir = args.output_dir or args.checkpoint.parent
+    prediction_path = None
+    if instance_evaluation_enabled:
+        prediction_path = write_instance_predictions(
+            output_dir, instance_records
+        )
+        result["predicted_instances_path"] = str(prediction_path.resolve())
     log_path, json_path = write_results(output_dir, result)
     print("Test completed: {}".format(args.split))
     print("Samples: {} Faces: {}".format(result["samples"], result["faces"]))
     print("Accuracy: {:.4%}".format(result["per_face_accuracy"]))
     print("mIoU: {:.4%}".format(result["mean_iou"]))
     print("Macro-F1: {:.4%}".format(result["macro_f1"]))
+    if result["instance_evaluation"] is not None:
+        instance_metrics = result["instance_evaluation"]
+        print(
+            "Affinity Pairwise-F1: {:.4%}".format(
+                instance_metrics["raw_pairwise"]["f1"]
+            )
+        )
+        print(
+            "Cluster Pairwise-F1: {:.4%} ARI: {:.4f} Count-MAE: {:.4f}".format(
+                instance_metrics["clustering_pairwise"]["f1"],
+                instance_metrics["mean_adjusted_rand_index"],
+                instance_metrics["instance_count_mae"],
+            )
+        )
+        print("Instances: {}".format(prediction_path))
     print("Log: {}".format(log_path))
     print("JSON: {}".format(json_path))
 

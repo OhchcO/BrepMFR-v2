@@ -38,6 +38,130 @@ powershell.exe -ExecutionPolicy Bypass -File `
 
 
 # ============================================================
+# 表示消融 A. topo_aag：仅 AAG 拓扑/标量属性，不使用 UV 和面点云
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode topo_aag `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_topo_aag_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for topo_aag"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 表示消融 B. uv_aag：显式 UV-AAG 基线（与 baseline 表示相同）
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode uv_aag `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_uv_aag_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for uv_aag"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 表示消融 C. pc_aag：面点云 + AAG，不使用 UV
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode pc_aag `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_pc_aag_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for pc_aag"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 表示消融 D. uv_pc_aag：UV + 面点云 + AAG（与旧 point 表示相同）
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode uv_pc_aag `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_uv_pc_aag_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for uv_pc_aag"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
 # 2. dynamic_no_loss：动态实例偏置，不使用实例亲和损失
 # ============================================================
 

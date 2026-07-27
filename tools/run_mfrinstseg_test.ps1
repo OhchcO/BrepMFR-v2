@@ -6,6 +6,9 @@ param(
     [int]$Seed = 2026,
     [int]$BatchSize = 16,
     [int]$NumWorkers = 0,
+    [bool]$EvaluateInstances = $true,
+    [double]$AffinityThreshold = 0.5,
+    [int]$BackgroundClassId = 24,
     [switch]$Prepare,
     [switch]$RebuildPreparedData,
     [string]$RawDatasetPath = "D:\Code\Datasets\MFRInstSeg",
@@ -93,13 +96,21 @@ try {
     }
 
     Write-Host "Evaluating checkpoint on every entry in the prepared test.txt split..."
-    & $PythonExe $Evaluator `
-        --dataset-path $PreparedDataset `
-        --checkpoint $Checkpoint `
-        --split test `
-        --seed $Seed `
-        --batch-size $BatchSize `
-        --num-workers $NumWorkers
+    $EvaluationArguments = @(
+        $Evaluator,
+        "--dataset-path", $PreparedDataset,
+        "--checkpoint", $Checkpoint,
+        "--split", "test",
+        "--seed", "$Seed",
+        "--batch-size", "$BatchSize",
+        "--num-workers", "$NumWorkers",
+        "--affinity-threshold", "$AffinityThreshold",
+        "--background-class-id", "$BackgroundClassId"
+    )
+    if ($EvaluateInstances) {
+        $EvaluationArguments += "--evaluate-instances"
+    }
+    & $PythonExe @EvaluationArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Test evaluation failed with exit code $LASTEXITCODE"
     }

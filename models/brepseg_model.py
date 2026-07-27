@@ -149,6 +149,7 @@ class BrepSeg(pl.LightningModule):
         self.affinity_warmup_epochs = getattr(
             args, "affinity_warmup_epochs", 10
         )
+        self.use_face_uv = bool(getattr(args, "use_face_uv", True))
         self.use_face_pointcloud = bool(
             getattr(args, "use_face_pointcloud", False)
         )
@@ -161,6 +162,7 @@ class BrepSeg(pl.LightningModule):
         )
         self.save_hyperparameters(
             {
+                "use_face_uv": self.use_face_uv,
                 "use_face_pointcloud": self.use_face_pointcloud,
                 "use_cylindrical_pos": self.use_cylindrical_pos,
                 "pointcloud_scale": self.pointcloud_scale,
@@ -193,6 +195,7 @@ class BrepSeg(pl.LightningModule):
             affinity_dim=getattr(args, "affinity_dim", 64),
             affinity_temperature=getattr(args, "affinity_temperature", 0.2),
             instance_bias_scale=getattr(args, "instance_bias_scale", 1.0),
+            use_face_uv=self.use_face_uv,
             use_face_pointcloud=self.use_face_pointcloud,
             use_cylindrical_pos=self.use_cylindrical_pos,
             pointcloud_scale=self.pointcloud_scale,
@@ -206,11 +209,12 @@ class BrepSeg(pl.LightningModule):
         self.pred = []
         self.label = []
 
-    def forward(self, batch):
-        """Return per-face semantic probabilities for inference."""
-        node_emb, graph_emb = self.brep_encoder(
+    def predict_with_affinity(self, batch):
+        """Return semantic probabilities and optional dynamic affinity logits."""
+        node_emb, graph_emb, instance_logits = self.brep_encoder(
             batch,
             last_state_only=True,
+            return_instance_logits=True,
         )
         node_emb = node_emb[0].permute(1, 0, 2)
         node_emb = node_emb[:, 1:, :]
@@ -222,7 +226,12 @@ class BrepSeg(pl.LightningModule):
             num_nodes_per_graph, dim=0
         ).to(graph_emb.device)
         z = self.attention([node_z, graph_z])
-        return self.classifier(z)
+        return self.classifier(z), instance_logits
+
+    def forward(self, batch):
+        """Return per-face semantic probabilities for inference."""
+        probabilities, _ = self.predict_with_affinity(batch)
+        return probabilities
 
 
     def training_step(self, batch, batch_idx):

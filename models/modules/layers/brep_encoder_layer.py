@@ -203,6 +203,7 @@ class GraphNodeFeature(nn.Module):
         num_degree,
         hidden_dim,
         n_layers,
+        use_face_uv=True,
         use_face_pointcloud=False,
         use_cylindrical_pos=False,
         pointcloud_scale=1.0,
@@ -214,9 +215,10 @@ class GraphNodeFeature(nn.Module):
         self.pointcloud_scale = float(pointcloud_scale)
         self.cylindrical_scale = float(cylindrical_scale)
         # node_feature encode
-        self.surf_encoder = SurfaceEncoder(
+        surface_encoder = SurfaceEncoder(
             in_channels=7, output_dims=int(0.5*hidden_dim)
         )
+        self.surf_encoder = surface_encoder
         # self.face_area_encoder = nn.Linear(1, int(0.125*hidden_dim), bias=False)
         self.face_area_encoder = NonLinear(1, int(0.125*hidden_dim))
         self.face_type_encoder = nn.Embedding(6, int(0.125*hidden_dim), padding_idx=0)
@@ -224,6 +226,8 @@ class GraphNodeFeature(nn.Module):
         self.degree_encoder = nn.Embedding(num_degree, int(0.125*hidden_dim), padding_idx=0)
         self.graph_token = nn.Embedding(1, hidden_dim)
         self.apply(lambda module: init_params(module, n_layers=n_layers))
+        if not use_face_uv:
+            self.surf_encoder = None
 
         self.pointcloud_encoder = None
         self.cylindrical_encoder = None
@@ -249,8 +253,11 @@ class GraphNodeFeature(nn.Module):
         # padding_mask [batch_size, max_node_num] 记录每个graph的实际长度，空位记为True
         n_graph, n_node = padding_mask.size()[:2]
         node_pos = torch.where(padding_mask == False)
-        x = x.permute(0, 3, 1, 2)
-        x_ = self.surf_encoder(x)  # [total_nodes, n_hidden]
+        if self.surf_encoder is None:
+            x_ = x.new_zeros((x.size(0), int(0.5 * self.hidden_dim)))
+        else:
+            surface_grid = x.permute(0, 3, 1, 2)
+            x_ = self.surf_encoder(surface_grid)  # [total_nodes, n_hidden]
         face_area_ = self.face_area_encoder(face_area.unsqueeze(dim=1))  # [total_nodes, n_hidden]
         face_type_ = self.face_type_encoder(face_type)  # [total_nodes, n_hidden]
         face_loop_ = self.face_loop_encoder(face_loop)

@@ -14,6 +14,7 @@ import json
 import math
 import random
 import sys
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Mapping, Optional, Sequence, Tuple
@@ -165,7 +166,18 @@ def _read_official_manifest(path: Path) -> Tuple[str, ...]:
     sample_ids = tuple(
         line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     )
-    return _validate_sample_ids(sample_ids, allow_empty=True)
+    if any(not sample_id or sample_id != sample_id.strip() for sample_id in sample_ids):
+        raise ValueError("sample IDs must be non-empty")
+    return sample_ids
+
+
+def _stable_unique(sample_ids: Sequence[str]) -> Tuple[str, ...]:
+    seen = set()
+    return tuple(
+        sample_id
+        for sample_id in sample_ids
+        if not (sample_id in seen or seen.add(sample_id))
+    )
 
 
 def _official_splits(raw_root: Path, known_ids: Tuple[str, ...]) -> Dict[str, Tuple[str, ...]]:
@@ -175,12 +187,63 @@ def _official_splits(raw_root: Path, known_ids: Tuple[str, ...]) -> Dict[str, Tu
         raise ValueError("Official split manifests must include all three train/val/test files")
     if not present:
         return {}
-    splits = {name: _read_official_manifest(path) for name, path in manifests.items()}
+    raw_splits = {
+        name: _read_official_manifest(path) for name, path in manifests.items()
+    }
+    unique_splits = {
+        name: _stable_unique(raw_splits[name]) for name in SPLIT_NAMES
+    }
+
+    # Some MFRInstSeg releases contain repeated lines and a few model IDs shared
+    # across official manifests. Keep the highest-value evaluation membership
+    # (test, then val, then train), while preserving manifest order otherwise.
+    claimed = set()
+    splits = {}
+    cross_split_removed = 0
+    for name in ("test", "val", "train"):
+        retained = tuple(
+            sample_id for sample_id in unique_splits[name] if sample_id not in claimed
+        )
+        cross_split_removed += len(unique_splits[name]) - len(retained)
+        splits[name] = _validate_sample_ids(retained, allow_empty=True)
+        claimed.update(retained)
+
+    within_split_removed = sum(
+        len(raw_splits[name]) - len(unique_splits[name]) for name in SPLIT_NAMES
+    )
+    if within_split_removed or cross_split_removed:
+        warnings.warn(
+            "Cleaned official split manifests: removed {0} repeated line(s) "
+            "and {1} cross-split duplicate assignment(s) using "
+            "test > val > train precedence.".format(
+                within_split_removed, cross_split_removed
+            ),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
     all_ids = tuple(sample_id for name in SPLIT_NAMES for sample_id in splits[name])
-    if len(set(all_ids)) != len(all_ids):
-        raise ValueError("Official split manifests must be model-level disjoint")
-    if set(all_ids) != set(known_ids):
-        raise ValueError("Official split manifests must contain every discovered raw model exactly once")
+    known_set = set(known_ids)
+    listed_set = set(all_ids)
+    unknown_ids = listed_set - known_set
+    if unknown_ids:
+        raise ValueError(
+            "Official split manifests contain {0} unknown model ID(s)".format(
+                len(unknown_ids)
+            )
+        )
+
+    # An official evaluation membership should never be guessed. Models omitted
+    # from the manifests are therefore added only to training, deterministically.
+    missing_ids = tuple(sample_id for sample_id in known_ids if sample_id not in listed_set)
+    if missing_ids:
+        splits["train"] = splits["train"] + missing_ids
+        warnings.warn(
+            "Official split manifests omitted {0} discovered model(s); assigned "
+            "them to train only.".format(len(missing_ids)),
+            RuntimeWarning,
+            stacklevel=2,
+        )
     return splits
 
 

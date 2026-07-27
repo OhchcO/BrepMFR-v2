@@ -283,3 +283,35 @@ powershell.exe -ExecutionPolicy Bypass -File `
   -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
   -BatchSize 16 `
   -NumWorkers 0
+
+
+# ============================================================
+# 10. cyl_affinity: cylindrical position + affinity supervision
+# No point-cloud branch and no dynamic bias injection.
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode cyl_affinity `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_cyl_affinity_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for cyl_affinity"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0

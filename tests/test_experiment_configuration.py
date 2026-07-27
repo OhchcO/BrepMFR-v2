@@ -88,6 +88,7 @@ def test_importing_segmentation_does_not_parse_process_arguments(segmentation):
     [
         ("baseline", "baseline", False, False, 1.0),
         ("cyl", "baseline", False, True, 1.0),
+        ("cyl_affinity", "dynamic_affinity", False, True, 0.0),
         ("point", "baseline", True, False, 1.0),
         ("spe_pcaag", "baseline", True, True, 1.0),
         ("dynamic_no_loss", "dynamic", False, False, 1.0),
@@ -138,6 +139,7 @@ $attribute.ValidValues | ConvertTo-Json -Compress
         "instance",
         "oracle",
         "cyl",
+        "cyl_affinity",
         "point",
         "spe_pcaag",
         "full",
@@ -230,6 +232,7 @@ def test_legacy_dataset_path_does_not_run_preparation(
     [
         ["--use_cylindrical_pos"],
         ["--experiment_alias", "cyl"],
+        ["--experiment_alias", "cyl_affinity"],
         ["--experiment_alias", "spe_pcaag"],
         ["--experiment_alias", "full"],
     ],

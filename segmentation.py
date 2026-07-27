@@ -32,6 +32,7 @@ EXPERIMENT_ALIASES = (
     "instance",
     "oracle",
     "cyl",
+    "cyl_affinity",
     "point",
     "spe_pcaag",
     "full",
@@ -55,6 +56,9 @@ _EXPERIMENT_SWITCHES = {
     "instance": ExperimentSwitches("dynamic_affinity", False, False, 1.0),
     "oracle": ExperimentSwitches("oracle", False, False, 1.0),
     "cyl": ExperimentSwitches("baseline", False, True, 1.0),
+    "cyl_affinity": ExperimentSwitches(
+        "dynamic_affinity", False, True, 0.0
+    ),
     "point": ExperimentSwitches("baseline", True, False, 1.0),
     "spe_pcaag": ExperimentSwitches("baseline", True, True, 1.0),
     "full": ExperimentSwitches("dynamic_affinity", True, True, 1.0),

@@ -213,15 +213,13 @@ def test_complete_official_manifests_preserve_membership_and_order(tmp_path):
     assert selected == expected
 
 
-@pytest.mark.parametrize(
-    "manifests",
-    [
-        {"train": "sample_000\n", "val": "sample_000\n", "test": "sample_001\n"},
-        {"train": "missing\n", "val": "sample_000\n", "test": "sample_001\n"},
-    ],
-)
-def test_official_manifests_reject_duplicate_or_unknown_membership(tmp_path, manifests):
+def test_official_manifests_reject_unknown_membership(tmp_path):
     raw = make_raw_fixture(tmp_path, sample_count=2)
+    manifests = {
+        "train": "missing\n",
+        "val": "sample_000\n",
+        "test": "sample_001\n",
+    }
     for split_name, text in manifests.items():
         (raw / (split_name + ".txt")).write_text(text, encoding="utf-8")
 

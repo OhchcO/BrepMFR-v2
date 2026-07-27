@@ -15,6 +15,7 @@ EXPECTED_MODES = [
     "point",
     "spe_pcaag",
     "full",
+    "cyl_affinity",
 ]
 
 

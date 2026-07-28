@@ -194,11 +194,41 @@ def test_experiment_file_has_expected_copyable_train_and_test_blocks():
     text = COMMAND_FILE.read_text(encoding="utf-8")
 
     assert _experiment_identities(text) == EXPECTED_EXPERIMENT_IDENTITIES
-    assert text.count("run_mfrinstseg_test.ps1") == len(EXPECTED_EXPERIMENT_IDENTITIES)
+    assert text.count("run_mfrinstseg_test.ps1") == (
+        len(EXPECTED_EXPERIMENT_IDENTITIES) + 3
+    )
     assert text.count('Get-ChildItem -LiteralPath') == len(EXPECTED_EXPERIMENT_IDENTITIES)
     for mode, description in EXPECTED_INSTANCE_EXPERIMENT_DESCRIPTIONS.items():
         assert "# {}: {}".format(mode, description) in text
     assert "最优best模型的完整路径" not in text
+
+
+def test_experiment_file_has_latest_bias_off_evaluations():
+    text = COMMAND_FILE.read_text(encoding="utf-8")
+    expected = [
+        (
+            "dynamic_no_loss_positive",
+            r"D:\Code\BrepMFR\results\MFRInstSeg_1pct_dynamic_no_loss_positive_seed2026\0728\174518\best-080-0.165093.ckpt",
+        ),
+        (
+            "instance_positive",
+            r"D:\Code\BrepMFR\results\MFRInstSeg_1pct_instance_positive_seed2026\0728\164959\best-095-0.142707.ckpt",
+        ),
+        (
+            "oracle_positive",
+            r"D:\Code\BrepMFR\results\MFRInstSeg_1pct_oracle_positive_seed2026\0728\164959\best-086-0.152804.ckpt",
+        ),
+    ]
+
+    for label, checkpoint in expected:
+        marker = "# Bias OFF: " + label
+        start = text.index(marker)
+        next_marker = text.find("# Bias OFF:", start + len(marker))
+        block = text[start : next_marker if next_marker != -1 else len(text)]
+        assert '-Checkpoint "' + checkpoint + '" `' in block
+        assert "-InstanceBiasScaleOverride 0" in block
+        assert "-BatchSize 16" in block
+        assert "-NumWorkers 0" in block
 
 
 def test_experiment_file_is_valid_powershell_syntax():

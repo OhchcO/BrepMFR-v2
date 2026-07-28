@@ -574,3 +574,45 @@ powershell.exe -ExecutionPolicy Bypass -File `
   -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
   -BatchSize 16 `
   -NumWorkers 0
+
+
+# ============================================================
+# Bias OFF: dynamic_no_loss_positive
+# Same trained checkpoint; disable only residual relation bias at test time.
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint "D:\Code\BrepMFR\results\MFRInstSeg_1pct_dynamic_no_loss_positive_seed2026\0728\174518\best-080-0.165093.ckpt" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -InstanceBiasScaleOverride 0 `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# Bias OFF: instance_positive
+# Same trained checkpoint; disable only residual relation bias at test time.
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint "D:\Code\BrepMFR\results\MFRInstSeg_1pct_instance_positive_seed2026\0728\164959\best-095-0.142707.ckpt" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -InstanceBiasScaleOverride 0 `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# Bias OFF: oracle_positive
+# Same trained checkpoint; disable only residual relation bias at test time.
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint "D:\Code\BrepMFR\results\MFRInstSeg_1pct_oracle_positive_seed2026\0728\164959\best-086-0.152804.ckpt" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -InstanceBiasScaleOverride 0 `
+  -BatchSize 16 `
+  -NumWorkers 0

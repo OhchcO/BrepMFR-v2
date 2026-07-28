@@ -255,6 +255,7 @@ class RecordingInstanceRelationBias(nn.Module):
         self.instance_available = "not called"
         self.progress = None
         self.call_count = 0
+        self.residual_gate_calls = []
 
     def forward(
         self,
@@ -279,17 +280,28 @@ class RecordingInstanceRelationBias(nn.Module):
         )
         return bias, None
 
+    def residual_gate(self, layer_offset, progress=1.0):
+        self.residual_gate_calls.append((layer_offset, progress))
+        return torch.tensor(0.25)
+
 
 class RecordingGraphLayer(nn.Module):
     def __init__(self, increment=0.0):
         super().__init__()
         self.node_features = None
         self.attention_bias = None
+        self.instance_attention_bias = None
+        self.instance_attention_gate = None
         self.increment = increment
 
     def forward(self, node_features, **kwargs):
         self.node_features = node_features.detach().clone()
         self.attention_bias = kwargs["self_attn_bias"].detach().clone()
+        instance_bias = kwargs.get("instance_attn_bias")
+        self.instance_attention_bias = (
+            None if instance_bias is None else instance_bias.detach().clone()
+        )
+        self.instance_attention_gate = kwargs.get("instance_attn_gate")
         return node_features + self.increment, None
 
 
@@ -422,8 +434,13 @@ def test_late_gated_relation_is_predicted_midway_and_only_reaches_last_layers():
     )
     assert torch.count_nonzero(layers[0].attention_bias).item() == 0
     assert torch.count_nonzero(layers[1].attention_bias).item() == 0
-    assert torch.all(layers[2].attention_bias == 2.0)
-    assert torch.all(layers[3].attention_bias == 2.0)
+    assert torch.count_nonzero(layers[2].attention_bias).item() == 0
+    assert torch.count_nonzero(layers[3].attention_bias).item() == 0
+    assert layers[0].instance_attention_bias is None
+    assert layers[1].instance_attention_bias is None
+    assert torch.all(layers[2].instance_attention_bias == 2.0)
+    assert torch.all(layers[3].instance_attention_bias == 2.0)
+    assert relation_bias.residual_gate_calls == [(0, 0.75), (1, 0.75)]
 
 
 def test_brepseg_saves_and_threads_geometry_hyperparameters():

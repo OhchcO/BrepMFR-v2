@@ -1,6 +1,8 @@
 import pytest
 import torch
+import torch.nn as nn
 
+from models.modules.brep_encoder import BrepEncoder
 from models.modules.instance_bias import (
     InstanceRelationBias,
     confidence_weighted_relation,
@@ -367,6 +369,197 @@ def test_residual_gate_rejects_invalid_layer_offset():
 
     with pytest.raises(IndexError, match="layer offset"):
         module.residual_gate(2)
+
+
+class FixedGraphNodeFeature(nn.Module):
+    def __init__(self, embedding_dim=8):
+        super().__init__()
+        self.features = nn.Parameter(
+            torch.tensor(
+                [
+                    [
+                        [0.0] * embedding_dim,
+                        [1.0] + [0.0] * (embedding_dim - 1),
+                        [0.0, 1.0] + [0.0] * (embedding_dim - 2),
+                    ]
+                ]
+            )
+        )
+
+    def forward(self, *args, **kwargs):
+        return self.features, self.features[:, 1:, :]
+
+
+class FixedGraphAttnBias(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("bias", torch.full((1, 2, 3, 3), 3.0))
+
+    def forward(self, *args):
+        return self.bias
+
+
+class RecordingGraphLayer(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    def forward(self, node_features, **kwargs):
+        self.calls.append(kwargs)
+        return node_features, None
+
+
+def encoder_batch():
+    return {
+        "node_data": torch.zeros(1, 2, 1),
+        "face_area": torch.zeros(1, 2),
+        "face_type": torch.zeros(1, 2, dtype=torch.long),
+        "face_loop": torch.zeros(1, 2, dtype=torch.long),
+        "in_degree": torch.zeros(1, 2, dtype=torch.long),
+        "padding_mask": torch.zeros(1, 2, dtype=torch.bool),
+        "attn_bias": None,
+        "spatial_pos": torch.zeros(1, 2, 2, dtype=torch.long),
+        "d2_distance": torch.zeros(1, 2, 2, 64),
+        "angle_distance": torch.zeros(1, 2, 2, 64),
+        "edge_data": None,
+        "edge_type": None,
+        "edge_len": None,
+        "edge_ang": None,
+        "edge_conv": None,
+        "edge_path": None,
+        "edge_padding_mask": None,
+        "graph": None,
+    }
+
+
+def make_routing_encoder(
+    *,
+    num_encoder_layers=4,
+    instance_bias_last_layers=2,
+    mode="dynamic_affinity",
+    bias_scale=1.0,
+):
+    model = BrepEncoder(
+        num_degree=4,
+        num_spatial=4,
+        num_edge_dis=4,
+        edge_type="multi_hop",
+        multi_hop_max_dist=1,
+        num_encoder_layers=num_encoder_layers,
+        embedding_dim=8,
+        ffn_embedding_dim=8,
+        num_attention_heads=2,
+        dropout=0.0,
+        attention_dropout=0.0,
+        activation_dropout=0.0,
+        experiment_mode=mode,
+        affinity_dim=4,
+        instance_bias_strategy="late_gated",
+        instance_bias_last_layers=instance_bias_last_layers,
+        instance_bias_gate_init=0.2,
+        instance_bias_max_gate_scale=1.0,
+        instance_bias_scale=bias_scale,
+    )
+    model.graph_node_feature = FixedGraphNodeFeature()
+    model.graph_attn_bias = FixedGraphAttnBias()
+    model.layers = nn.ModuleList(
+        [RecordingGraphLayer() for _ in range(num_encoder_layers)]
+    )
+    return model
+
+
+def test_late_gated_encoder_routes_relation_only_through_final_layers():
+    """Removing residual arguments or adding bias before a late layer breaks this."""
+    torch.manual_seed(12)
+    model = make_routing_encoder()
+    model.instance_relation_bias.gate_logits = nn.Parameter(
+        torch.atanh(torch.tensor([0.2, 0.6]))
+    )
+    predicted_biases = []
+    model.instance_relation_bias.register_forward_hook(
+        lambda module, args, output: predicted_biases.append(output[0])
+    )
+
+    model(encoder_batch(), instance_bias_progress=0.5)
+
+    layers = list(model.layers)
+    assert len(predicted_biases) == 1
+    predicted_bias = predicted_biases[0]
+    graph_bias = model.graph_attn_bias.bias
+    assert all(
+        layer.calls[0]["self_attn_bias"] is graph_bias for layer in layers
+    )
+    assert layers[0].calls[0].get("instance_attn_bias") is None
+    assert layers[1].calls[0].get("instance_attn_bias") is None
+    assert layers[2].calls[0]["instance_attn_bias"] is predicted_bias
+    assert layers[3].calls[0]["instance_attn_bias"] is predicted_bias
+    assert torch.allclose(
+        layers[2].calls[0]["instance_attn_gate"],
+        torch.tensor(0.1),
+    )
+    assert torch.allclose(
+        layers[3].calls[0]["instance_attn_gate"],
+        torch.tensor(0.3),
+    )
+
+
+def test_baseline_encoder_preserves_ordinary_layer_calls_without_residual_gates():
+    model = make_routing_encoder(mode="baseline")
+
+    model(encoder_batch())
+
+    assert model.instance_relation_bias.residual_gates() is None
+    expected_keys = {
+        "self_attn_padding_mask",
+        "self_attn_mask",
+        "self_attn_bias",
+    }
+    assert all(
+        set(layer.calls[0]) == expected_keys for layer in model.layers
+    )
+
+
+def test_late_gated_encoder_uses_actual_layer_count_when_requested_count_is_larger():
+    model = make_routing_encoder(
+        num_encoder_layers=2,
+        instance_bias_last_layers=3,
+    )
+    predicted_biases = []
+    model.instance_relation_bias.register_forward_hook(
+        lambda module, args, output: predicted_biases.append(output[0])
+    )
+
+    model(encoder_batch())
+
+    assert len(predicted_biases) == 1
+    assert all(
+        layer.calls[0]["instance_attn_bias"] is predicted_biases[0]
+        for layer in model.layers
+    )
+    assert torch.equal(
+        model.layers[0].calls[0]["instance_attn_gate"],
+        model.instance_relation_bias.residual_gate(0),
+    )
+    assert torch.equal(
+        model.layers[1].calls[0]["instance_attn_gate"],
+        model.instance_relation_bias.residual_gate(1),
+    )
+
+
+def test_zero_scaled_late_gated_encoder_still_returns_affinity_logits():
+    model = make_routing_encoder(bias_scale=0.0)
+
+    _, _, affinity_logits = model(
+        encoder_batch(),
+        return_instance_logits=True,
+    )
+
+    assert affinity_logits is not None
+    assert affinity_logits.requires_grad
+    assert all(
+        torch.count_nonzero(layer.calls[0]["instance_attn_bias"]).item() == 0
+        for layer in list(model.layers)[-2:]
+    )
 
 
 @pytest.mark.parametrize(

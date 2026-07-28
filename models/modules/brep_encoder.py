@@ -189,6 +189,7 @@ class BrepEncoder(nn.Module):
                 confidence_power=instance_bias_confidence_power,
                 gate_init=instance_bias_gate_init,
                 max_gate_scale=instance_bias_max_gate_scale,
+                num_residual_gates=self.instance_bias_last_layers,
             )
             if self.apply_params_init:
                 self.instance_relation_bias.apply(init_params)
@@ -367,18 +368,20 @@ class BrepEncoder(nn.Module):
                     ),
                     progress=instance_bias_progress,
                 )
-            layer_attn_bias = attn_bias
-            if (
-                use_late_gated_bias
-                and layer_index >= late_layer_start
-            ):
-                layer_attn_bias = attn_bias + instance_bias
-            x, _ = layer(
-                x,
-                self_attn_padding_mask=padding_mask,
-                self_attn_mask=attn_mask,
-                self_attn_bias=layer_attn_bias,
-            )
+            layer_kwargs = {
+                "self_attn_padding_mask": padding_mask,
+                "self_attn_mask": attn_mask,
+                "self_attn_bias": attn_bias,
+            }
+            if use_late_gated_bias and layer_index >= late_layer_start:
+                layer_kwargs.update(
+                    instance_attn_bias=instance_bias,
+                    instance_attn_gate=self.instance_relation_bias.residual_gate(
+                        layer_index - late_layer_start,
+                        progress=instance_bias_progress,
+                    ),
+                )
+            x, _ = layer(x, **layer_kwargs)
             if not last_state_only:
                 inner_states.append(x)
 

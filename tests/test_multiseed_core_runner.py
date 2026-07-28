@@ -171,3 +171,63 @@ param(
         completed.stdout + completed.stderr
     )
     assert not events.exists()
+
+
+@pytest.mark.parametrize(
+    "filename, expected_seed",
+    [
+        ("run_mfrinstseg_core_seed42.ps1", 42),
+        ("run_mfrinstseg_core_seed2025.ps1", 2025),
+        ("run_mfrinstseg_core_seed2027.ps1", 2027),
+    ],
+)
+def test_fixed_seed_entrypoint_forwards_declared_seed(
+    tmp_path,
+    filename,
+    expected_seed,
+):
+    fake_train, fake_test, events = _fake_launchers(tmp_path)
+    result_base = tmp_path / "results"
+    prepared_base = tmp_path / "prepared"
+    environment = os.environ.copy()
+    environment["MFR_CORE_RESULT_BASE"] = str(result_base)
+    environment["MFR_CORE_EVENTS"] = str(events)
+
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(PROJECT_ROOT / "tools" / filename),
+            "-RawDatasetPath",
+            str(tmp_path / "raw"),
+            "-PreparedDatasetBase",
+            str(prepared_base),
+            "-ResultBasePath",
+            str(result_base),
+            "-TrainingLauncher",
+            str(fake_train),
+            "-TestLauncher",
+            str(fake_test),
+            "-PythonExe",
+            "fake-python.exe",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    train_lines = events.read_text(encoding="utf-8").splitlines()[::2]
+    assert [int(line.split("|")[3]) for line in train_lines] == [
+        expected_seed,
+        expected_seed,
+        expected_seed,
+    ]
+    assert all(
+        line.split("|")[4] == str(prepared_base) + "_seed" + str(expected_seed)
+        for line in train_lines
+    )

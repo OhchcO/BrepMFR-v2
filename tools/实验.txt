@@ -4,9 +4,9 @@
 # 3. 训练结束后会自动寻找该实验最新的 best-*.ckpt，然后运行完整 test.txt。
 # 4. 所有实验共用已有 BIN 缓存，不要添加 -RebuildPreparedData。
 # 5. oracle 使用 GT 实例信息，只表示理论性能上界，不能作为正常推理结果。
-# 6. 实验 11/12 是正向映射（positive_only）消融，用于锁定论文对照链：
+# 6. 实验 11-14 是正向映射（positive_only）消融，用于锁定论文对照链：
 #    Baseline → dynamic_no_loss+positive → affinity_only+positive
-#    → instance+positive → oracle
+#    → instance+positive → oracle+positive
 
 
 # ============================================================
@@ -500,6 +500,72 @@ $Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ck
   | Select-Object -First 1 -ExpandProperty FullName
 if (-not $Checkpoint) {
   throw "No best checkpoint found for affinity_only_positive"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 13. instance + positive_only：真正的共享实例亲和监督
+#     + 零初始化残差动态实例偏置（核心方法）
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode instance `
+  -InstanceRelationMapping positive_only `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_instance_positive_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for instance_positive"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 14. oracle + positive_only：GT实例关系通过同一残差注意力路径
+#     仅作为实例偏置理论上界，不作为正常推理方法
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode oracle `
+  -InstanceRelationMapping positive_only `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -SamplePercent 0.01 `
+  -Seed 2026 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_oracle_positive_seed2026"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for oracle_positive"
 }
 Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `

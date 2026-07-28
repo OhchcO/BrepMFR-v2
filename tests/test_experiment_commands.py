@@ -23,6 +23,8 @@ EXPECTED_EXPERIMENT_IDENTITIES = [
     ("cyl_affinity", "signed"),
     ("dynamic_no_loss", "positive_only"),
     ("affinity_only", "positive_only"),
+    ("instance", "positive_only"),
+    ("oracle", "positive_only"),
 ]
 
 EXPECTED_INSTANCE_EXPERIMENT_DESCRIPTIONS = {

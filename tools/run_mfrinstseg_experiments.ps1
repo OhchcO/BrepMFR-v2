@@ -33,7 +33,7 @@ param(
     [string]$InstanceRelationMapping = "signed",
     [int]$InstanceBiasLastLayers = 2,
     [double]$InstanceBiasConfidencePower = 1.0,
-    [double]$InstanceBiasGateInit = 0.05,
+    [double]$InstanceBiasGateInit = 0.0,
     [double]$InstanceBiasMaxGateScale = 1.0,
     [int]$InstanceBiasDelayEpochs = 10,
     [int]$InstanceBiasRampEpochs = 10

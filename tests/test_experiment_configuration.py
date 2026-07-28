@@ -241,7 +241,7 @@ def test_parser_exposes_preparation_and_geometry_defaults(segmentation):
     assert args.instance_relation_mapping == "signed"
     assert args.instance_bias_last_layers == 2
     assert args.instance_bias_confidence_power == 1.0
-    assert args.instance_bias_gate_init == 0.05
+    assert args.instance_bias_gate_init == 0.0
     assert args.instance_bias_max_gate_scale == 1.0
     assert args.instance_bias_delay_epochs == 10
     assert args.instance_bias_ramp_epochs == 10
@@ -253,6 +253,63 @@ def test_parser_exposes_preparation_and_geometry_defaults(segmentation):
 
     no_uv_args = segmentation.build_parser().parse_args(["train", "--no_face_uv"])
     assert no_uv_args.use_face_uv is False
+
+
+@pytest.mark.parametrize("gate_init", (0.0, -0.25))
+def test_parser_accepts_zero_and_signed_initial_residual_gates(
+    segmentation, gate_init
+):
+    parser = segmentation.build_parser()
+    args = parser.parse_args(
+        [
+            "train",
+            "--dataset_path",
+            ".",
+            "--instance_bias_gate_init",
+            str(gate_init),
+            "--instance_bias_max_gate_scale",
+            "0.5",
+        ]
+    )
+
+    segmentation._validate_configuration(parser, args)
+
+
+@pytest.mark.parametrize("gate_init", (1.0, -1.0, 1.5, -1.5))
+def test_parser_rejects_initial_gate_at_or_above_magnitude_limit(
+    segmentation, capsys, gate_init
+):
+    parser = segmentation.build_parser()
+    args = parser.parse_args(
+        [
+            "train",
+            "--instance_bias_gate_init",
+            str(gate_init),
+            "--instance_bias_max_gate_scale",
+            "1.0",
+        ]
+    )
+
+    with pytest.raises(SystemExit):
+        segmentation._validate_configuration(parser, args)
+
+    assert (
+        "--instance_bias_gate_init magnitude must be less than "
+        "--instance_bias_max_gate_scale" in capsys.readouterr().err
+    )
+
+
+def test_residual_instance_bias_constructor_defaults_to_zero_gate():
+    from models.modules.instance_bias import InstanceRelationBias
+
+    relation_bias = InstanceRelationBias(
+        embedding_dim=4,
+        num_heads=1,
+        mode="dynamic",
+        strategy="late_gated",
+    )
+
+    assert relation_bias.residual_gate(0).item() == 0.0
 
 
 def test_launcher_exposes_optional_instance_bias_controls():
@@ -361,8 +418,10 @@ exit 0
 
     arguments = captured.read_text(encoding="utf-8").splitlines()
     mapping_index = arguments.index("--instance_relation_mapping")
+    gate_init_index = arguments.index("--instance_bias_gate_init")
     name_index = arguments.index("--experiment_name")
     assert arguments[mapping_index + 1] == "positive_only"
+    assert arguments[gate_init_index + 1] == "0"
     assert arguments[name_index + 1] == "MFRInstSeg_1pct_oracle_positive_seed2026"
 
 

@@ -53,7 +53,7 @@ class InstanceRelationBias(nn.Module):
         strategy="legacy",
         relation_mapping="signed",
         confidence_power=1.0,
-        gate_init=0.05,
+        gate_init=0.0,
         max_gate_scale=1.0,
         num_residual_gates=1,
     ):

@@ -228,7 +228,7 @@ class BrepSeg(pl.LightningModule):
             getattr(args, "instance_bias_confidence_power", 1.0)
         )
         self.instance_bias_gate_init = float(
-            getattr(args, "instance_bias_gate_init", 0.05)
+            getattr(args, "instance_bias_gate_init", 0.0)
         )
         self.instance_bias_max_gate_scale = float(
             getattr(args, "instance_bias_max_gate_scale", 1.0)

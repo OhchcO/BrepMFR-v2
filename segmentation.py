@@ -203,7 +203,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
     )
-    parser.add_argument("--instance_bias_gate_init", type=float, default=0.05)
+    parser.add_argument("--instance_bias_gate_init", type=float, default=0.0)
     parser.add_argument(
         "--instance_bias_max_gate_scale",
         type=float,
@@ -376,13 +376,9 @@ def _validate_configuration(
         )
     if args.instance_bias_max_gate_scale <= 0:
         parser.error("--instance_bias_max_gate_scale must be positive")
-    if not (
-        0
-        < args.instance_bias_gate_init
-        < args.instance_bias_max_gate_scale
-    ):
+    if abs(args.instance_bias_gate_init) >= args.instance_bias_max_gate_scale:
         parser.error(
-            "--instance_bias_gate_init must be between zero and "
+            "--instance_bias_gate_init magnitude must be less than "
             "--instance_bias_max_gate_scale"
         )
     if args.instance_bias_delay_epochs < 0:

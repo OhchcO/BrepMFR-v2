@@ -67,7 +67,7 @@ class BrepEncoder(nn.Module):
         instance_relation_mapping: str = "signed",
         instance_bias_last_layers: int = 2,
         instance_bias_confidence_power: float = 1.0,
-        instance_bias_gate_init: float = 0.05,
+        instance_bias_gate_init: float = 0.0,
         instance_bias_max_gate_scale: float = 1.0,
         use_face_uv: bool = True,
         use_face_pointcloud: bool = False,

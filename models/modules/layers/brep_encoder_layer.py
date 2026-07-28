@@ -125,24 +125,44 @@ class GraphEncoderLayer(nn.Module):
         self_attn_bias: Optional[torch.Tensor] = None,
         self_attn_mask: Optional[torch.Tensor] = None,
         self_attn_padding_mask: Optional[torch.Tensor] = None,
+        instance_attn_bias: Optional[torch.Tensor] = None,
+        instance_attn_gate: Optional[torch.Tensor] = None,
     ):
         """
         LayerNorm is applied either before or after the self-attention/ffn
         modules similar to the original Transformer implementation.
         """
+        if (instance_attn_bias is None) != (instance_attn_gate is None):
+            raise ValueError(
+                "instance_attn_bias and instance_attn_gate must be provided together"
+            )
+
         # x: T x B x C
         residual = x
         if self.pre_layernorm:
             x = self.self_attn_layer_norm(x)
+        attn_input = x
         x, attn = self.self_attn(
-            query=x,
-            key=x,
-            value=x,
+            query=attn_input,
+            key=attn_input,
+            value=attn_input,
             attn_bias=self_attn_bias,
             key_padding_mask=self_attn_padding_mask,
             need_weights=False,
             attn_mask=self_attn_mask,
         )
+        if instance_attn_bias is not None:
+            with preserve_torch_rng_state():
+                biased_x, _ = self.self_attn(
+                    query=attn_input,
+                    key=attn_input,
+                    value=attn_input,
+                    attn_bias=self_attn_bias + instance_attn_bias,
+                    key_padding_mask=self_attn_padding_mask,
+                    need_weights=False,
+                    attn_mask=self_attn_mask,
+                )
+            x = x + instance_attn_gate * (biased_x - x)
         x = self.dropout_module(x)
         x = residual + x
         if not self.pre_layernorm:

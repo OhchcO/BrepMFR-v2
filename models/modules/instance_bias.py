@@ -131,6 +131,8 @@ class InstanceRelationBias(nn.Module):
         return self.residual_gates().abs().mean()
 
     def residual_gates(self, progress=1.0):
+        if self.strategy != "late_gated" or self.mode == "baseline":
+            return None
         if not 0.0 <= float(progress) <= 1.0:
             raise ValueError("residual gate progress must be between 0 and 1")
         return (
@@ -140,11 +142,10 @@ class InstanceRelationBias(nn.Module):
         )
 
     def residual_gate(self, layer_offset, progress=1.0):
-        if not 0 <= layer_offset < self.gate_logits.numel():
-            raise IndexError(
-                "Invalid residual gate layer offset: {}".format(layer_offset)
-            )
-        return self.residual_gates(progress)[layer_offset]
+        gates = self.residual_gates(progress)
+        if gates is None or not 0 <= layer_offset < gates.numel():
+            raise IndexError("residual gate layer offset is out of range")
+        return gates[layer_offset]
 
     def _valid_pair_mask(self, padding_mask):
         valid_node = ~padding_mask

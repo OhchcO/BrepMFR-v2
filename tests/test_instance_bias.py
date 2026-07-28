@@ -386,3 +386,25 @@ def test_residual_gate_constructor_rejects_invalid_values(kwargs, message):
             strategy="late_gated",
             **kwargs,
         )
+
+
+@pytest.mark.parametrize(
+    "mode, strategy",
+    [
+        ("baseline", "late_gated"),
+        ("oracle", "legacy"),
+    ],
+)
+def test_residual_gate_methods_handle_modes_without_gate_parameters(
+    mode, strategy
+):
+    module = InstanceRelationBias(
+        embedding_dim=4,
+        num_heads=1,
+        mode=mode,
+        strategy=strategy,
+    )
+
+    assert module.residual_gates() is None
+    with pytest.raises(IndexError, match="residual gate layer offset"):
+        module.residual_gate(0)

@@ -55,6 +55,7 @@ class InstanceRelationBias(nn.Module):
         confidence_power=1.0,
         gate_init=0.05,
         max_gate_scale=1.0,
+        num_residual_gates=1,
     ):
         super().__init__()
         if mode not in EXPERIMENT_MODES:
@@ -79,9 +80,11 @@ class InstanceRelationBias(nn.Module):
             raise ValueError("confidence_power must be non-negative")
         if max_gate_scale <= 0:
             raise ValueError("max_gate_scale must be positive")
-        if not 0 < gate_init < max_gate_scale:
+        if num_residual_gates <= 0:
+            raise ValueError("num_residual_gates must be positive")
+        if abs(gate_init) >= max_gate_scale:
             raise ValueError(
-                "gate_init must be between zero and max_gate_scale"
+                "gate_init magnitude must be less than max_gate_scale"
             )
 
         self.mode = mode
@@ -95,10 +98,14 @@ class InstanceRelationBias(nn.Module):
 
         if self.strategy == "late_gated" and self.mode != "baseline":
             gate_fraction = float(gate_init) / self.max_gate_scale
-            gate_logit = torch.log(
-                torch.tensor(gate_fraction / (1.0 - gate_fraction))
+            gate_fraction = max(
+                min(gate_fraction, 1.0 - 1e-6),
+                -1.0 + 1e-6,
             )
-            self.gate_logit = nn.Parameter(gate_logit)
+            gate_logit = torch.atanh(torch.tensor(gate_fraction)).item()
+            self.gate_logits = nn.Parameter(
+                torch.full((int(num_residual_gates),), gate_logit)
+            )
 
         if self.is_dynamic:
             self.node_projection = nn.Sequential(
@@ -121,7 +128,23 @@ class InstanceRelationBias(nn.Module):
     def gate_scale(self):
         if self.strategy != "late_gated" or self.mode == "baseline":
             return None
-        return self.max_gate_scale * torch.sigmoid(self.gate_logit)
+        return self.residual_gates().abs().mean()
+
+    def residual_gates(self, progress=1.0):
+        if not 0.0 <= float(progress) <= 1.0:
+            raise ValueError("residual gate progress must be between 0 and 1")
+        return (
+            self.max_gate_scale
+            * torch.tanh(self.gate_logits)
+            * float(progress)
+        )
+
+    def residual_gate(self, layer_offset, progress=1.0):
+        if not 0 <= layer_offset < self.gate_logits.numel():
+            raise IndexError(
+                "Invalid residual gate layer offset: {}".format(layer_offset)
+            )
+        return self.residual_gates(progress)[layer_offset]
 
     def _valid_pair_mask(self, padding_mask):
         valid_node = ~padding_mask
@@ -228,9 +251,7 @@ class InstanceRelationBias(nn.Module):
 
         relation = relation * pair_mask.to(relation.dtype)
         if self.strategy == "late_gated" and self.mode != "baseline":
-            effective_scale = (
-                self.bias_scale * float(progress) * self.gate_scale
-            )
+            effective_scale = self.bias_scale * float(progress)
         else:
             effective_scale = self.bias_scale
         face_bias = effective_scale * relation

@@ -102,7 +102,7 @@ def test_positive_only_oracle_keeps_different_instances_neutral():
     signed_bias, _ = signed_module(**inputs, progress=1.0)
     positive_bias, _ = positive_module(**inputs, progress=1.0)
 
-    assert signed_bias[0, 0, 1, 2].item() == pytest.approx(-0.5)
+    assert signed_bias[0, 0, 1, 2].item() == pytest.approx(-1.0)
     assert positive_bias[0, 0, 1, 2].item() == 0.0
 
 
@@ -153,7 +153,7 @@ def test_late_gated_progress_scales_bias_and_rejects_invalid_values():
     full_bias, _ = module(**inputs, progress=1.0)
 
     assert torch.count_nonzero(zero_bias).item() == 0
-    assert full_bias[0, 0, 1, 2].item() == pytest.approx(0.5)
+    assert full_bias[0, 0, 1, 2].item() == pytest.approx(1.0)
     with pytest.raises(ValueError, match="progress"):
         module(**inputs, progress=1.1)
 
@@ -183,7 +183,7 @@ def test_dynamic_affinity_logits_update_shared_features_and_affinity_head():
     affinity_parameters = [
         parameter
         for name, parameter in module.named_parameters()
-        if name != "gate_logit"
+        if name != "gate_logits"
     ]
     assert all(parameter.grad is not None for parameter in affinity_parameters)
     assert any(
@@ -210,15 +210,15 @@ def test_dynamic_affinity_semantic_bias_does_not_update_encoder_or_affinity_head
     )
 
     bias, _ = module(**inputs, progress=1.0)
-    bias.sum().backward()
 
+    assert not bias.requires_grad
     assert inputs["node_features"].grad is None
     affinity_parameters = [
         parameter
         for name, parameter in module.named_parameters()
-        if name != "gate_logit"
+        if name != "gate_logits"
     ]
-    assert module.gate_logit.grad is not None
+    assert module.gate_logits.grad is None
     assert all(parameter.grad is None for parameter in affinity_parameters)
 
 
@@ -247,7 +247,7 @@ def test_dynamic_without_affinity_loss_can_learn_predictor_from_semantics():
     assert any(
         parameter.grad is not None
         for name, parameter in module.named_parameters()
-        if name != "gate_logit"
+        if name != "gate_logits"
     )
 
 
@@ -266,3 +266,123 @@ def test_legacy_strategy_retains_non_negative_probability_bias():
     expected = torch.sigmoid(logits[0, 0, 1])
     assert bias[0, 0, 1, 2].item() == pytest.approx(expected.item())
     assert torch.all(bias >= 0)
+
+
+def test_late_gated_residual_gates_initialize_to_exact_zero():
+    module = InstanceRelationBias(
+        embedding_dim=4,
+        num_heads=1,
+        mode="oracle",
+        strategy="late_gated",
+        gate_init=0.0,
+        max_gate_scale=0.75,
+        num_residual_gates=3,
+    )
+
+    assert torch.equal(module.residual_gates(), torch.zeros(3))
+    assert module.gate_scale.item() == pytest.approx(0.0)
+
+
+def test_late_gated_residual_gates_are_bounded_at_saturation():
+    module = InstanceRelationBias(
+        embedding_dim=4,
+        num_heads=1,
+        mode="oracle",
+        strategy="late_gated",
+        gate_init=0.0,
+        max_gate_scale=0.75,
+        num_residual_gates=2,
+    )
+    with torch.no_grad():
+        module.gate_logits.copy_(torch.tensor([30.0, -30.0]))
+
+    gates = module.residual_gates()
+
+    assert gates[0].item() == pytest.approx(0.75)
+    assert gates[1].item() == pytest.approx(-0.75)
+    assert torch.all(gates.abs() <= 0.75)
+
+
+def test_late_gated_residual_gates_scale_with_progress():
+    module = InstanceRelationBias(
+        embedding_dim=4,
+        num_heads=1,
+        mode="oracle",
+        strategy="late_gated",
+        gate_init=0.5,
+        max_gate_scale=1.0,
+        num_residual_gates=2,
+    )
+
+    assert torch.allclose(module.residual_gates(progress=0.4), torch.full((2,), 0.2))
+    assert module.residual_gate(1, progress=0.4).item() == pytest.approx(0.2)
+    with pytest.raises(ValueError, match="progress"):
+        module.residual_gates(progress=1.1)
+
+
+def test_zero_initialized_residual_gate_has_nonzero_raw_gradient():
+    module = InstanceRelationBias(
+        embedding_dim=4,
+        num_heads=1,
+        mode="oracle",
+        strategy="late_gated",
+        gate_init=0.0,
+        max_gate_scale=0.75,
+    )
+
+    module.residual_gate(0).backward()
+
+    assert module.gate_logits.grad.item() == pytest.approx(0.75)
+
+
+def test_late_gated_residual_gates_are_independent_per_layer():
+    module = InstanceRelationBias(
+        embedding_dim=4,
+        num_heads=1,
+        mode="oracle",
+        strategy="late_gated",
+        gate_init=0.0,
+        max_gate_scale=1.0,
+        num_residual_gates=3,
+    )
+    with torch.no_grad():
+        module.gate_logits.copy_(torch.tensor([-0.5, 0.0, 0.5]))
+
+    gates = module.residual_gates()
+
+    assert gates[0].item() == pytest.approx(-0.462117, abs=1e-6)
+    assert gates[1].item() == pytest.approx(0.0)
+    assert gates[2].item() == pytest.approx(0.462117, abs=1e-6)
+
+
+def test_residual_gate_rejects_invalid_layer_offset():
+    module = InstanceRelationBias(
+        embedding_dim=4,
+        num_heads=1,
+        mode="oracle",
+        strategy="late_gated",
+        gate_init=0.0,
+        num_residual_gates=2,
+    )
+
+    with pytest.raises(IndexError, match="layer offset"):
+        module.residual_gate(2)
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"num_residual_gates": 0}, "num_residual_gates"),
+        ({"gate_init": 1.0, "max_gate_scale": 1.0}, "gate_init"),
+        ({"gate_init": -1.0, "max_gate_scale": 1.0}, "gate_init"),
+    ],
+)
+def test_residual_gate_constructor_rejects_invalid_values(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        InstanceRelationBias(
+            embedding_dim=4,
+            num_heads=1,
+            mode="oracle",
+            strategy="late_gated",
+            **kwargs,
+        )

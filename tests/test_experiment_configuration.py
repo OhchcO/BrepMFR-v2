@@ -312,6 +312,52 @@ def test_residual_instance_bias_constructor_defaults_to_zero_gate():
     assert relation_bias.residual_gate(0).item() == 0.0
 
 
+def test_encoder_and_model_fallback_defaults_keep_residual_gate_disabled():
+    project_root = Path(__file__).resolve().parents[1]
+    encoder_tree = ast.parse(
+        (project_root / "models" / "modules" / "brep_encoder.py").read_text(
+            encoding="utf-8"
+        )
+    )
+    encoder = next(
+        node
+        for node in encoder_tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "BrepEncoder"
+    )
+    encoder_init = next(
+        node
+        for node in encoder.body
+        if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+    )
+    encoder_defaults = dict(
+        zip(
+            encoder_init.args.args[-len(encoder_init.args.defaults) :],
+            encoder_init.args.defaults,
+        )
+    )
+    gate_default = next(
+        default
+        for argument, default in encoder_defaults.items()
+        if argument.arg == "instance_bias_gate_init"
+    )
+    assert ast.literal_eval(gate_default) == 0.0
+
+    model_tree = ast.parse(
+        (project_root / "models" / "brepseg_model.py").read_text(encoding="utf-8")
+    )
+    fallback_defaults = [
+        node.args[2]
+        for node in ast.walk(model_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "getattr"
+        and len(node.args) == 3
+        and isinstance(node.args[1], ast.Constant)
+        and node.args[1].value == "instance_bias_gate_init"
+    ]
+    assert [ast.literal_eval(default) for default in fallback_defaults] == [0.0]
+
+
 def test_launcher_exposes_optional_instance_bias_controls():
     launcher = (
         Path(__file__).resolve().parents[1]

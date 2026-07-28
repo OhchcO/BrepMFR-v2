@@ -6,22 +6,31 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COMMAND_FILE = PROJECT_ROOT / "tools" / "实验.txt"
-EXPECTED_MODES = [
-    "baseline",
-    "topo_aag",
-    "uv_aag",
-    "pc_aag",
-    "uv_pc_aag",
-    "dynamic_no_loss",
-    "affinity_only",
-    "instance",
-    "oracle",
-    "cyl",
-    "point",
-    "spe_pcaag",
-    "full",
-    "cyl_affinity",
+EXPECTED_EXPERIMENT_IDENTITIES = [
+    ("baseline", "signed"),
+    ("topo_aag", "signed"),
+    ("uv_aag", "signed"),
+    ("pc_aag", "signed"),
+    ("uv_pc_aag", "signed"),
+    ("dynamic_no_loss", "signed"),
+    ("affinity_only", "signed"),
+    ("instance", "signed"),
+    ("oracle", "signed"),
+    ("cyl", "signed"),
+    ("point", "signed"),
+    ("spe_pcaag", "signed"),
+    ("full", "signed"),
+    ("cyl_affinity", "signed"),
+    ("dynamic_no_loss", "positive_only"),
+    ("affinity_only", "positive_only"),
 ]
+
+EXPECTED_INSTANCE_EXPERIMENT_DESCRIPTIONS = {
+    "dynamic_no_loss": "residual predicted bias without affinity supervision",
+    "affinity_only": "true shared affinity supervision with residual bias disabled",
+    "instance": "true shared affinity supervision plus residual predicted bias",
+    "oracle": "GT relation through the same residual attention path",
+}
 
 
 def _wrapper_fixture(tmp_path):
@@ -115,13 +124,33 @@ def test_test_wrapper_rejects_negative_instance_bias_override(tmp_path):
     assert not captured.exists()
 
 
-def test_experiment_file_has_one_copyable_train_and_test_block_per_mode():
-    text = COMMAND_FILE.read_text(encoding="utf-8")
-    actual_modes = re.findall(r"(?m)^\s+-Mode ([a-z_]+) `?$", text)
+def _experiment_identities(text):
+    train_blocks = re.findall(
+        r'(?ms)^powershell\.exe .*?run_mfrinstseg_experiments\.ps1" `\r?\n'
+        r"(?P<arguments>.*?)(?=^\s*$)",
+        text,
+    )
+    identities = []
+    for arguments in train_blocks:
+        mode = re.search(r"(?m)^\s+-Mode ([a-z_]+) `?$", arguments)
+        relation_mapping = re.search(
+            r"(?m)^\s+-InstanceRelationMapping ([a-z_]+) `?$", arguments
+        )
+        assert mode is not None
+        identities.append(
+            (mode.group(1), relation_mapping.group(1) if relation_mapping else "signed")
+        )
+    return identities
 
-    assert actual_modes == EXPECTED_MODES
-    assert text.count("run_mfrinstseg_test.ps1") == len(EXPECTED_MODES)
-    assert text.count('Get-ChildItem -LiteralPath') == len(EXPECTED_MODES)
+
+def test_experiment_file_has_expected_copyable_train_and_test_blocks():
+    text = COMMAND_FILE.read_text(encoding="utf-8")
+
+    assert _experiment_identities(text) == EXPECTED_EXPERIMENT_IDENTITIES
+    assert text.count("run_mfrinstseg_test.ps1") == len(EXPECTED_EXPERIMENT_IDENTITIES)
+    assert text.count('Get-ChildItem -LiteralPath') == len(EXPECTED_EXPERIMENT_IDENTITIES)
+    for mode, description in EXPECTED_INSTANCE_EXPERIMENT_DESCRIPTIONS.items():
+        assert "# {}: {}".format(mode, description) in text
     assert "最优best模型的完整路径" not in text
 
 

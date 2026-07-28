@@ -165,7 +165,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
 
 
 # ============================================================
-# 2. dynamic_no_loss：动态实例偏置，不使用实例亲和损失
+# dynamic_no_loss: residual predicted bias without affinity supervision
 # ============================================================
 
 powershell.exe -ExecutionPolicy Bypass -File `
@@ -196,7 +196,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
 
 
 # ============================================================
-# 3. affinity_only：仅使用实例亲和损失，不向注意力加入实例偏置
+# affinity_only: true shared affinity supervision with residual bias disabled
 # ============================================================
 
 powershell.exe -ExecutionPolicy Bypass -File `
@@ -227,7 +227,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
 
 
 # ============================================================
-# 4. instance：动态实例偏置 + 实例亲和损失
+# instance: true shared affinity supervision plus residual predicted bias
 # ============================================================
 
 powershell.exe -ExecutionPolicy Bypass -File `
@@ -258,7 +258,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
 
 
 # ============================================================
-# 5. oracle：GT 实例偏置理论上界
+# oracle: GT relation through the same residual attention path
 # ============================================================
 
 powershell.exe -ExecutionPolicy Bypass -File `

@@ -152,12 +152,17 @@ class GraphEncoderLayer(nn.Module):
             attn_mask=self_attn_mask,
         )
         if instance_attn_bias is not None:
+            biased_attn_bias = (
+                instance_attn_bias
+                if self_attn_bias is None
+                else self_attn_bias + instance_attn_bias
+            )
             with preserve_torch_rng_state():
                 biased_x, _ = self.self_attn(
                     query=attn_input,
                     key=attn_input,
                     value=attn_input,
-                    attn_bias=self_attn_bias + instance_attn_bias,
+                    attn_bias=biased_attn_bias,
                     key_padding_mask=self_attn_padding_mask,
                     need_weights=False,
                     attn_mask=self_attn_mask,

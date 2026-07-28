@@ -69,6 +69,21 @@ def test_gate_one_changes_output_when_instance_bias_changes_attention():
     assert not torch.equal(residual, ordinary)
 
 
+def test_instance_bias_without_graph_bias_changes_the_base_attention_path():
+    layer = make_layer()
+    x, _, instance_bias = attention_inputs()
+
+    ordinary, _ = layer(x)
+    residual, _ = layer(
+        x,
+        instance_attn_bias=instance_bias,
+        instance_attn_gate=torch.tensor(1.0),
+    )
+
+    assert residual.shape == ordinary.shape
+    assert not torch.equal(residual, ordinary)
+
+
 def test_zero_gate_receives_gradient_from_the_biased_attention_difference():
     layer = make_layer()
     x, graph_bias, instance_bias = attention_inputs()

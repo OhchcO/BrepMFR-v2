@@ -126,6 +126,51 @@ def test_test_wrapper_rejects_negative_instance_bias_override(tmp_path):
     assert not captured.exists()
 
 
+def test_test_wrapper_sets_deterministic_cublas_workspace(tmp_path):
+    prepared, checkpoint, fake_python, captured = _wrapper_fixture(tmp_path)
+    cublas_capture = tmp_path / "cublas-workspace.txt"
+    fake_python.write_text(
+        """
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CapturedArguments
+)
+[System.IO.File]::WriteAllText(
+    $env:MFRINSTSEG_CUBLAS_CAPTURE,
+    $env:CUBLAS_WORKSPACE_CONFIG
+)
+exit 0
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["MFRINSTSEG_CUBLAS_CAPTURE"] = str(cublas_capture)
+
+    subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(PROJECT_ROOT / "tools" / "run_mfrinstseg_test.ps1"),
+            "-Checkpoint",
+            str(checkpoint),
+            "-PreparedDataset",
+            str(prepared),
+            "-PythonExe",
+            str(fake_python),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert cublas_capture.read_text(encoding="utf-8") == ":4096:8"
+
+
 def _experiment_identities(text):
     train_blocks = re.findall(
         r'(?ms)^powershell\.exe .*?run_mfrinstseg_experiments\.ps1" `\r?\n'

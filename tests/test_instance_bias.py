@@ -660,6 +660,24 @@ def test_layerdrop_does_not_promote_earlier_physical_layers_or_shift_gate_offset
     )
 
 
+def test_eval_layerdrop_preserves_legacy_rng_consumption_and_keeps_all_layers():
+    model = make_routing_encoder(mode="baseline")
+    physical_layers = [RecordingGraphLayer() for _ in range(4)]
+    model.layers = LayerDropModuleList(p=0.5, modules=physical_layers)
+    model.eval()
+
+    torch.manual_seed(2026)
+    model(encoder_batch())
+    actual_rng_state = torch.get_rng_state()
+
+    torch.manual_seed(2026)
+    torch.empty(4).uniform_()
+    expected_rng_state = torch.get_rng_state()
+
+    assert torch.equal(actual_rng_state, expected_rng_state)
+    assert all(len(layer.calls) == 1 for layer in physical_layers)
+
+
 def test_dropped_prediction_boundary_uses_its_physical_input_for_logits(
     monkeypatch,
 ):

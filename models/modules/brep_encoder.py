@@ -329,10 +329,14 @@ class BrepEncoder(nn.Module):
             inner_states.append(x)
 
         layer_count = len(self.layers)
-        if isinstance(self.layers, LayerDropModuleList) and self.training:
-            keep_layers = (
-                torch.empty(layer_count).uniform_() > self.layers.p
-            )
+        if isinstance(self.layers, LayerDropModuleList):
+            # Match LayerDropModuleList.__iter__: evaluation keeps every
+            # layer but still advances the RNG by one score per layer.
+            layerdrop_scores = torch.empty(layer_count).uniform_()
+            if self.training:
+                keep_layers = layerdrop_scores > self.layers.p
+            else:
+                keep_layers = torch.ones(layer_count, dtype=torch.bool)
         else:
             keep_layers = torch.ones(layer_count, dtype=torch.bool)
         use_late_gated_bias = (

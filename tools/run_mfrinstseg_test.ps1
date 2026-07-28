@@ -27,6 +27,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:CUBLAS_WORKSPACE_CONFIG = ":4096:8"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Preparer = Join-Path $PSScriptRoot "prepare_dataset.py"
 $Evaluator = Join-Path $PSScriptRoot "test_mfrinstseg.py"

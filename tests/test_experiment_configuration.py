@@ -432,6 +432,66 @@ $parameters = [System.Management.Automation.CommandMetadata]::new($command).Para
     }
 
 
+def test_training_launcher_sets_deterministic_cublas_workspace(tmp_path):
+    dataset = tmp_path / "prepared"
+    dataset.mkdir()
+    for split in ("train", "val"):
+        (dataset / (split + ".txt")).write_text(
+            "sample-id\n",
+            encoding="utf-8",
+        )
+    captured = tmp_path / "cublas-workspace.txt"
+    fake_python = tmp_path / "fake-python.ps1"
+    fake_python.write_text(
+        """
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CapturedArguments
+)
+[System.IO.File]::WriteAllText(
+    $env:MFRINSTSEG_CUBLAS_CAPTURE,
+    $env:CUBLAS_WORKSPACE_CONFIG
+)
+exit 0
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    launcher = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "run_mfrinstseg_experiments.ps1"
+    )
+    quote = lambda value: str(value).replace("'", "''")
+    command = (
+        "& '{launcher}' -Mode baseline -AutoPrepare $false "
+        "-DatasetPath '{dataset}' -PythonExe '{python}'"
+    ).format(
+        launcher=quote(launcher),
+        dataset=quote(dataset),
+        python=quote(fake_python),
+    )
+    environment = os.environ.copy()
+    environment["MFRINSTSEG_CUBLAS_CAPTURE"] = str(captured)
+
+    subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert captured.read_text(encoding="utf-8") == ":4096:8"
+
+
 def test_launcher_forwards_positive_mapping_and_uses_positive_result_name(
     tmp_path,
 ):

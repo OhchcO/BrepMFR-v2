@@ -40,6 +40,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:CUBLAS_WORKSPACE_CONFIG = ":4096:8"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Segmentation = Join-Path $ProjectRoot "segmentation.py"
 

@@ -1,5 +1,7 @@
 """Instance-relation attention bias used by the four ablation modes."""
 
+import math
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -78,6 +80,10 @@ class InstanceRelationBias(nn.Module):
             raise ValueError("bias_scale must be non-negative")
         if confidence_power < 0:
             raise ValueError("confidence_power must be non-negative")
+        if not math.isfinite(gate_init):
+            raise ValueError("gate_init must be finite")
+        if not math.isfinite(max_gate_scale):
+            raise ValueError("max_gate_scale must be finite")
         if max_gate_scale <= 0:
             raise ValueError("max_gate_scale must be positive")
         if num_residual_gates <= 0:
@@ -251,11 +257,7 @@ class InstanceRelationBias(nn.Module):
                 relation = relation.clamp_min(0.0)
 
         relation = relation * pair_mask.to(relation.dtype)
-        if self.strategy == "late_gated" and self.mode != "baseline":
-            effective_scale = self.bias_scale * float(progress)
-        else:
-            effective_scale = self.bias_scale
-        face_bias = effective_scale * relation
+        face_bias = self.bias_scale * relation
         bias = node_features.new_zeros(
             (batch_size, self.num_heads, max_nodes + 1, max_nodes + 1)
         )

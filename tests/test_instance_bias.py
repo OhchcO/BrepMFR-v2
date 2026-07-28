@@ -3,6 +3,7 @@ import copy
 import pytest
 import torch
 import torch.nn as nn
+from fairseq.modules import LayerDropModuleList
 
 from models.modules.brep_encoder import BrepEncoder
 from models.modules.instance_bias import (
@@ -137,7 +138,7 @@ def test_late_gated_scale_zero_keeps_logits_but_disables_bias():
     assert torch.count_nonzero(bias).item() == 0
 
 
-def test_late_gated_progress_scales_bias_and_rejects_invalid_values():
+def test_late_gated_relation_bias_is_independent_of_progress():
     module = InstanceRelationBias(
         embedding_dim=4,
         num_heads=2,
@@ -153,13 +154,40 @@ def test_late_gated_progress_scales_bias_and_rejects_invalid_values():
     )
     inputs["instance_available"] = torch.tensor([True])
 
-    zero_bias, _ = module(**inputs, progress=0.0)
+    zero_progress_bias, _ = module(**inputs, progress=0.0)
     full_bias, _ = module(**inputs, progress=1.0)
 
-    assert torch.count_nonzero(zero_bias).item() == 0
+    assert torch.equal(zero_progress_bias, full_bias)
+    assert zero_progress_bias[0, 0, 1, 2].item() == pytest.approx(1.0)
     assert full_bias[0, 0, 1, 2].item() == pytest.approx(1.0)
     with pytest.raises(ValueError, match="progress"):
         module(**inputs, progress=1.1)
+
+
+def test_late_gated_small_signal_residual_has_one_progress_factor():
+    module = InstanceRelationBias(
+        embedding_dim=4,
+        num_heads=1,
+        mode="oracle",
+        strategy="late_gated",
+        bias_scale=1.0,
+        gate_init=0.5,
+        max_gate_scale=1.0,
+    )
+    inputs = relation_inputs()
+    inputs["instance"] = torch.tensor(
+        [[[0.0, 1.0], [1.0, 0.0]]]
+    )
+    inputs["instance_available"] = torch.tensor([True])
+
+    ramp_bias, _ = module(**inputs, progress=0.4)
+    full_bias, _ = module(**inputs, progress=1.0)
+    ramp_effect = (
+        ramp_bias[0, 0, 1, 2] * module.residual_gate(0, progress=0.4)
+    )
+    full_effect = full_bias[0, 0, 1, 2] * module.residual_gate(0)
+
+    assert ramp_effect.item() == pytest.approx(0.4 * full_effect.item())
 
 
 def test_dynamic_affinity_logits_update_shared_features_and_affinity_head():
@@ -411,6 +439,24 @@ class RecordingGraphLayer(nn.Module):
         return node_features, None
 
 
+class AddingGraphLayer(RecordingGraphLayer):
+    def __init__(self, increment):
+        super().__init__()
+        self.increment = float(increment)
+
+    def forward(self, node_features, **kwargs):
+        self.calls.append(kwargs)
+        return node_features + self.increment, None
+
+
+class ControlledUniformScores:
+    def __init__(self, scores):
+        self.scores = scores
+
+    def uniform_(self):
+        return torch.tensor(self.scores)
+
+
 def encoder_batch():
     return {
         "node_data": torch.zeros(1, 2, 1),
@@ -588,6 +634,87 @@ def test_zero_scaled_late_gated_encoder_matches_ordinary_training_attention():
     assert torch.equal(affinity_only_representation, ordinary_representation)
 
 
+def test_layerdrop_does_not_promote_earlier_physical_layers_or_shift_gate_offsets(
+    monkeypatch,
+):
+    model = make_routing_encoder()
+    physical_layers = [RecordingGraphLayer() for _ in range(4)]
+    model.layers = LayerDropModuleList(p=0.5, modules=physical_layers)
+    model.train()
+    monkeypatch.setattr(
+        torch,
+        "empty",
+        lambda length: ControlledUniformScores([0.9, 0.9, 0.1, 0.9]),
+    )
+
+    model(encoder_batch(), instance_bias_progress=0.5)
+
+    assert len(physical_layers[0].calls) == 1
+    assert len(physical_layers[1].calls) == 1
+    assert len(physical_layers[2].calls) == 0
+    assert len(physical_layers[3].calls) == 1
+    assert physical_layers[1].calls[0].get("instance_attn_bias") is None
+    assert torch.equal(
+        physical_layers[3].calls[0]["instance_attn_gate"],
+        model.instance_relation_bias.residual_gate(1, progress=0.5),
+    )
+
+
+def test_dropped_prediction_boundary_uses_its_physical_input_for_logits(
+    monkeypatch,
+):
+    model = make_routing_encoder()
+    physical_layers = [
+        AddingGraphLayer(1.0),
+        AddingGraphLayer(10.0),
+        AddingGraphLayer(100.0),
+        AddingGraphLayer(1000.0),
+    ]
+    model.layers = LayerDropModuleList(p=0.5, modules=physical_layers)
+    model.train()
+    monkeypatch.setattr(
+        torch,
+        "empty",
+        lambda length: ControlledUniformScores([0.9, 0.9, 0.1, 0.9]),
+    )
+    prediction_inputs = []
+    relation_forward = model.instance_relation_bias.forward
+
+    def record_prediction_input(*args, **kwargs):
+        prediction_inputs.append(
+            kwargs["node_features"].detach().clone()
+        )
+        return relation_forward(*args, **kwargs)
+
+    model.instance_relation_bias.forward = record_prediction_input
+
+    _, _, logits = model(
+        encoder_batch(),
+        return_instance_logits=True,
+    )
+
+    expected_boundary_input = model.graph_node_feature.features.detach() + 11.0
+    assert torch.equal(prediction_inputs[0], expected_boundary_input)
+    assert logits is not None
+    assert len(physical_layers[2].calls) == 0
+
+
+def test_all_layerdrop_layers_dropped_still_returns_dynamic_affinity_logits():
+    model = make_routing_encoder()
+    physical_layers = [RecordingGraphLayer() for _ in range(4)]
+    model.layers = LayerDropModuleList(p=1.0, modules=physical_layers)
+    model.train()
+
+    _, _, logits = model(
+        encoder_batch(),
+        return_instance_logits=True,
+    )
+
+    assert logits is not None
+    assert logits.requires_grad
+    assert all(not layer.calls for layer in physical_layers)
+
+
 @pytest.mark.parametrize(
     "kwargs, message",
     [
@@ -604,6 +731,28 @@ def test_residual_gate_constructor_rejects_invalid_values(kwargs, message):
             mode="oracle",
             strategy="late_gated",
             **kwargs,
+        )
+
+
+@pytest.mark.parametrize(
+    "name, value",
+    [
+        ("gate_init", float("nan")),
+        ("gate_init", float("inf")),
+        ("gate_init", float("-inf")),
+        ("max_gate_scale", float("nan")),
+        ("max_gate_scale", float("inf")),
+        ("max_gate_scale", float("-inf")),
+    ],
+)
+def test_residual_gate_constructor_rejects_non_finite_values(name, value):
+    with pytest.raises(ValueError, match="{} must be finite".format(name)):
+        InstanceRelationBias(
+            embedding_dim=4,
+            num_heads=1,
+            mode="oracle",
+            strategy="late_gated",
+            **{name: value},
         )
 
 

@@ -328,7 +328,13 @@ class BrepEncoder(nn.Module):
         if not last_state_only:
             inner_states.append(x)
 
-        layers = list(self.layers)
+        layer_count = len(self.layers)
+        if isinstance(self.layers, LayerDropModuleList) and self.training:
+            keep_layers = (
+                torch.empty(layer_count).uniform_() > self.layers.p
+            )
+        else:
+            keep_layers = torch.ones(layer_count, dtype=torch.bool)
         use_late_gated_bias = (
             self.instance_relation_bias.mode != "baseline"
             and self.instance_relation_bias.strategy == "late_gated"
@@ -336,18 +342,18 @@ class BrepEncoder(nn.Module):
         if use_late_gated_bias:
             late_layer_count = min(
                 self.instance_bias_last_layers,
-                len(layers),
+                layer_count,
             )
-            late_layer_start = len(layers) - late_layer_count
+            late_layer_start = layer_count - late_layer_count
             prediction_boundary = min(
-                len(layers) // 2,
+                layer_count // 2,
                 late_layer_start,
             )
         else:
-            late_layer_start = len(layers)
+            late_layer_start = layer_count
             prediction_boundary = -1
 
-        for layer_index, layer in enumerate(layers):
+        for layer_index in range(layer_count):
             if use_late_gated_bias and layer_index == prediction_boundary:
                 use_oracle_labels = self.instance_relation_bias.mode == "oracle"
                 instance_bias, instance_logits = self.instance_relation_bias(
@@ -368,6 +374,9 @@ class BrepEncoder(nn.Module):
                     ),
                     progress=instance_bias_progress,
                 )
+            if not bool(keep_layers[layer_index]):
+                continue
+            layer = self.layers[layer_index]
             layer_kwargs = {
                 "self_attn_padding_mask": padding_mask,
                 "self_attn_mask": attn_mask,

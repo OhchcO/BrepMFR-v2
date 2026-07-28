@@ -362,11 +362,12 @@ class BrepSeg(pl.LightningModule):
         torch.cuda.empty_cache()
 
         # brep encoder----------------------------------------------------------------------------------
+        bias_progress = self._instance_bias_progress()
         node_emb, graph_emb, instance_logits = self.brep_encoder(
             batch,
             last_state_only=True,
             return_instance_logits=True,
-            instance_bias_progress=self._instance_bias_progress(),
+            instance_bias_progress=bias_progress,
         )
 
         # node classifier--------------------------------------------------------------------------------
@@ -427,15 +428,19 @@ class BrepSeg(pl.LightningModule):
             )
         self.log(
             "train_instance_bias_progress",
-            self._instance_bias_progress(),
+            bias_progress,
             on_step=False,
             on_epoch=True,
         )
-        gate_scale = self.brep_encoder.instance_relation_bias.gate_scale
-        if gate_scale is not None:
+        applied_gates = (
+            self.brep_encoder.instance_relation_bias.residual_gates(
+                progress=bias_progress
+            )
+        )
+        if applied_gates is not None:
             self.log(
                 "train_instance_bias_gate",
-                gate_scale.detach(),
+                applied_gates.abs().mean().detach(),
                 on_step=False,
                 on_epoch=True,
             )

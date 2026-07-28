@@ -299,6 +299,36 @@ def test_parser_rejects_initial_gate_at_or_above_magnitude_limit(
     )
 
 
+@pytest.mark.parametrize(
+    "option, value",
+    [
+        ("instance_bias_gate_init", float("nan")),
+        ("instance_bias_gate_init", float("inf")),
+        ("instance_bias_gate_init", float("-inf")),
+        ("instance_bias_max_gate_scale", float("nan")),
+        ("instance_bias_max_gate_scale", float("inf")),
+        ("instance_bias_max_gate_scale", float("-inf")),
+    ],
+)
+def test_parser_rejects_non_finite_residual_gate_configuration(
+    segmentation, capsys, option, value
+):
+    parser = segmentation.build_parser()
+    args = parser.parse_args(
+        [
+            "train",
+            "--dataset_path",
+            ".",
+            "--{}={}".format(option, value),
+        ]
+    )
+
+    with pytest.raises(SystemExit):
+        segmentation._validate_configuration(parser, args)
+
+    assert "--{} must be finite".format(option) in capsys.readouterr().err
+
+
 def test_residual_instance_bias_constructor_defaults_to_zero_gate():
     from models.modules.instance_bias import InstanceRelationBias
 

@@ -1,11 +1,14 @@
 import pytest
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 from models.brepseg_model import (
+    BrepSeg,
     balanced_affinity_loss,
     instance_bias_progress,
 )
+from models.modules.instance_bias import InstanceRelationBias
 from training_callbacks import TextMetricsLogger
 
 
@@ -113,3 +116,63 @@ def test_text_training_log_records_instance_bias_progress(tmp_path):
     assert "train_instance_bias_gate=0.12500000" in (
         tmp_path / "log.txt"
     ).read_text(encoding="utf-8")
+
+
+def test_training_step_logs_gate_applied_at_current_progress():
+    relation_bias = InstanceRelationBias(
+        embedding_dim=2,
+        num_heads=1,
+        mode="oracle",
+        strategy="late_gated",
+        gate_init=0.5,
+        max_gate_scale=1.0,
+    )
+
+    class Encoder(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.instance_relation_bias = relation_bias
+
+        def forward(self, batch, **kwargs):
+            node_state = torch.tensor(
+                [
+                    [[0.0, 0.0]],
+                    [[2.0, 0.0]],
+                    [[0.0, 2.0]],
+                ]
+            )
+            return [node_state], torch.zeros(1, 2), None
+
+    class SelectNodeFeatures(nn.Module):
+        def forward(self, inputs):
+            return inputs[0]
+
+    class TwoClassProbabilities(nn.Module):
+        def forward(self, inputs):
+            return torch.softmax(inputs, dim=-1)
+
+    logged = {}
+
+    class TrainingHarness:
+        num_classes = 2
+        experiment_mode = "baseline"
+        brep_encoder = Encoder()
+        attention = SelectNodeFeatures()
+        classifier = TwoClassProbabilities()
+
+        def _instance_bias_progress(self):
+            return 0.25
+
+        def log(self, name, value, **kwargs):
+            logged[name] = value
+
+    BrepSeg.training_step(
+        TrainingHarness(),
+        {
+            "padding_mask": torch.zeros(1, 2, dtype=torch.bool),
+            "label_feature": torch.tensor([0, 1]),
+        },
+        batch_idx=0,
+    )
+
+    assert logged["train_instance_bias_gate"].item() == pytest.approx(0.125)

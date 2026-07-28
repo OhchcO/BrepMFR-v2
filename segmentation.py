@@ -7,6 +7,7 @@ import argparse
 from dataclasses import dataclass
 import inspect
 import json
+import math
 from pathlib import Path
 import time
 from typing import Optional, Sequence
@@ -374,6 +375,10 @@ def _validate_configuration(
         parser.error(
             "--instance_bias_confidence_power must be non-negative"
         )
+    if not math.isfinite(args.instance_bias_gate_init):
+        parser.error("--instance_bias_gate_init must be finite")
+    if not math.isfinite(args.instance_bias_max_gate_scale):
+        parser.error("--instance_bias_max_gate_scale must be finite")
     if args.instance_bias_max_gate_scale <= 0:
         parser.error("--instance_bias_max_gate_scale must be positive")
     if abs(args.instance_bias_gate_init) >= args.instance_bias_max_gate_scale:

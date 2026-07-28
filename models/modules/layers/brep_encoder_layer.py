@@ -142,6 +142,13 @@ class GraphEncoderLayer(nn.Module):
         if self.pre_layernorm:
             x = self.self_attn_layer_norm(x)
         attn_input = x
+        if instance_attn_bias is not None:
+            pre_base_cpu_rng_state = torch.random.get_rng_state()
+            pre_base_cuda_rng_states = (
+                torch.cuda.get_rng_state_all()
+                if torch.cuda.is_initialized()
+                else None
+            )
         x, attn = self.self_attn(
             query=attn_input,
             key=attn_input,
@@ -158,6 +165,9 @@ class GraphEncoderLayer(nn.Module):
                 else self_attn_bias + instance_attn_bias
             )
             with preserve_torch_rng_state():
+                torch.random.set_rng_state(pre_base_cpu_rng_state)
+                if pre_base_cuda_rng_states is not None:
+                    torch.cuda.set_rng_state_all(pre_base_cuda_rng_states)
                 biased_x, _ = self.self_attn(
                     query=attn_input,
                     key=attn_input,

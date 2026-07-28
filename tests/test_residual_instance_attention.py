@@ -5,14 +5,14 @@ import torch.nn as nn
 from models.modules.layers.brep_encoder_layer import GraphEncoderLayer
 
 
-def make_layer(*, pre_layernorm=False):
+def make_layer(*, pre_layernorm=False, attention_dropout=0.0):
     torch.manual_seed(20260728)
     layer = GraphEncoderLayer(
         embedding_dim=8,
         ffn_embedding_dim=16,
         num_attention_heads=2,
         dropout=0.0,
-        attention_dropout=0.0,
+        attention_dropout=attention_dropout,
         activation_dropout=0.0,
         pre_layernorm=pre_layernorm,
     )
@@ -52,6 +52,30 @@ def test_zero_gate_equals_the_ordinary_attention_path_exactly():
     )
 
     assert torch.equal(residual, ordinary)
+
+
+def test_zero_bias_reuses_training_attention_dropout_mask_exactly():
+    layer = make_layer(
+        pre_layernorm=True,
+        attention_dropout=0.5,
+    ).train()
+    x, graph_bias, _ = attention_inputs()
+    zero_instance_bias = torch.zeros_like(graph_bias)
+    gate = torch.tensor(0.7, requires_grad=True)
+
+    torch.manual_seed(29)
+    ordinary, _ = layer(x, self_attn_bias=graph_bias)
+    torch.manual_seed(29)
+    residual, _ = layer(
+        x,
+        self_attn_bias=graph_bias,
+        instance_attn_bias=zero_instance_bias,
+        instance_attn_gate=gate,
+    )
+    residual.square().sum().backward()
+
+    assert torch.equal(residual, ordinary)
+    assert torch.equal(gate.grad, torch.tensor(0.0))
 
 
 def test_gate_one_changes_output_when_instance_bias_changes_attention():

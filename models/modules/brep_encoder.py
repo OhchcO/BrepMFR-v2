@@ -63,6 +63,12 @@ class BrepEncoder(nn.Module):
         affinity_dim: int = 64,
         affinity_temperature: float = 0.2,
         instance_bias_scale: float = 1.0,
+        instance_bias_strategy: str = "legacy",
+        instance_relation_mapping: str = "signed",
+        instance_bias_last_layers: int = 2,
+        instance_bias_confidence_power: float = 1.0,
+        instance_bias_gate_init: float = 0.05,
+        instance_bias_max_gate_scale: float = 1.0,
         use_face_uv: bool = True,
         use_face_pointcloud: bool = False,
         use_cylindrical_pos: bool = False,
@@ -78,6 +84,9 @@ class BrepEncoder(nn.Module):
         self.embedding_dim = embedding_dim
         self.apply_params_init = apply_params_init
         self.traceable = traceable
+        if instance_bias_last_layers < 1:
+            raise ValueError("instance_bias_last_layers must be positive")
+        self.instance_bias_last_layers = int(instance_bias_last_layers)
 
         self.graph_node_feature = GraphNodeFeature(
             num_heads=num_attention_heads,
@@ -175,6 +184,11 @@ class BrepEncoder(nn.Module):
                 temperature=affinity_temperature,
                 bias_scale=instance_bias_scale,
                 num_spatial=num_spatial,
+                strategy=instance_bias_strategy,
+                relation_mapping=instance_relation_mapping,
+                confidence_power=instance_bias_confidence_power,
+                gate_init=instance_bias_gate_init,
+                max_gate_scale=instance_bias_max_gate_scale,
             )
             if self.apply_params_init:
                 self.instance_relation_bias.apply(init_params)
@@ -226,6 +240,7 @@ class BrepEncoder(nn.Module):
         token_embeddings: Optional[torch.Tensor] = None,
         attn_mask: Optional[torch.Tensor] = None,
         return_instance_logits: bool = False,
+        instance_bias_progress: float = 1.0,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         padding_mask = batch_data["padding_mask"]
         n_graph, n_node = padding_mask.size()[:2]
@@ -264,7 +279,11 @@ class BrepEncoder(nn.Module):
                                          x_0
                                          )  #attn_bias[n_graph, n_head, max_node_num, max_node_num]
         instance_logits = None
-        if self.instance_relation_bias.mode != "baseline":
+        instance_bias = None
+        if (
+            self.instance_relation_bias.mode != "baseline"
+            and self.instance_relation_bias.strategy == "legacy"
+        ):
             use_oracle_labels = self.instance_relation_bias.mode == "oracle"
             instance_bias, instance_logits = self.instance_relation_bias(
                 node_features=x,
@@ -308,12 +327,57 @@ class BrepEncoder(nn.Module):
         if not last_state_only:
             inner_states.append(x)
 
-        for layer in self.layers:
+        layers = list(self.layers)
+        use_late_gated_bias = (
+            self.instance_relation_bias.mode != "baseline"
+            and self.instance_relation_bias.strategy == "late_gated"
+        )
+        if use_late_gated_bias:
+            late_layer_count = min(
+                self.instance_bias_last_layers,
+                len(layers),
+            )
+            late_layer_start = len(layers) - late_layer_count
+            prediction_boundary = min(
+                len(layers) // 2,
+                late_layer_start,
+            )
+        else:
+            late_layer_start = len(layers)
+            prediction_boundary = -1
+
+        for layer_index, layer in enumerate(layers):
+            if use_late_gated_bias and layer_index == prediction_boundary:
+                use_oracle_labels = self.instance_relation_bias.mode == "oracle"
+                instance_bias, instance_logits = self.instance_relation_bias(
+                    node_features=x.transpose(0, 1),
+                    padding_mask=batch_data["padding_mask"],
+                    spatial_pos=batch_data["spatial_pos"],
+                    d2_distance=batch_data["d2_distance"],
+                    angle_distance=batch_data["angle_distance"],
+                    instance=(
+                        batch_data.get("instance")
+                        if use_oracle_labels
+                        else None
+                    ),
+                    instance_available=(
+                        batch_data.get("instance_available")
+                        if use_oracle_labels
+                        else None
+                    ),
+                    progress=instance_bias_progress,
+                )
+            layer_attn_bias = attn_bias
+            if (
+                use_late_gated_bias
+                and layer_index >= late_layer_start
+            ):
+                layer_attn_bias = attn_bias + instance_bias
             x, _ = layer(
                 x,
                 self_attn_padding_mask=padding_mask,
                 self_attn_mask=attn_mask,
-                self_attn_bias=attn_bias,
+                self_attn_bias=layer_attn_bias,
             )
             if not last_state_only:
                 inner_states.append(x)

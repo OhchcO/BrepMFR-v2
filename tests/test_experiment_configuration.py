@@ -1,6 +1,7 @@
 import ast
 import importlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -84,25 +85,90 @@ def test_importing_segmentation_does_not_parse_process_arguments(segmentation):
 
 
 @pytest.mark.parametrize(
-    ("alias", "mode", "uv", "point", "cyl", "bias_scale"),
+    (
+        "alias",
+        "mode",
+        "uv",
+        "point",
+        "cyl",
+        "bias_scale",
+        "bias_strategy",
+    ),
     [
-        ("baseline", "baseline", True, False, False, 1.0),
-        ("topo_aag", "baseline", False, False, False, 1.0),
-        ("uv_aag", "baseline", True, False, False, 1.0),
-        ("pc_aag", "baseline", False, True, False, 1.0),
-        ("uv_pc_aag", "baseline", True, True, False, 1.0),
-        ("cyl", "baseline", True, False, True, 1.0),
-        ("cyl_affinity", "dynamic_affinity", True, False, True, 0.0),
-        ("point", "baseline", True, True, False, 1.0),
-        ("spe_pcaag", "baseline", True, True, True, 1.0),
-        ("dynamic_no_loss", "dynamic", True, False, False, 1.0),
-        ("instance", "dynamic_affinity", True, False, False, 1.0),
-        ("affinity_only", "dynamic_affinity", True, False, False, 0.0),
-        ("oracle", "oracle", True, False, False, 1.0),
-        ("full", "dynamic_affinity", True, True, True, 1.0),
+        ("baseline", "baseline", True, False, False, 1.0, "legacy"),
+        ("topo_aag", "baseline", False, False, False, 1.0, "legacy"),
+        ("uv_aag", "baseline", True, False, False, 1.0, "legacy"),
+        ("pc_aag", "baseline", False, True, False, 1.0, "legacy"),
+        ("uv_pc_aag", "baseline", True, True, False, 1.0, "legacy"),
+        ("cyl", "baseline", True, False, True, 1.0, "legacy"),
+        (
+            "cyl_affinity",
+            "dynamic_affinity",
+            True,
+            False,
+            True,
+            0.0,
+            "legacy",
+        ),
+        ("point", "baseline", True, True, False, 1.0, "legacy"),
+        ("spe_pcaag", "baseline", True, True, True, 1.0, "legacy"),
+        (
+            "dynamic_no_loss",
+            "dynamic",
+            True,
+            False,
+            False,
+            1.0,
+            "late_gated",
+        ),
+        (
+            "instance",
+            "dynamic_affinity",
+            True,
+            False,
+            False,
+            1.0,
+            "late_gated",
+        ),
+        (
+            "affinity_only",
+            "dynamic_affinity",
+            True,
+            False,
+            False,
+            0.0,
+            "late_gated",
+        ),
+        (
+            "oracle",
+            "oracle",
+            True,
+            False,
+            False,
+            1.0,
+            "late_gated",
+        ),
+        (
+            "full",
+            "dynamic_affinity",
+            True,
+            True,
+            True,
+            1.0,
+            "legacy",
+        ),
     ],
 )
-def test_alias_mapping(segmentation, alias, mode, uv, point, cyl, bias_scale):
+def test_alias_mapping(
+    segmentation,
+    alias,
+    mode,
+    uv,
+    point,
+    cyl,
+    bias_scale,
+    bias_strategy,
+):
     switches = segmentation.resolve_experiment_alias(alias)
     assert (
         switches.experiment_mode,
@@ -110,7 +176,8 @@ def test_alias_mapping(segmentation, alias, mode, uv, point, cyl, bias_scale):
         switches.use_face_pointcloud,
         switches.use_cylindrical_pos,
         switches.instance_bias_scale,
-    ) == (mode, uv, point, cyl, bias_scale)
+        switches.instance_bias_strategy,
+    ) == (mode, uv, point, cyl, bias_scale, bias_strategy)
 
 
 def test_launcher_accepts_all_formal_experiment_modes():
@@ -170,9 +237,133 @@ def test_parser_exposes_preparation_and_geometry_defaults(segmentation):
     assert args.cylindrical_scale == 1.0
     assert args.use_face_uv is True
     assert args.random_rotate is False
+    assert args.instance_bias_strategy == "legacy"
+    assert args.instance_relation_mapping == "signed"
+    assert args.instance_bias_last_layers == 2
+    assert args.instance_bias_confidence_power == 1.0
+    assert args.instance_bias_gate_init == 0.05
+    assert args.instance_bias_max_gate_scale == 1.0
+    assert args.instance_bias_delay_epochs == 10
+    assert args.instance_bias_ramp_epochs == 10
+
+    positive_args = segmentation.build_parser().parse_args(
+        ["train", "--instance_relation_mapping", "positive_only"]
+    )
+    assert positive_args.instance_relation_mapping == "positive_only"
 
     no_uv_args = segmentation.build_parser().parse_args(["train", "--no_face_uv"])
     assert no_uv_args.use_face_uv is False
+
+
+def test_launcher_exposes_optional_instance_bias_controls():
+    launcher = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "run_mfrinstseg_experiments.ps1"
+    )
+    powershell = """
+$command = Get-Command '{0}'
+$parameters = [System.Management.Automation.CommandMetadata]::new($command).Parameters
+@{{
+  LastLayers = $parameters['InstanceBiasLastLayers'].ParameterType.FullName
+  Confidence = $parameters['InstanceBiasConfidencePower'].ParameterType.FullName
+  GateInit = $parameters['InstanceBiasGateInit'].ParameterType.FullName
+  MaxGate = $parameters['InstanceBiasMaxGateScale'].ParameterType.FullName
+  Delay = $parameters['InstanceBiasDelayEpochs'].ParameterType.FullName
+  Ramp = $parameters['InstanceBiasRampEpochs'].ParameterType.FullName
+  RelationMapping = $parameters['InstanceRelationMapping'].ParameterType.FullName
+}} | ConvertTo-Json -Compress
+""".format(str(launcher).replace("'", "''"))
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            powershell,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "LastLayers": "System.Int32",
+        "Confidence": "System.Double",
+        "GateInit": "System.Double",
+        "MaxGate": "System.Double",
+        "Delay": "System.Int32",
+        "Ramp": "System.Int32",
+        "RelationMapping": "System.String",
+    }
+
+
+def test_launcher_forwards_positive_mapping_and_uses_positive_result_name(
+    tmp_path,
+):
+    dataset = tmp_path / "prepared"
+    dataset.mkdir()
+    for split in ("train", "val"):
+        (dataset / (split + ".txt")).write_text(
+            "sample-id\n",
+            encoding="utf-8",
+        )
+    captured = tmp_path / "captured-args.txt"
+    fake_python = tmp_path / "fake-python.ps1"
+    fake_python.write_text(
+        """
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CapturedArguments
+)
+[System.IO.File]::WriteAllLines(
+    $env:MFRINSTSEG_TRAIN_ARGUMENTS,
+    $CapturedArguments
+)
+exit 0
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    launcher = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "run_mfrinstseg_experiments.ps1"
+    )
+    quote = lambda value: str(value).replace("'", "''")
+    command = (
+        "& '{launcher}' -Mode oracle -AutoPrepare $false "
+        "-DatasetPath '{dataset}' -PythonExe '{python}' "
+        "-InstanceRelationMapping positive_only"
+    ).format(
+        launcher=quote(launcher),
+        dataset=quote(dataset),
+        python=quote(fake_python),
+    )
+    environment = os.environ.copy()
+    environment["MFRINSTSEG_TRAIN_ARGUMENTS"] = str(captured)
+
+    subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    arguments = captured.read_text(encoding="utf-8").splitlines()
+    mapping_index = arguments.index("--instance_relation_mapping")
+    name_index = arguments.index("--experiment_name")
+    assert arguments[mapping_index + 1] == "positive_only"
+    assert arguments[name_index + 1] == "MFRInstSeg_1pct_oracle_positive_seed2026"
 
 
 def test_automatic_preparation_always_requests_full_geometry_contract(
@@ -397,6 +588,17 @@ def test_test_results_record_configuration_provenance(
         "use_cylindrical_pos": True,
         "pointcloud_scale": 1.0,
         "cylindrical_scale": 1.0,
+        "instance_bias_strategy": "late_gated",
+        "instance_relation_mapping": "positive_only",
+        "instance_bias_last_layers": 2,
+        "instance_bias_confidence_power": 1.0,
+        "instance_bias_gate_init": 0.05,
+        "instance_bias_max_gate_scale": 1.0,
+        "instance_bias_delay_epochs": 10,
+        "instance_bias_ramp_epochs": 10,
+        "checkpoint_instance_bias_scale": 1.0,
+        "effective_instance_bias_scale": 0.0,
+        "instance_bias_scale_overridden": True,
         "prepared_dataset_path": "prepared",
         "require_instance": False,
         "batch_size": 1,
@@ -416,6 +618,17 @@ def test_test_results_record_configuration_provenance(
         "use_cylindrical_pos",
         "pointcloud_scale",
         "cylindrical_scale",
+        "instance_bias_strategy",
+        "instance_relation_mapping",
+        "instance_bias_last_layers",
+        "instance_bias_confidence_power",
+        "instance_bias_gate_init",
+        "instance_bias_max_gate_scale",
+        "instance_bias_delay_epochs",
+        "instance_bias_ramp_epochs",
+        "checkpoint_instance_bias_scale",
+        "effective_instance_bias_scale",
+        "instance_bias_scale_overridden",
         "prepared_dataset_path",
     ):
         assert "{}={}".format(key, result[key]) in log

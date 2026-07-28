@@ -6,14 +6,39 @@ import torch.nn.functional as F
 
 
 EXPERIMENT_MODES = ("baseline", "oracle", "dynamic", "dynamic_affinity")
+INSTANCE_BIAS_STRATEGIES = ("legacy", "late_gated")
+INSTANCE_RELATION_MAPPINGS = ("signed", "positive_only")
+
+
+def confidence_weighted_relation(
+    logits,
+    power=1.0,
+    relation_mapping="signed",
+):
+    """Convert affinity logits to configurable confidence-weighted relations."""
+    if power < 0:
+        raise ValueError("confidence power must be non-negative")
+    if relation_mapping not in INSTANCE_RELATION_MAPPINGS:
+        raise ValueError(
+            "Unsupported instance relation mapping: {}".format(
+                relation_mapping
+            )
+        )
+    centered = 2.0 * torch.sigmoid(logits) - 1.0
+    confidence = centered.abs().pow(float(power))
+    relation = centered * confidence
+    if relation_mapping == "positive_only":
+        relation = relation.clamp_min(0.0)
+    return relation
 
 
 class InstanceRelationBias(nn.Module):
-    """Build a positive same-instance attention prior.
+    """Build an instance-relation attention prior.
 
     Oracle mode uses the ground-truth affinity matrix and is an upper bound.
     Dynamic modes predict a symmetric affinity from node content and the
-    existing SPE-PCAAG pair descriptors, so inference needs no instance label.
+    existing pair descriptors, so inference needs no instance label. The
+    late-gated strategy uses configurable confidence-weighted relations.
     """
 
     def __init__(
@@ -25,21 +50,55 @@ class InstanceRelationBias(nn.Module):
         temperature=0.2,
         bias_scale=1.0,
         num_spatial=64,
+        strategy="legacy",
+        relation_mapping="signed",
+        confidence_power=1.0,
+        gate_init=0.05,
+        max_gate_scale=1.0,
     ):
         super().__init__()
         if mode not in EXPERIMENT_MODES:
             raise ValueError("Unsupported experiment mode: {}".format(mode))
+        if strategy not in INSTANCE_BIAS_STRATEGIES:
+            raise ValueError(
+                "Unsupported instance bias strategy: {}".format(strategy)
+            )
+        if relation_mapping not in INSTANCE_RELATION_MAPPINGS:
+            raise ValueError(
+                "Unsupported instance relation mapping: {}".format(
+                    relation_mapping
+                )
+            )
         if affinity_dim < 1:
             raise ValueError("affinity_dim must be positive")
         if temperature <= 0:
             raise ValueError("temperature must be positive")
         if bias_scale < 0:
             raise ValueError("bias_scale must be non-negative")
+        if confidence_power < 0:
+            raise ValueError("confidence_power must be non-negative")
+        if max_gate_scale <= 0:
+            raise ValueError("max_gate_scale must be positive")
+        if not 0 < gate_init < max_gate_scale:
+            raise ValueError(
+                "gate_init must be between zero and max_gate_scale"
+            )
 
         self.mode = mode
         self.num_heads = num_heads
         self.temperature = float(temperature)
         self.bias_scale = float(bias_scale)
+        self.strategy = strategy
+        self.relation_mapping = relation_mapping
+        self.confidence_power = float(confidence_power)
+        self.max_gate_scale = float(max_gate_scale)
+
+        if self.strategy == "late_gated" and self.mode != "baseline":
+            gate_fraction = float(gate_init) / self.max_gate_scale
+            gate_logit = torch.log(
+                torch.tensor(gate_fraction / (1.0 - gate_fraction))
+            )
+            self.gate_logit = nn.Parameter(gate_logit)
 
         if self.is_dynamic:
             self.node_projection = nn.Sequential(
@@ -57,6 +116,12 @@ class InstanceRelationBias(nn.Module):
     @property
     def is_dynamic(self):
         return self.mode in ("dynamic", "dynamic_affinity")
+
+    @property
+    def gate_scale(self):
+        if self.strategy != "late_gated" or self.mode == "baseline":
+            return None
+        return self.max_gate_scale * torch.sigmoid(self.gate_logit)
 
     def _valid_pair_mask(self, padding_mask):
         valid_node = ~padding_mask
@@ -101,6 +166,7 @@ class InstanceRelationBias(nn.Module):
         angle_distance,
         instance=None,
         instance_available=None,
+        progress=1.0,
     ):
         """Return ``(bias, logits)``.
 
@@ -108,6 +174,8 @@ class InstanceRelationBias(nn.Module):
         only for dynamic modes and is used by the optional affinity loss.
         """
         batch_size, max_nodes = padding_mask.shape
+        if not 0.0 <= float(progress) <= 1.0:
+            raise ValueError("instance bias progress must be between 0 and 1")
         pair_mask = self._valid_pair_mask(padding_mask)
         logits = None
 
@@ -136,16 +204,40 @@ class InstanceRelationBias(nn.Module):
             relation = instance.to(node_features.dtype)
         else:
             logits = self._dynamic_logits(
-                node_features,
+                (
+                    node_features.detach()
+                    if self.strategy == "late_gated"
+                    else node_features
+                ),
                 padding_mask,
                 spatial_pos,
                 d2_distance,
                 angle_distance,
             )
-            relation = torch.sigmoid(logits)
+            if self.strategy == "late_gated":
+                relation = confidence_weighted_relation(
+                    logits,
+                    power=self.confidence_power,
+                    relation_mapping=self.relation_mapping,
+                )
+                if self.mode == "dynamic_affinity":
+                    relation = relation.detach()
+            else:
+                relation = torch.sigmoid(logits)
+
+        if self.strategy == "late_gated" and self.mode == "oracle":
+            relation = 2.0 * relation - 1.0
+            if self.relation_mapping == "positive_only":
+                relation = relation.clamp_min(0.0)
 
         relation = relation * pair_mask.to(relation.dtype)
-        face_bias = self.bias_scale * relation
+        if self.strategy == "late_gated" and self.mode != "baseline":
+            effective_scale = (
+                self.bias_scale * float(progress) * self.gate_scale
+            )
+        else:
+            effective_scale = self.bias_scale
+        face_bias = effective_scale * relation
         bias = node_features.new_zeros(
             (batch_size, self.num_heads, max_nodes + 1, max_nodes + 1)
         )

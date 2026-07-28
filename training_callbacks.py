@@ -90,6 +90,8 @@ class TextMetricsLogger(Callback):
                     "train_semantic_loss",
                     "train_affinity_loss",
                     "train_affinity_weight",
+                    "train_instance_bias_progress",
+                    "train_instance_bias_gate",
                 ),
             )
         )

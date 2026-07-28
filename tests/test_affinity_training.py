@@ -1,0 +1,115 @@
+import pytest
+import torch
+import torch.nn.functional as F
+
+from models.brepseg_model import (
+    balanced_affinity_loss,
+    instance_bias_progress,
+)
+from training_callbacks import TextMetricsLogger
+
+
+def test_structured_affinity_loss_balances_positive_hard_and_easy_groups():
+    logits = torch.tensor(
+        [
+            [
+                [0.0, 0.0, 1.0, -1.0],
+                [0.0, 0.0, 3.0, -2.0],
+                [1.0, 3.0, 0.0, -3.0],
+                [-1.0, -2.0, -3.0, 0.0],
+            ]
+        ]
+    )
+    target = torch.zeros(1, 4, 4)
+    target[0, 0, 1] = 1.0
+    target[0, 1, 0] = 1.0
+    padding_mask = torch.zeros(1, 4, dtype=torch.bool)
+    semantic_labels = torch.tensor([5, 5, 5, 9])
+
+    loss = balanced_affinity_loss(
+        logits,
+        target,
+        padding_mask,
+        available=torch.tensor([True]),
+        semantic_labels=semantic_labels,
+    )
+
+    positive = F.softplus(torch.tensor(0.0))
+    hard_negative = F.softplus(torch.tensor([1.0, 3.0])).mean()
+    easy_negative = F.softplus(torch.tensor([-1.0, -2.0, -3.0])).mean()
+    expected = torch.stack(
+        [positive, hard_negative, easy_negative]
+    ).mean()
+    assert loss.item() == pytest.approx(expected.item())
+
+
+def test_structured_affinity_loss_reconstructs_flat_labels_across_graphs():
+    logits = torch.zeros(2, 3, 3)
+    target = torch.zeros(2, 3, 3)
+    target[0, 0, 1] = target[0, 1, 0] = 1.0
+    target[1, 0, 1] = target[1, 1, 0] = 1.0
+    padding_mask = torch.tensor(
+        [
+            [False, False, True],
+            [False, False, False],
+        ]
+    )
+    semantic_labels = torch.tensor([1, 1, 2, 2, 3])
+
+    loss = balanced_affinity_loss(
+        logits,
+        target,
+        padding_mask,
+        semantic_labels=semantic_labels,
+    )
+
+    assert loss.item() == pytest.approx(float(torch.log(torch.tensor(2.0))))
+
+
+@pytest.mark.parametrize(
+    ("epoch", "expected"),
+    [
+        (0, 0.0),
+        (1, 0.0),
+        (2, 1.0 / 3.0),
+        (3, 2.0 / 3.0),
+        (4, 1.0),
+        (20, 1.0),
+    ],
+)
+def test_instance_bias_progress_has_delay_then_linear_ramp(epoch, expected):
+    assert instance_bias_progress(epoch, delay_epochs=2, ramp_epochs=3) == (
+        pytest.approx(expected)
+    )
+
+
+def test_instance_bias_progress_supports_immediate_enable_and_validates_inputs():
+    assert instance_bias_progress(0, delay_epochs=0, ramp_epochs=0) == 1.0
+    with pytest.raises(ValueError, match="epoch"):
+        instance_bias_progress(-1, delay_epochs=0, ramp_epochs=1)
+    with pytest.raises(ValueError, match="delay"):
+        instance_bias_progress(0, delay_epochs=-1, ramp_epochs=1)
+    with pytest.raises(ValueError, match="ramp"):
+        instance_bias_progress(0, delay_epochs=0, ramp_epochs=-1)
+
+
+def test_text_training_log_records_instance_bias_progress(tmp_path):
+    logger = TextMetricsLogger(tmp_path / "log.txt", configuration={})
+
+    class Trainer:
+        current_epoch = 3
+        global_step = 7
+        callback_metrics = {
+            "train_instance_bias_progress": torch.tensor(0.5),
+            "train_instance_bias_gate": torch.tensor(0.125),
+        }
+        logged_metrics = {}
+
+    logger.on_train_epoch_end(Trainer(), pl_module=None)
+
+    assert "train_instance_bias_progress=0.50000000" in (
+        tmp_path / "log.txt"
+    ).read_text(encoding="utf-8")
+    assert "train_instance_bias_gate=0.12500000" in (
+        tmp_path / "log.txt"
+    ).read_text(encoding="utf-8")

@@ -9,6 +9,7 @@ param(
     [bool]$EvaluateInstances = $true,
     [double]$AffinityThreshold = 0.5,
     [int]$BackgroundClassId = 24,
+    [Nullable[double]]$InstanceBiasScaleOverride = $null,
     [switch]$Prepare,
     [switch]$RebuildPreparedData,
     [string]$RawDatasetPath = "D:\Code\Datasets\MFRInstSeg",
@@ -42,6 +43,15 @@ foreach ($RequiredFile in @(
 
 if ($RebuildPreparedData -and -not $Prepare) {
     throw "-RebuildPreparedData requires -Prepare."
+}
+if (
+    $null -ne $InstanceBiasScaleOverride -and (
+        [double]::IsNaN($InstanceBiasScaleOverride) -or
+        [double]::IsInfinity($InstanceBiasScaleOverride) -or
+        $InstanceBiasScaleOverride -lt 0.0
+    )
+) {
+    throw "-InstanceBiasScaleOverride must be finite and non-negative."
 }
 
 Push-Location $ProjectRoot
@@ -109,6 +119,14 @@ try {
     )
     if ($EvaluateInstances) {
         $EvaluationArguments += "--evaluate-instances"
+    }
+    if ($null -ne $InstanceBiasScaleOverride) {
+        $EvaluationArguments += @(
+            "--instance-bias-scale-override",
+            $InstanceBiasScaleOverride.ToString(
+                [System.Globalization.CultureInfo]::InvariantCulture
+            )
+        )
     }
     & $PythonExe @EvaluationArguments
     if ($LASTEXITCODE -ne 0) {

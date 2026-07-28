@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
+import math
 from pathlib import Path
 import sys
 import time
@@ -74,6 +75,42 @@ def _model_configuration_value(model, name, default):
     return _configuration_value(getattr(model, "hparams", {}), name, default)
 
 
+def apply_instance_bias_scale_override(model, override):
+    """Apply an optional inference-only scale to the loaded relation bias."""
+    encoder = getattr(model, "brep_encoder", None)
+    relation_bias = getattr(encoder, "instance_relation_bias", None)
+    if relation_bias is None:
+        raise AttributeError(
+            "Loaded model does not expose brep_encoder.instance_relation_bias"
+        )
+
+    checkpoint_scale = float(relation_bias.bias_scale)
+    if override is None:
+        return checkpoint_scale, checkpoint_scale, False
+
+    effective_scale = float(override)
+    if not math.isfinite(effective_scale) or effective_scale < 0.0:
+        raise ValueError(
+            "--instance-bias-scale-override must be finite and non-negative"
+        )
+    relation_bias.bias_scale = effective_scale
+    return checkpoint_scale, effective_scale, True
+
+
+def resolve_output_directory(
+    checkpoint_path,
+    requested_output_dir,
+    scale_override,
+):
+    """Keep ordinary outputs stable and isolate scale-override comparisons."""
+    if requested_output_dir is not None:
+        return requested_output_dir
+    if scale_override is None:
+        return checkpoint_path.parent
+    scale_label = format(float(scale_override), ".12g")
+    return checkpoint_path.parent / ("test_bias_scale_" + scale_label)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -98,6 +135,15 @@ def parse_args():
     )
     parser.add_argument("--affinity-threshold", type=float, default=0.5)
     parser.add_argument("--background-class-id", type=int, default=24)
+    parser.add_argument(
+        "--instance-bias-scale-override",
+        type=float,
+        default=None,
+        help=(
+            "Inference-only instance bias scale; omit to use the value saved "
+            "in the checkpoint and use 0 to disable bias injection"
+        ),
+    )
     parser.add_argument(
         "--device",
         choices=("auto", "cuda", "cpu"),
@@ -531,6 +577,39 @@ def write_results(output_dir, result):
         "use_cylindrical_pos={}".format(result["use_cylindrical_pos"]),
         "pointcloud_scale={}".format(result["pointcloud_scale"]),
         "cylindrical_scale={}".format(result["cylindrical_scale"]),
+        "instance_bias_strategy={}".format(
+            result["instance_bias_strategy"]
+        ),
+        "instance_relation_mapping={}".format(
+            result["instance_relation_mapping"]
+        ),
+        "instance_bias_last_layers={}".format(
+            result["instance_bias_last_layers"]
+        ),
+        "instance_bias_confidence_power={}".format(
+            result["instance_bias_confidence_power"]
+        ),
+        "instance_bias_gate_init={}".format(
+            result["instance_bias_gate_init"]
+        ),
+        "instance_bias_max_gate_scale={}".format(
+            result["instance_bias_max_gate_scale"]
+        ),
+        "instance_bias_delay_epochs={}".format(
+            result["instance_bias_delay_epochs"]
+        ),
+        "instance_bias_ramp_epochs={}".format(
+            result["instance_bias_ramp_epochs"]
+        ),
+        "checkpoint_instance_bias_scale={}".format(
+            result["checkpoint_instance_bias_scale"]
+        ),
+        "effective_instance_bias_scale={}".format(
+            result["effective_instance_bias_scale"]
+        ),
+        "instance_bias_scale_overridden={}".format(
+            result["instance_bias_scale_overridden"]
+        ),
         "require_instance={}".format(result["require_instance"]),
         "instance_evaluation_requested={}".format(
             result.get("instance_evaluation_requested", False)
@@ -674,6 +753,14 @@ def main():
         str(args.checkpoint),
         map_location="cpu",
     )
+    (
+        checkpoint_instance_bias_scale,
+        effective_instance_bias_scale,
+        instance_bias_scale_overridden,
+    ) = apply_instance_bias_scale_override(
+        model,
+        args.instance_bias_scale_override,
+    )
     mode = _model_configuration_value(model, "experiment_mode", "baseline")
     requirements = geometry_requirements(model)
     pointcloud_scale = float(
@@ -681,6 +768,50 @@ def main():
     )
     cylindrical_scale = float(
         _model_configuration_value(model, "cylindrical_scale", 1.0)
+    )
+    instance_bias_strategy = str(
+        _model_configuration_value(model, "instance_bias_strategy", "legacy")
+    )
+    instance_relation_mapping = str(
+        _model_configuration_value(
+            model,
+            "instance_relation_mapping",
+            "signed",
+        )
+    )
+    instance_bias_last_layers = int(
+        _model_configuration_value(model, "instance_bias_last_layers", 2)
+    )
+    instance_bias_confidence_power = float(
+        _model_configuration_value(
+            model,
+            "instance_bias_confidence_power",
+            1.0,
+        )
+    )
+    instance_bias_gate_init = float(
+        _model_configuration_value(model, "instance_bias_gate_init", 0.05)
+    )
+    instance_bias_max_gate_scale = float(
+        _model_configuration_value(
+            model,
+            "instance_bias_max_gate_scale",
+            1.0,
+        )
+    )
+    instance_bias_delay_epochs = int(
+        _model_configuration_value(
+            model,
+            "instance_bias_delay_epochs",
+            10,
+        )
+    )
+    instance_bias_ramp_epochs = int(
+        _model_configuration_value(
+            model,
+            "instance_bias_ramp_epochs",
+            10,
+        )
     )
     instance_evaluation_enabled = (
         args.evaluate_instances and supports_instance_evaluation(mode)
@@ -822,6 +953,19 @@ def main():
         "use_cylindrical_pos": requirements.require_cylindrical_pos,
         "pointcloud_scale": pointcloud_scale,
         "cylindrical_scale": cylindrical_scale,
+        "instance_bias_strategy": instance_bias_strategy,
+        "instance_relation_mapping": instance_relation_mapping,
+        "instance_bias_last_layers": instance_bias_last_layers,
+        "instance_bias_confidence_power": (
+            instance_bias_confidence_power
+        ),
+        "instance_bias_gate_init": instance_bias_gate_init,
+        "instance_bias_max_gate_scale": instance_bias_max_gate_scale,
+        "instance_bias_delay_epochs": instance_bias_delay_epochs,
+        "instance_bias_ramp_epochs": instance_bias_ramp_epochs,
+        "checkpoint_instance_bias_scale": checkpoint_instance_bias_scale,
+        "effective_instance_bias_scale": effective_instance_bias_scale,
+        "instance_bias_scale_overridden": instance_bias_scale_overridden,
         "require_instance": require_instance,
         "instance_evaluation_requested": args.evaluate_instances,
         "instance_evaluation_enabled": instance_evaluation_enabled,
@@ -848,7 +992,11 @@ def main():
         "per_class": per_class,
         "confusion_matrix": confusion_np.astype(int).tolist(),
     }
-    output_dir = args.output_dir or args.checkpoint.parent
+    output_dir = resolve_output_directory(
+        args.checkpoint,
+        args.output_dir,
+        args.instance_bias_scale_override,
+    )
     prediction_path = None
     if instance_evaluation_enabled:
         prediction_path = write_instance_predictions(

@@ -82,10 +82,41 @@ def CrossEntropyLoss(label, predict_prob, class_level_weight=None, instance_leve
     return torch.sum(instance_level_weight * ce * class_level_weight) / float(N)
 
 
-def balanced_affinity_loss(logits, target, padding_mask, available=None):
-    """Balanced pairwise BCE over valid upper-triangular face pairs."""
+def _padded_semantic_labels(semantic_labels, padding_mask):
+    if semantic_labels is None:
+        return None
+    if semantic_labels.dim() == 2:
+        if tuple(semantic_labels.shape) != tuple(padding_mask.shape):
+            raise ValueError(
+                "padded semantic labels must match the padding mask"
+            )
+        return semantic_labels
+    if semantic_labels.dim() != 1:
+        raise ValueError("semantic labels must be flat or padded")
+    valid_count = int((~padding_mask).sum().item())
+    if semantic_labels.numel() != valid_count:
+        raise ValueError(
+            "flat semantic labels do not match the valid node count"
+        )
+    padded = semantic_labels.new_full(padding_mask.shape, -1)
+    padded[~padding_mask] = semantic_labels
+    return padded
+
+
+def balanced_affinity_loss(
+    logits,
+    target,
+    padding_mask,
+    available=None,
+    semantic_labels=None,
+):
+    """Balance positive, hard-negative and easy-negative affinity pairs."""
     graph_losses = []
     batch_size, max_nodes, _ = logits.shape
+    padded_semantic = _padded_semantic_labels(
+        semantic_labels,
+        padding_mask,
+    )
     upper_triangle = torch.triu(
         torch.ones(
             (max_nodes, max_nodes),
@@ -112,13 +143,46 @@ def balanced_affinity_loss(logits, target, padding_mask, available=None):
         terms = []
         if bool(positive.any().item()):
             terms.append(F.softplus(-graph_logits[positive]).mean())
-        if bool(negative.any().item()):
-            terms.append(F.softplus(graph_logits[negative]).mean())
+        if padded_semantic is None:
+            if bool(negative.any().item()):
+                terms.append(F.softplus(graph_logits[negative]).mean())
+        else:
+            graph_semantic = padded_semantic[graph_index]
+            same_semantic = (
+                graph_semantic.unsqueeze(1)
+                == graph_semantic.unsqueeze(0)
+            )[valid_pairs]
+            hard_negative = negative & same_semantic
+            easy_negative = negative & ~same_semantic
+            if bool(hard_negative.any().item()):
+                terms.append(
+                    F.softplus(graph_logits[hard_negative]).mean()
+                )
+            if bool(easy_negative.any().item()):
+                terms.append(
+                    F.softplus(graph_logits[easy_negative]).mean()
+                )
         graph_losses.append(torch.stack(terms).mean())
 
     if not graph_losses:
         return logits.sum() * 0.0
     return torch.stack(graph_losses).mean()
+
+
+def instance_bias_progress(current_epoch, delay_epochs, ramp_epochs):
+    """Return a deterministic zero-delay-linear-ramp bias schedule."""
+    if current_epoch < 0:
+        raise ValueError("current epoch must be non-negative")
+    if delay_epochs < 0:
+        raise ValueError("delay epochs must be non-negative")
+    if ramp_epochs < 0:
+        raise ValueError("ramp epochs must be non-negative")
+    if current_epoch < delay_epochs:
+        return 0.0
+    if ramp_epochs == 0:
+        return 1.0
+    ramp_epoch = current_epoch - delay_epochs + 1
+    return min(1.0, float(ramp_epoch) / float(ramp_epochs))
 
 
 class Attention(nn.Module):
@@ -149,6 +213,32 @@ class BrepSeg(pl.LightningModule):
         self.affinity_warmup_epochs = getattr(
             args, "affinity_warmup_epochs", 10
         )
+        self.instance_bias_strategy = getattr(
+            args, "instance_bias_strategy", "legacy"
+        )
+        self.instance_relation_mapping = getattr(
+            args,
+            "instance_relation_mapping",
+            "signed",
+        )
+        self.instance_bias_last_layers = int(
+            getattr(args, "instance_bias_last_layers", 2)
+        )
+        self.instance_bias_confidence_power = float(
+            getattr(args, "instance_bias_confidence_power", 1.0)
+        )
+        self.instance_bias_gate_init = float(
+            getattr(args, "instance_bias_gate_init", 0.05)
+        )
+        self.instance_bias_max_gate_scale = float(
+            getattr(args, "instance_bias_max_gate_scale", 1.0)
+        )
+        self.instance_bias_delay_epochs = int(
+            getattr(args, "instance_bias_delay_epochs", 10)
+        )
+        self.instance_bias_ramp_epochs = int(
+            getattr(args, "instance_bias_ramp_epochs", 10)
+        )
         self.use_face_uv = bool(getattr(args, "use_face_uv", True))
         self.use_face_pointcloud = bool(
             getattr(args, "use_face_pointcloud", False)
@@ -167,6 +257,20 @@ class BrepSeg(pl.LightningModule):
                 "use_cylindrical_pos": self.use_cylindrical_pos,
                 "pointcloud_scale": self.pointcloud_scale,
                 "cylindrical_scale": self.cylindrical_scale,
+                "instance_bias_strategy": self.instance_bias_strategy,
+                "instance_relation_mapping": self.instance_relation_mapping,
+                "instance_bias_last_layers": self.instance_bias_last_layers,
+                "instance_bias_confidence_power": (
+                    self.instance_bias_confidence_power
+                ),
+                "instance_bias_gate_init": self.instance_bias_gate_init,
+                "instance_bias_max_gate_scale": (
+                    self.instance_bias_max_gate_scale
+                ),
+                "instance_bias_delay_epochs": (
+                    self.instance_bias_delay_epochs
+                ),
+                "instance_bias_ramp_epochs": self.instance_bias_ramp_epochs,
             }
         )
 
@@ -195,6 +299,14 @@ class BrepSeg(pl.LightningModule):
             affinity_dim=getattr(args, "affinity_dim", 64),
             affinity_temperature=getattr(args, "affinity_temperature", 0.2),
             instance_bias_scale=getattr(args, "instance_bias_scale", 1.0),
+            instance_bias_strategy=self.instance_bias_strategy,
+            instance_relation_mapping=self.instance_relation_mapping,
+            instance_bias_last_layers=self.instance_bias_last_layers,
+            instance_bias_confidence_power=(
+                self.instance_bias_confidence_power
+            ),
+            instance_bias_gate_init=self.instance_bias_gate_init,
+            instance_bias_max_gate_scale=self.instance_bias_max_gate_scale,
             use_face_uv=self.use_face_uv,
             use_face_pointcloud=self.use_face_pointcloud,
             use_cylindrical_pos=self.use_cylindrical_pos,
@@ -233,6 +345,15 @@ class BrepSeg(pl.LightningModule):
         probabilities, _ = self.predict_with_affinity(batch)
         return probabilities
 
+    def _instance_bias_progress(self):
+        if self.instance_bias_strategy != "late_gated":
+            return 1.0
+        return instance_bias_progress(
+            int(self.current_epoch),
+            self.instance_bias_delay_epochs,
+            self.instance_bias_ramp_epochs,
+        )
+
 
     def training_step(self, batch, batch_idx):
         self.brep_encoder.train()
@@ -245,6 +366,7 @@ class BrepSeg(pl.LightningModule):
             batch,
             last_state_only=True,
             return_instance_logits=True,
+            instance_bias_progress=self._instance_bias_progress(),
         )
 
         # node classifier--------------------------------------------------------------------------------
@@ -279,6 +401,7 @@ class BrepSeg(pl.LightningModule):
                 batch["instance"],
                 batch["padding_mask"],
                 batch["instance_available"],
+                semantic_labels=labels,
             )
             if self.affinity_warmup_epochs > 0:
                 warmup = min(
@@ -302,6 +425,20 @@ class BrepSeg(pl.LightningModule):
                 on_step=False,
                 on_epoch=True,
             )
+        self.log(
+            "train_instance_bias_progress",
+            self._instance_bias_progress(),
+            on_step=False,
+            on_epoch=True,
+        )
+        gate_scale = self.brep_encoder.instance_relation_bias.gate_scale
+        if gate_scale is not None:
+            self.log(
+                "train_instance_bias_gate",
+                gate_scale.detach(),
+                on_step=False,
+                on_epoch=True,
+            )
         self.log("train_loss", loss, on_step=False, on_epoch=True)
         return loss
 
@@ -320,6 +457,7 @@ class BrepSeg(pl.LightningModule):
             batch,
             last_state_only=True,
             return_instance_logits=True,
+            instance_bias_progress=self._instance_bias_progress(),
         )  # logits [total_nodes, num_classes]
 
         node_emb = node_emb[0].permute(1, 0, 2)  # node_emb [batch_size, max_node_num+1, dim] with global node dim=0

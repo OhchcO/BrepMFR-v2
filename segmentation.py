@@ -50,6 +50,7 @@ class ExperimentSwitches:
     use_face_pointcloud: bool
     use_cylindrical_pos: bool
     instance_bias_scale: float
+    instance_bias_strategy: str = "legacy"
 
 
 _EXPERIMENT_SWITCHES = {
@@ -59,15 +60,17 @@ _EXPERIMENT_SWITCHES = {
     "pc_aag": ExperimentSwitches("baseline", False, True, False, 1.0),
     "uv_pc_aag": ExperimentSwitches("baseline", True, True, False, 1.0),
     "dynamic_no_loss": ExperimentSwitches(
-        "dynamic", True, False, False, 1.0
+        "dynamic", True, False, False, 1.0, "late_gated"
     ),
     "affinity_only": ExperimentSwitches(
-        "dynamic_affinity", True, False, False, 0.0
+        "dynamic_affinity", True, False, False, 0.0, "late_gated"
     ),
     "instance": ExperimentSwitches(
-        "dynamic_affinity", True, False, False, 1.0
+        "dynamic_affinity", True, False, False, 1.0, "late_gated"
     ),
-    "oracle": ExperimentSwitches("oracle", True, False, False, 1.0),
+    "oracle": ExperimentSwitches(
+        "oracle", True, False, False, 1.0, "late_gated"
+    ),
     "cyl": ExperimentSwitches("baseline", True, False, True, 1.0),
     "cyl_affinity": ExperimentSwitches(
         "dynamic_affinity", True, False, True, 0.0
@@ -184,6 +187,38 @@ def build_parser() -> argparse.ArgumentParser:
         help="Direct instance-bias mode; retained for oracle/dynamic experiments",
     )
     parser.add_argument("--instance_bias_scale", type=float, default=1.0)
+    parser.add_argument(
+        "--instance_bias_strategy",
+        choices=("legacy", "late_gated"),
+        default="legacy",
+    )
+    parser.add_argument(
+        "--instance_relation_mapping",
+        choices=("signed", "positive_only"),
+        default="signed",
+    )
+    parser.add_argument("--instance_bias_last_layers", type=int, default=2)
+    parser.add_argument(
+        "--instance_bias_confidence_power",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument("--instance_bias_gate_init", type=float, default=0.05)
+    parser.add_argument(
+        "--instance_bias_max_gate_scale",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--instance_bias_delay_epochs",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        "--instance_bias_ramp_epochs",
+        type=int,
+        default=10,
+    )
     parser.add_argument("--affinity_dim", type=int, default=64)
     parser.add_argument("--affinity_temperature", type=float, default=0.2)
     parser.add_argument("--affinity_loss_weight", type=float, default=0.1)
@@ -323,6 +358,7 @@ def _apply_alias(args: argparse.Namespace) -> None:
     args.use_face_pointcloud = switches.use_face_pointcloud
     args.use_cylindrical_pos = switches.use_cylindrical_pos
     args.instance_bias_scale = switches.instance_bias_scale
+    args.instance_bias_strategy = switches.instance_bias_strategy
 
 
 def _validate_configuration(
@@ -332,6 +368,27 @@ def _validate_configuration(
         parser.error(
             "--random_rotate cannot be combined with cylindrical positions"
         )
+    if args.instance_bias_last_layers < 1:
+        parser.error("--instance_bias_last_layers must be positive")
+    if args.instance_bias_confidence_power < 0:
+        parser.error(
+            "--instance_bias_confidence_power must be non-negative"
+        )
+    if args.instance_bias_max_gate_scale <= 0:
+        parser.error("--instance_bias_max_gate_scale must be positive")
+    if not (
+        0
+        < args.instance_bias_gate_init
+        < args.instance_bias_max_gate_scale
+    ):
+        parser.error(
+            "--instance_bias_gate_init must be between zero and "
+            "--instance_bias_max_gate_scale"
+        )
+    if args.instance_bias_delay_epochs < 0:
+        parser.error("--instance_bias_delay_epochs must be non-negative")
+    if args.instance_bias_ramp_epochs < 0:
+        parser.error("--instance_bias_ramp_epochs must be non-negative")
     if args.auto_prepare:
         missing = [
             option

@@ -238,13 +238,23 @@ class RecordingGraphAttnBias(nn.Module):
 
 
 class RecordingInstanceRelationBias(nn.Module):
-    def __init__(self, num_heads, mode="dynamic"):
+    def __init__(
+        self,
+        num_heads,
+        mode="dynamic",
+        strategy="legacy",
+        fill_value=0.0,
+    ):
         super().__init__()
         self.num_heads = num_heads
         self.mode = mode
+        self.strategy = strategy
+        self.fill_value = fill_value
         self.node_features = None
         self.instance = "not called"
         self.instance_available = "not called"
+        self.progress = None
+        self.call_count = 0
 
     def forward(
         self,
@@ -255,25 +265,32 @@ class RecordingInstanceRelationBias(nn.Module):
         angle_distance,
         instance=None,
         instance_available=None,
+        progress=1.0,
     ):
         self.node_features = node_features.detach().clone()
         self.instance = instance
         self.instance_available = instance_available
+        self.progress = progress
+        self.call_count += 1
         batch_size, max_nodes = padding_mask.shape
-        bias = node_features.new_zeros(
-            (batch_size, self.num_heads, max_nodes + 1, max_nodes + 1)
+        bias = node_features.new_full(
+            (batch_size, self.num_heads, max_nodes + 1, max_nodes + 1),
+            self.fill_value,
         )
         return bias, None
 
 
 class RecordingGraphLayer(nn.Module):
-    def __init__(self):
+    def __init__(self, increment=0.0):
         super().__init__()
         self.node_features = None
+        self.attention_bias = None
+        self.increment = increment
 
     def forward(self, node_features, **kwargs):
         self.node_features = node_features.detach().clone()
-        return node_features, None
+        self.attention_bias = kwargs["self_attn_bias"].detach().clone()
+        return node_features + self.increment, None
 
 
 def geometry_encoder_batch():
@@ -357,6 +374,58 @@ def test_oracle_relation_path_still_receives_instance_labels():
     assert relation_bias.instance_available is batch["instance_available"]
 
 
+def test_late_gated_relation_is_predicted_midway_and_only_reaches_last_layers():
+    model = BrepEncoder(
+        num_degree=128,
+        num_spatial=64,
+        num_edge_dis=64,
+        edge_type="multi_hop",
+        multi_hop_max_dist=16,
+        num_encoder_layers=4,
+        embedding_dim=128,
+        ffn_embedding_dim=128,
+        num_attention_heads=8,
+        dropout=0.0,
+        attention_dropout=0.0,
+        activation_dropout=0.0,
+        layerdrop=0.0,
+        apply_params_init=True,
+        experiment_mode="dynamic_affinity",
+        instance_bias_strategy="late_gated",
+        instance_relation_mapping="positive_only",
+        instance_bias_last_layers=2,
+    ).eval()
+    model.graph_attn_bias = RecordingGraphAttnBias(num_heads=8)
+    relation_bias = RecordingInstanceRelationBias(
+        num_heads=8,
+        mode="dynamic_affinity",
+        strategy="late_gated",
+        fill_value=2.0,
+    )
+    layers = [RecordingGraphLayer(increment=1.0) for _ in range(4)]
+    model.instance_relation_bias = relation_bias
+    model.layers = nn.ModuleList(layers)
+
+    with torch.no_grad():
+        model(
+            geometry_encoder_batch(),
+            last_state_only=True,
+            return_instance_logits=True,
+            instance_bias_progress=0.75,
+        )
+
+    assert relation_bias.call_count == 1
+    assert relation_bias.progress == pytest.approx(0.75)
+    assert torch.equal(
+        relation_bias.node_features,
+        layers[2].node_features.permute(1, 0, 2),
+    )
+    assert torch.count_nonzero(layers[0].attention_bias).item() == 0
+    assert torch.count_nonzero(layers[1].attention_bias).item() == 0
+    assert torch.all(layers[2].attention_bias == 2.0)
+    assert torch.all(layers[3].attention_bias == 2.0)
+
+
 def test_brepseg_saves_and_threads_geometry_hyperparameters():
     args = SimpleNamespace(
         num_classes=24,
@@ -372,6 +441,15 @@ def test_brepseg_saves_and_threads_geometry_hyperparameters():
         use_cylindrical_pos=True,
         pointcloud_scale=0.25,
         cylindrical_scale=0.5,
+        experiment_mode="dynamic_affinity",
+        instance_bias_strategy="late_gated",
+        instance_relation_mapping="positive_only",
+        instance_bias_last_layers=2,
+        instance_bias_confidence_power=2.0,
+        instance_bias_gate_init=0.1,
+        instance_bias_max_gate_scale=0.5,
+        instance_bias_delay_epochs=5,
+        instance_bias_ramp_epochs=7,
     )
     model = BrepSeg(args)
 
@@ -383,6 +461,24 @@ def test_brepseg_saves_and_threads_geometry_hyperparameters():
     assert model.brep_encoder.graph_node_feature.pointcloud_scale == 0.25
     assert model.brep_encoder.graph_node_feature.cylindrical_scale == 0.5
     assert model.brep_encoder.graph_node_feature.surf_encoder is None
+    assert model.hparams["instance_bias_strategy"] == "late_gated"
+    assert model.hparams["instance_relation_mapping"] == "positive_only"
+    assert model.hparams["instance_bias_last_layers"] == 2
+    assert model.hparams["instance_bias_confidence_power"] == 2.0
+    assert model.hparams["instance_bias_gate_init"] == 0.1
+    assert model.hparams["instance_bias_max_gate_scale"] == 0.5
+    assert model.hparams["instance_bias_delay_epochs"] == 5
+    assert model.hparams["instance_bias_ramp_epochs"] == 7
+    assert model.brep_encoder.instance_bias_last_layers == 2
+    assert model.brep_encoder.instance_relation_bias.strategy == "late_gated"
+    assert (
+        model.brep_encoder.instance_relation_bias.relation_mapping
+        == "positive_only"
+    )
+    assert (
+        model.brep_encoder.instance_relation_bias.confidence_power
+        == 2.0
+    )
 
 
 def test_predict_with_affinity_returns_semantics_and_relation_logits():

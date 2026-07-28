@@ -28,7 +28,15 @@ param(
     [int]$AffinityDim = 64,
     [double]$AffinityTemperature = 0.2,
     [double]$AffinityLossWeight = 0.1,
-    [int]$AffinityWarmupEpochs = 10
+    [int]$AffinityWarmupEpochs = 10,
+    [ValidateSet("signed", "positive_only")]
+    [string]$InstanceRelationMapping = "signed",
+    [int]$InstanceBiasLastLayers = 2,
+    [double]$InstanceBiasConfidencePower = 1.0,
+    [double]$InstanceBiasGateInit = 0.05,
+    [double]$InstanceBiasMaxGateScale = 1.0,
+    [int]$InstanceBiasDelayEpochs = 10,
+    [int]$InstanceBiasRampEpochs = 10
 )
 
 $ErrorActionPreference = "Stop"
@@ -93,7 +101,14 @@ $CommonArguments = @(
     "--affinity_dim", "$AffinityDim",
     "--affinity_temperature", "$AffinityTemperature",
     "--affinity_loss_weight", "$AffinityLossWeight",
-    "--affinity_warmup_epochs", "$AffinityWarmupEpochs"
+    "--affinity_warmup_epochs", "$AffinityWarmupEpochs",
+    "--instance_relation_mapping", $InstanceRelationMapping,
+    "--instance_bias_last_layers", "$InstanceBiasLastLayers",
+    "--instance_bias_confidence_power", "$InstanceBiasConfidencePower",
+    "--instance_bias_gate_init", "$InstanceBiasGateInit",
+    "--instance_bias_max_gate_scale", "$InstanceBiasMaxGateScale",
+    "--instance_bias_delay_epochs", "$InstanceBiasDelayEpochs",
+    "--instance_bias_ramp_epochs", "$InstanceBiasRampEpochs"
 )
 
 if ($AutoPrepare) {
@@ -113,7 +128,13 @@ Push-Location $ProjectRoot
 try {
     for ($Index = 0; $Index -lt $Modes.Count; $Index++) {
         $CurrentMode = $Modes[$Index]
-        $ExperimentName = "MFRInstSeg_1pct_${CurrentMode}_seed${Seed}"
+        $ExperimentLabel = if ($InstanceRelationMapping -eq "positive_only") {
+            "${CurrentMode}_positive"
+        }
+        else {
+            $CurrentMode
+        }
+        $ExperimentName = "MFRInstSeg_1pct_${ExperimentLabel}_seed${Seed}"
         $Arguments = @($CommonArguments) + @(
             "--experiment_name", $ExperimentName,
             "--experiment_alias", $CurrentMode

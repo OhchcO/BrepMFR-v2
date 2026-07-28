@@ -1,5 +1,9 @@
-import numpy as np
+from types import SimpleNamespace
 
+import numpy as np
+import pytest
+
+from tools import test_mfrinstseg
 from tools.test_mfrinstseg import (
     adjusted_rand_index,
     cluster_instances,
@@ -9,6 +13,93 @@ from tools.test_mfrinstseg import (
     pairwise_metrics,
     summarize_instance_results,
 )
+
+
+def _model_with_instance_bias_scale(scale):
+    relation_bias = SimpleNamespace(bias_scale=scale)
+    encoder = SimpleNamespace(instance_relation_bias=relation_bias)
+    return SimpleNamespace(brep_encoder=encoder), relation_bias
+
+
+def test_instance_bias_scale_override_none_preserves_checkpoint_value():
+    model, relation_bias = _model_with_instance_bias_scale(1.0)
+
+    values = test_mfrinstseg.apply_instance_bias_scale_override(model, None)
+
+    assert values == (1.0, 1.0, False)
+    assert relation_bias.bias_scale == 1.0
+
+
+def test_instance_bias_scale_override_zero_disables_loaded_bias():
+    model, relation_bias = _model_with_instance_bias_scale(1.0)
+
+    values = test_mfrinstseg.apply_instance_bias_scale_override(model, 0.0)
+
+    assert values == (1.0, 0.0, True)
+    assert relation_bias.bias_scale == 0.0
+
+
+def test_instance_bias_scale_override_accepts_positive_value():
+    model, relation_bias = _model_with_instance_bias_scale(0.5)
+
+    values = test_mfrinstseg.apply_instance_bias_scale_override(model, 0.25)
+
+    assert values == (0.5, 0.25, True)
+    assert relation_bias.bias_scale == 0.25
+
+
+@pytest.mark.parametrize("override", [-0.1, float("nan"), float("inf")])
+def test_instance_bias_scale_override_rejects_invalid_value(override):
+    model, relation_bias = _model_with_instance_bias_scale(1.0)
+
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        test_mfrinstseg.apply_instance_bias_scale_override(model, override)
+
+    assert relation_bias.bias_scale == 1.0
+
+
+def test_instance_bias_scale_override_requires_relation_bias_module():
+    model = SimpleNamespace(brep_encoder=SimpleNamespace())
+
+    with pytest.raises(AttributeError, match="instance_relation_bias"):
+        test_mfrinstseg.apply_instance_bias_scale_override(model, 0.0)
+
+
+def test_bias_override_uses_scale_specific_output_directory(tmp_path):
+    checkpoint = tmp_path / "best.ckpt"
+
+    output_dir = test_mfrinstseg.resolve_output_directory(
+        checkpoint,
+        requested_output_dir=None,
+        scale_override=0.0,
+    )
+
+    assert output_dir == tmp_path / "test_bias_scale_0"
+
+
+def test_saved_scale_evaluation_preserves_legacy_output_directory(tmp_path):
+    checkpoint = tmp_path / "best.ckpt"
+
+    output_dir = test_mfrinstseg.resolve_output_directory(
+        checkpoint,
+        requested_output_dir=None,
+        scale_override=None,
+    )
+
+    assert output_dir == tmp_path
+
+
+def test_explicit_output_directory_takes_priority(tmp_path):
+    checkpoint = tmp_path / "best.ckpt"
+    requested = tmp_path / "comparison"
+
+    output_dir = test_mfrinstseg.resolve_output_directory(
+        checkpoint,
+        requested_output_dir=requested,
+        scale_override=0.25,
+    )
+
+    assert output_dir == requested
 
 
 def test_pairwise_metrics_exclude_background_and_use_upper_triangle_once():

@@ -158,7 +158,7 @@ def test_late_gated_progress_scales_bias_and_rejects_invalid_values():
         module(**inputs, progress=1.1)
 
 
-def test_dynamic_affinity_semantic_bias_does_not_update_affinity_head():
+def test_dynamic_affinity_logits_update_shared_features_and_affinity_head():
     torch.manual_seed(2026)
     module = InstanceRelationBias(
         embedding_dim=4,
@@ -170,10 +170,49 @@ def test_dynamic_affinity_semantic_bias_does_not_update_affinity_head():
         gate_init=0.5,
         max_gate_scale=1.0,
     )
+    inputs = relation_inputs()
+    inputs["node_features"] = (
+        inputs["node_features"].clone().requires_grad_(True)
+    )
 
-    bias, _ = module(**relation_inputs(), progress=1.0)
+    _, logits = module(**inputs, progress=1.0)
+    logits.sum().backward()
+
+    assert inputs["node_features"].grad is not None
+    assert torch.count_nonzero(inputs["node_features"].grad).item() > 0
+    affinity_parameters = [
+        parameter
+        for name, parameter in module.named_parameters()
+        if name != "gate_logit"
+    ]
+    assert all(parameter.grad is not None for parameter in affinity_parameters)
+    assert any(
+        torch.count_nonzero(parameter.grad).item() > 0
+        for parameter in affinity_parameters
+    )
+
+
+def test_dynamic_affinity_semantic_bias_does_not_update_encoder_or_affinity_head():
+    torch.manual_seed(2026)
+    module = InstanceRelationBias(
+        embedding_dim=4,
+        num_heads=2,
+        mode="dynamic_affinity",
+        affinity_dim=4,
+        strategy="late_gated",
+        bias_scale=1.0,
+        gate_init=0.5,
+        max_gate_scale=1.0,
+    )
+    inputs = relation_inputs()
+    inputs["node_features"] = (
+        inputs["node_features"].clone().requires_grad_(True)
+    )
+
+    bias, _ = module(**inputs, progress=1.0)
     bias.sum().backward()
 
+    assert inputs["node_features"].grad is None
     affinity_parameters = [
         parameter
         for name, parameter in module.named_parameters()
@@ -195,10 +234,16 @@ def test_dynamic_without_affinity_loss_can_learn_predictor_from_semantics():
         gate_init=0.5,
         max_gate_scale=1.0,
     )
+    inputs = relation_inputs()
+    inputs["node_features"] = (
+        inputs["node_features"].clone().requires_grad_(True)
+    )
 
-    bias, _ = module(**relation_inputs(), progress=1.0)
+    bias, _ = module(**inputs, progress=1.0)
     bias.sum().backward()
 
+    assert inputs["node_features"].grad is not None
+    assert torch.count_nonzero(inputs["node_features"].grad).item() > 0
     assert any(
         parameter.grad is not None
         for name, parameter in module.named_parameters()

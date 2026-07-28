@@ -204,11 +204,7 @@ class InstanceRelationBias(nn.Module):
             relation = instance.to(node_features.dtype)
         else:
             logits = self._dynamic_logits(
-                (
-                    node_features.detach()
-                    if self.strategy == "late_gated"
-                    else node_features
-                ),
+                node_features,
                 padding_mask,
                 spatial_pos,
                 d2_distance,

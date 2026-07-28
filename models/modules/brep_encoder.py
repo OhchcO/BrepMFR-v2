@@ -373,7 +373,11 @@ class BrepEncoder(nn.Module):
                 "self_attn_mask": attn_mask,
                 "self_attn_bias": attn_bias,
             }
-            if use_late_gated_bias and layer_index >= late_layer_start:
+            if (
+                use_late_gated_bias
+                and self.instance_relation_bias.bias_scale != 0.0
+                and layer_index >= late_layer_start
+            ):
                 layer_kwargs.update(
                     instance_attn_bias=instance_bias,
                     instance_attn_gate=self.instance_relation_bias.residual_gate(

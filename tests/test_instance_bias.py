@@ -1,3 +1,5 @@
+import copy
+
 import pytest
 import torch
 import torch.nn as nn
@@ -438,6 +440,8 @@ def make_routing_encoder(
     instance_bias_last_layers=2,
     mode="dynamic_affinity",
     bias_scale=1.0,
+    attention_dropout=0.0,
+    record_layers=True,
 ):
     model = BrepEncoder(
         num_degree=4,
@@ -450,7 +454,7 @@ def make_routing_encoder(
         ffn_embedding_dim=8,
         num_attention_heads=2,
         dropout=0.0,
-        attention_dropout=0.0,
+        attention_dropout=attention_dropout,
         activation_dropout=0.0,
         experiment_mode=mode,
         affinity_dim=4,
@@ -462,9 +466,10 @@ def make_routing_encoder(
     )
     model.graph_node_feature = FixedGraphNodeFeature()
     model.graph_attn_bias = FixedGraphAttnBias()
-    model.layers = nn.ModuleList(
-        [RecordingGraphLayer() for _ in range(num_encoder_layers)]
-    )
+    if record_layers:
+        model.layers = nn.ModuleList(
+            [RecordingGraphLayer() for _ in range(num_encoder_layers)]
+        )
     return model
 
 
@@ -557,9 +562,30 @@ def test_zero_scaled_late_gated_encoder_still_returns_affinity_logits():
     assert affinity_logits is not None
     assert affinity_logits.requires_grad
     assert all(
-        torch.count_nonzero(layer.calls[0]["instance_attn_bias"]).item() == 0
+        layer.calls[0].get("instance_attn_bias") is None
         for layer in list(model.layers)[-2:]
     )
+
+
+def test_zero_scaled_late_gated_encoder_matches_ordinary_training_attention():
+    """Passing a zero bias through a nonzero gate must not add a second dropout path."""
+    torch.manual_seed(31)
+    affinity_only = make_routing_encoder(
+        num_encoder_layers=1,
+        instance_bias_last_layers=1,
+        bias_scale=0.0,
+        attention_dropout=0.5,
+        record_layers=False,
+    ).train()
+    ordinary = copy.deepcopy(affinity_only)
+    ordinary.instance_relation_bias.mode = "baseline"
+
+    torch.manual_seed(41)
+    _, affinity_only_representation = affinity_only(encoder_batch())
+    torch.manual_seed(41)
+    _, ordinary_representation = ordinary(encoder_batch())
+
+    assert torch.equal(affinity_only_representation, ordinary_representation)
 
 
 @pytest.mark.parametrize(

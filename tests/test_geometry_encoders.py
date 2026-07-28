@@ -244,12 +244,14 @@ class RecordingInstanceRelationBias(nn.Module):
         mode="dynamic",
         strategy="legacy",
         fill_value=0.0,
+        bias_scale=1.0,
     ):
         super().__init__()
         self.num_heads = num_heads
         self.mode = mode
         self.strategy = strategy
         self.fill_value = fill_value
+        self.bias_scale = bias_scale
         self.node_features = None
         self.instance = "not called"
         self.instance_available = "not called"

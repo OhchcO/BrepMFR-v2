@@ -195,6 +195,7 @@ param(
     [
         ("run_mfrinstseg_core_seed42.ps1", 42),
         ("run_mfrinstseg_core_seed2025.ps1", 2025),
+        ("run_mfrinstseg_core_seed2026.ps1", 2026),
         ("run_mfrinstseg_core_seed2027.ps1", 2027),
     ],
 )
@@ -240,16 +241,10 @@ def test_fixed_seed_entrypoint_forwards_declared_seed(
     assert completed.returncode == 0, completed.stderr
     train_lines = events.read_text(encoding="utf-8").splitlines()[::2]
     assert [int(line.split("|")[3]) for line in train_lines] == [
-        expected_seed,
-        expected_seed,
-        expected_seed,
-        expected_seed,
-    ]
-    assert [line.split("|")[1:3] for line in train_lines] == [
-        ["baseline", "signed"],
-        ["dynamic_no_loss", "positive_only"],
-        ["instance", "positive_only"],
-        ["affinity_only", "positive_only"],
+        expected_seed
+    ] * len(EXPECTED_FINAL_MATRIX)
+    assert [tuple(line.split("|")[1:3]) for line in train_lines] == [
+        (mode, mapping) for mode, mapping in EXPECTED_FINAL_MATRIX
     ]
     assert all(
         line.split("|")[4] == str(prepared_base) + "_seed" + str(expected_seed)

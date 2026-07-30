@@ -1,0 +1,408 @@
+动态实例偏置消融实验数据与分析
+================================
+
+更新时间：2026-07-29
+项目路径：D:\Code\BrepMFR
+结果路径：D:\Code\BrepMFR\results
+数据集：MFRInstSeg
+
+
+一、实验目的
+------------
+
+本组实验用于验证以下问题：
+
+1. 没有实例亲和监督时，网络自行预测的动态实例关系能否稳定指导语义分割。
+2. 实例亲和监督能否使模型学习到可靠的面间实例关系。
+3. 仅增加实例亲和辅助任务，是否足以提高语义分割性能。
+4. 在相同实例亲和监督条件下，将预测关系作为偏置注入注意力计算，能否获得额外的语义分割收益。
+5. 完整模型在不同1%小样本抽样条件下，是否具有更好的平均性能和稳定性。
+
+
+二、实验设置
+------------
+
+1. 数据量
+
+训练数据使用MFRInstSeg训练集的1%，测试使用官方完整test.txt划分。
+测试集包含9375个模型、254850个B-Rep面。
+
+2. 随机种子
+
+共使用4个随机种子：
+
+42、2025、2026、2027。
+
+当前统一随机种子同时控制小样本抽样、数据转换和模型训练随机性。因此，本组实验反映的是不同1%数据抽样和训练随机性共同作用下的鲁棒性，不是仅改变网络初始化的重复实验。
+
+3. 公共训练参数
+
+SamplePercent = 0.01
+BatchSize = 16
+MaxEpochs = 100
+NumWorkers = 0
+InstanceRelationMapping = positive_only
+InstanceBiasStrategy = late_gated
+InstanceBiasLastLayers = 2
+InstanceBiasDelayEpochs = 10
+InstanceBiasRampEpochs = 10
+AffinityLossWeight = 0.1
+AffinityTemperature = 0.2
+
+所有实验使用相同的原始BrepMFR语义分割输入，未启用点云分支和柱坐标分支：
+
+use_face_uv = True
+use_face_pointcloud = False
+use_cylindrical_pos = False
+
+4. 消融模式
+
+（1）Baseline
+
+原始BrepMFR语义分割模型，不使用实例亲和监督，也不使用动态实例偏置。
+
+（2）Dynamic no loss
+
+网络自行预测面间实例关系，并将其通过晚层门控偏置注入注意力，但不使用GT实例标签计算亲和损失。
+
+（3）Affinity-only
+
+使用GT实例标签构造实例亲和监督，训练实例关系分支，但关闭注意力中的实例偏置：
+
+checkpoint_instance_bias_scale = 0
+effective_instance_bias_scale = 0
+
+该组实验用于验证“多任务实例亲和监督本身”的作用。
+
+（4）Instance
+
+完整模型，同时使用实例亲和监督和晚层门控动态实例偏置。推理时不输入GT实例标签，实例关系由网络隐式预测。
+
+
+三、语义分割原始结果
+--------------------
+
+表1  Per-face Accuracy（%）
+
+Seed        Baseline       Dynamic no loss       Affinity-only       Instance
+42          91.9973        90.3194               93.3855             93.7803
+2025        94.0671        94.3645               93.7296             93.9035
+2026        93.1674        94.0663               90.6345             93.3577
+2027        94.6259        92.2029               93.6292             93.9741
+均值        93.4644        92.7383               92.8447             93.7539
+标准差       1.1479         1.8749                1.4805              0.2760
+
+
+表2  mIoU（%）
+
+Seed        Baseline       Dynamic no loss       Affinity-only       Instance
+42          77.0567        76.0037               80.3376             82.2416
+2025        82.1275        82.5970               81.1873             81.7790
+2026        80.7843        81.8449               75.9118             81.0486
+2027        83.1524        77.9457               80.0064             81.5882
+均值        80.7802        79.5978               79.3608             81.6644
+标准差       2.6650         3.1460                2.3525              0.4938
+
+
+表3  Macro-F1（%）
+
+Seed        Baseline       Dynamic no loss       Affinity-only       Instance
+42          85.7431        84.9206               88.0601             89.3332
+2025        89.4052        89.6943               88.6174             88.9795
+2026        88.3745        89.2225               84.6196             88.5777
+2027        90.2337        86.4494               87.9926             89.2087
+均值        88.4391        87.5717               87.3224             89.0248
+标准差       1.9516         2.2744                1.8235              0.3321
+
+
+四、实例亲和关系预测结果
+------------------------
+
+表4  Pairwise Affinity-F1（%）
+
+Seed        Dynamic no loss       Affinity-only       Instance
+42          42.1817               79.8299             78.8254
+2025        43.8849               77.6857             79.4025
+2026        37.2729               75.5489             80.1257
+2027        39.4337               80.7412             80.1807
+均值        40.6933               78.4514             79.6336
+标准差       2.9262                2.3205              0.6450
+
+
+表5  Pairwise Affinity Precision / Recall / F1均值（%）
+
+模式                  Precision             Recall                F1
+Dynamic no loss       26.2830±2.4139        90.5648±3.0964        40.6933±2.9262
+Affinity-only         65.3796±3.2757        98.1754±0.2667        78.4514±2.3205
+Instance              67.0955±1.0391        97.9491±0.2960        79.6336±0.6450
+
+亲和监督使Pairwise Affinity-F1从40.6933%提高到约79%，四个随机种子均得到明显提升。这说明实例亲和监督能够稳定地使模型学习同实例面之间的关系。
+
+Dynamic no loss具有较高Recall但Precision很低，表明无监督预测倾向于将大量不同实例的面错误判断为同实例关系。若直接将这种低精度关系注入注意力，容易产生注意力噪声。
+
+
+五、关键组件差值分析
+--------------------
+
+1. Dynamic no loss相对Baseline的mIoU变化
+
+Seed 42：   -1.0530个百分点
+Seed 2025： +0.4695个百分点
+Seed 2026： +1.0607个百分点
+Seed 2027： -5.2067个百分点
+
+平均变化：-1.1824±2.8268个百分点
+正向次数：2/4
+
+结论：缺少亲和监督的动态实例偏置不稳定，平均性能低于Baseline，不能作为最终方法。
+
+
+2. Affinity-only相对Baseline的mIoU变化
+
+Seed 42：   +3.2809个百分点
+Seed 2025： -0.9401个百分点
+Seed 2026： -4.8724个百分点
+Seed 2027： -3.1460个百分点
+
+平均变化：-1.4194±3.5226个百分点
+正向次数：1/4
+
+结论：实例亲和辅助任务能够学到准确的实例关系，但仅增加亲和监督不能保证语义分割受益。亲和任务和语义任务之间可能存在优化冲突或负迁移。
+
+
+3. Instance相对Affinity-only的变化
+
+表6  动态实例偏置相对Affinity-only的附加收益
+
+Seed        Accuracy变化       mIoU变化          Macro-F1变化
+42          +0.3947            +1.9040            +1.2731
+2025        +0.1738            +0.5917            +0.3622
+2026        +2.7232            +5.1368            +3.9581
+2027        +0.3449            +1.5818            +1.2161
+均值        +0.9092            +2.3036            +1.7023
+标准差       1.2130             1.9696             1.5605
+正向次数     4/4                4/4                4/4
+
+该对比是验证实例偏置创新点的核心证据。Affinity-only和Instance都使用实例亲和监督，两者的主要区别是是否将预测关系作为偏置注入注意力。Instance在4个种子的Accuracy、mIoU和Macro-F1上全部高于Affinity-only，其中mIoU平均提高2.3036个百分点。
+
+这说明性能增益并非仅来自实例标签构成的辅助损失。将预测关系显式注入注意力计算，可以进一步把实例关系转化为语义分割收益。
+
+
+4. Instance相对Baseline的变化
+
+Seed 42：   +5.1849个百分点
+Seed 2025： -0.3485个百分点
+Seed 2026： +0.2643个百分点
+Seed 2027： -1.5642个百分点
+
+平均变化：+0.8841±2.9662个百分点
+正向次数：2/4
+
+完整模型取得最高的四种子平均mIoU，但没有在全部种子上超过Baseline。因此不能声称“完整模型在所有随机种子上均优于Baseline”或“获得统计显著提升”。
+
+
+六、跨随机种子稳定性
+--------------------
+
+四种模式mIoU标准差：
+
+Baseline：        2.6650
+Dynamic no loss：3.1460
+Affinity-only：  2.3525
+Instance：        0.4938
+
+完整Instance模型的mIoU分布为：
+
+82.2416、81.7790、81.0486、81.5882。
+
+其结果稳定在81.05%至82.24%之间，标准差仅为0.4938%，明显低于Baseline的2.6650%。完整模型的最低mIoU为81.0486%，而Baseline最低为77.0567%。
+
+因此，除平均性能外，本方法更明显的优势是降低1%训练数据选择变化造成的性能波动。这与小样本制造特征识别的研究背景相符。
+
+需要注意：当前随机种子同时改变小样本数据划分和模型训练随机性。因此这里应表述为“不同小样本抽样与训练随机性下的鲁棒性”，不能直接解释为单纯的初始化稳定性。
+
+
+七、结果形成的逻辑链
+--------------------
+
+实验结果支持以下逻辑：
+
+无亲和监督的关系预测精度较低
+        ↓
+直接注入低质量动态偏置会产生注意力噪声
+        ↓
+亲和监督显著提高实例关系预测质量
+        ↓
+仅使用亲和辅助损失不能保证语义任务受益
+        ↓
+将受监督的预测关系作为动态偏置注入注意力
+        ↓
+实例信息转化为额外的语义分割收益
+
+因此，本方法不是简单拼接一个实例辅助任务，而是通过注意力偏置建立实例关系任务与语义分割任务之间的显式信息传递路径。
+
+
+八、可以支持的论文结论
+----------------------
+
+可以写：
+
+1. 实例亲和监督能够稳定提高面间实例关系的预测质量。
+
+2. 在相同亲和监督条件下，动态实例偏置在4个随机种子上均提高语义分割Accuracy、mIoU和Macro-F1，mIoU平均提高2.30个百分点。
+
+3. 完整模型获得最高的四种子平均mIoU，并显著降低不同1%小样本抽样条件下的性能波动。
+
+4. 无亲和监督的动态偏置和仅使用亲和辅助监督均表现出较大的不稳定性，说明可靠的关系监督与注意力级关系注入缺一不可。
+
+
+建议采用的论文表述：
+
+“提出一种亲和监督驱动的动态实例注意力偏置方法。模型首先利用实例亲和辅助任务隐式预测面间实例关系，再将该关系通过晚层门控机制注入Transformer注意力计算，使语义特征聚合过程受到实例结构约束。四个随机种子的消融实验表明，相比仅采用实例亲和辅助监督，所提出的动态实例偏置在全部实验中均提升语义分割性能，平均mIoU提高2.30个百分点。同时，完整模型取得81.66%的平均mIoU，并将跨随机种子的mIoU标准差从Baseline的2.67%降低至0.49%，表现出更好的小样本鲁棒性。”
+
+
+九、不能支持或需要谨慎的表述
+----------------------------
+
+不能直接写：
+
+1. “完整模型在所有随机种子上均优于原始Baseline。”
+
+原因：Instance相对Baseline只有2/4个种子为正。
+
+2. “动态实例偏置获得统计显著提升。”
+
+原因：只有4个随机种子。Instance相对Affinity-only虽然4/4方向一致，但近似95%置信区间仍包含0，不应使用“统计显著”。
+
+3. “模型已经实现准确的最终实例分割。”
+
+原因：当前后处理聚类指标仍然异常：
+
+Cluster Pairwise-F1 = 0
+Mean Adjusted Rand Index约为0.00010667
+预测实例总数约为19.3万
+GT实例总数约为5.93万
+
+目前可以证明模型学到了面间Pairwise实例关系，但还不能证明聚类后得到了准确的实例集合。
+
+4. “实例标签在推理阶段作为模型输入。”
+
+推理时不输入GT实例标签。实例标签仅用于训练阶段计算亲和监督，推理阶段的实例关系由模型根据输入特征自行预测。
+
+
+十、统计解释
+------------
+
+1. 四个随机种子的结果适合报告均值±标准差和逐种子结果。
+
+2. Instance相对Affinity-only的mIoU变化为：
+
++1.9040、+0.5917、+5.1368、+1.5818个百分点。
+
+方向一致但样本量只有4。近似95%区间为[-0.8305, 5.4377]个百分点，仍包含0。因此该结果属于较强的方向性组件证据，不等同于统计显著性。
+
+3. Instance相对Baseline的mIoU平均变化为+0.8841个百分点，近似95%区间为[-3.8357, 5.6040]个百分点，不能证明稳定的总体提升。
+
+4. Seed 42的Baseline较低且完整模型提升较大，对总体平均增益有较强影响。因此论文必须同时报告所有随机种子的结果，不能仅报告均值或最佳种子。
+
+
+十一、最终实验判断
+------------------
+
+本组实验已经能够验证以下核心创新：
+
+“在实例亲和监督已经存在的条件下，将模型预测的实例关系作为动态偏置注入注意力计算，对语义分割具有稳定的附加价值。”
+
+最有力证据是Instance相对Affinity-only：
+
+Accuracy：4/4种子提升，平均+0.9092个百分点；
+mIoU：4/4种子提升，平均+2.3036个百分点；
+Macro-F1：4/4种子提升，平均+1.7023个百分点。
+
+完整模型相对原始Baseline的主要优势应表述为“更高的平均性能和更低的跨小样本划分波动”，不应夸大为所有种子均提升或统计显著提升。
+
+网络结构可以在当前版本定型，不建议继续根据单个实验结果频繁增加新模块。后续工作应转向论文撰写、机匣数据集验证、可视化结果和误差分析。
+
+
+十二、结果日志索引
+------------------
+
+Seed 42
+
+Baseline：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_baseline_seed42\0728\221838\test_log.txt
+
+Dynamic no loss：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_dynamic_no_loss_positive_seed42\0728\223346\test_log.txt
+
+Affinity-only：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_affinity_only_positive_seed42\0729\090016\test_log.txt
+
+Instance：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_instance_positive_seed42\0728\224930\test_log.txt
+
+
+Seed 2025
+
+Baseline：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_baseline_seed2025\0729\114920\test_log.txt
+
+Dynamic no loss：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_dynamic_no_loss_positive_seed2025\0729\120351\test_log.txt
+
+Affinity-only：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_affinity_only_positive_seed2025\0729\135759\test_log.txt
+
+Instance：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_instance_positive_seed2025\0729\133444\test_log.txt
+
+
+Seed 2026
+
+Baseline：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_baseline_seed2026\0728\163602\test_log.txt
+
+Dynamic no loss：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_dynamic_no_loss_positive_seed2026\0728\174518\test_log.txt
+
+Affinity-only：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_affinity_only_positive_seed2026\0728\174518\test_log.txt
+
+Instance：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_instance_positive_seed2026\0728\164959\test_log.txt
+
+
+Seed 2027
+
+Baseline：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_baseline_seed2027\0729\134012\test_log.txt
+
+Dynamic no loss：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_dynamic_no_loss_positive_seed2027\0729\135824\test_log.txt
+
+Affinity-only：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_affinity_only_positive_seed2027\0729\143449\test_log.txt
+
+Instance：
+D:\Code\BrepMFR\results\MFRInstSeg_1pct_instance_positive_seed2027\0729\141730\test_log.txt
+
+
+十三、数据记录注意事项
+----------------------
+
+Seed 42的Affinity-only日志中，prepared_dataset_path正确指向：
+
+D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG_seed42
+
+但日志字段seed记录为2026。这是测试启动时未显式传入-Seed 42造成的记录问题。若最终论文归档要求完全一致，建议使用相同权重和Seed 42数据缓存重新执行一次测试；在推理过程确定性且输入缓存不变的条件下，该问题预计不会改变现有指标，但正式归档应保持日志字段一致。
+
+
+十四、文档范围说明
+------------------
+
+本文档汇总最终定型的四组核心消融：
+
+Baseline、Dynamic no loss、Affinity-only、Instance。
+
+早期legacy映射、signed关系、旧动态偏置、Oracle GT Bias和其他探索性分支未纳入核心统计，因为其代码路径或实验配置与最终定型版本不同。若论文需要展示Oracle上限，应单独建立“机制上限实验”小节，不应与本表中的最终四种子消融结果直接求均值。
+

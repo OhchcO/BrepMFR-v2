@@ -226,6 +226,13 @@ def test_fixed_seed_entrypoint_forwards_declared_seed(
         expected_seed,
         expected_seed,
         expected_seed,
+        expected_seed,
+    ]
+    assert [line.split("|")[1:3] for line in train_lines] == [
+        ["baseline", "signed"],
+        ["dynamic_no_loss", "positive_only"],
+        ["instance", "positive_only"],
+        ["affinity_only", "positive_only"],
     ]
     assert all(
         line.split("|")[4] == str(prepared_base) + "_seed" + str(expected_seed)

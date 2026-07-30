@@ -177,6 +177,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--experiment_name", default="BrepMFR")
+    parser.add_argument(
+        "--results_root",
+        type=Path,
+        default=Path(__file__).parent / "results",
+    )
     parser.add_argument("--dropout", type=float, default=0.3)
     parser.add_argument("--attention_dropout", type=float, default=0.3)
     parser.add_argument("--act-dropout", type=float, default=0.3)
@@ -419,8 +424,8 @@ def _validate_configuration(
         parser.error("--checkpoint is required in test mode")
 
 
-def _make_run_path(experiment_name: str):
-    results_path = Path(__file__).parent / "results" / experiment_name
+def _make_run_path(experiment_name: str, results_root: Path):
+    results_path = Path(results_root) / experiment_name
     month_day = time.strftime("%m%d")
     hour_min_second = time.strftime("%H%M%S")
     run_path = results_path / month_day / hour_min_second
@@ -537,7 +542,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         raise ValueError("Unsupported dataset")
 
     results_path, run_path, month_day, hour_min_second = _make_run_path(
-        args.experiment_name
+        args.experiment_name,
+        args.results_root,
     )
     configuration = _run_configuration(args, dataset_root)
     print(

@@ -36,7 +36,8 @@ param(
     [double]$InstanceBiasGateInit = 0.0,
     [double]$InstanceBiasMaxGateScale = 1.0,
     [int]$InstanceBiasDelayEpochs = 10,
-    [int]$InstanceBiasRampEpochs = 10
+    [int]$InstanceBiasRampEpochs = 10,
+    [string]$ResultBasePath = "D:\Code\BrepMFR\results"
 )
 
 $ErrorActionPreference = "Stop"
@@ -87,6 +88,7 @@ $CommonArguments = @(
     "--num_workers", "$NumWorkers",
     "--max_epochs", "$MaxEpochs",
     "--seed", "$Seed",
+    "--results_root", $ResultBasePath,
     "--sample_percent", "$SamplePercent",
     "--split_ratios"
 ) + @($SplitRatios | ForEach-Object { "$_" }) + @(

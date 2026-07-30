@@ -234,6 +234,52 @@ $attribute.ValidValues | ConvertTo-Json -Compress
     ]
 
 
+def test_training_parser_and_launcher_expose_custom_results_root(
+    segmentation,
+    tmp_path,
+):
+    args = segmentation.build_parser().parse_args(
+        [
+            "train",
+            "--dataset_path",
+            str(tmp_path),
+            "--results_root",
+            str(tmp_path / "custom-results"),
+        ]
+    )
+    assert args.results_root == tmp_path / "custom-results"
+
+    launcher = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "run_mfrinstseg_experiments.ps1"
+    )
+    source = launcher.read_text(encoding="utf-8")
+    assert "[string]$ResultBasePath" in source
+    assert '"--results_root", $ResultBasePath' in source
+
+
+def test_make_run_path_uses_custom_results_root(
+    segmentation,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        segmentation.time,
+        "strftime",
+        lambda fmt: {"%m%d": "0730", "%H%M%S": "120000"}[fmt],
+    )
+
+    results_path, run_path, month_day, hour_min_second = (
+        segmentation._make_run_path("experiment", tmp_path)
+    )
+
+    assert results_path == tmp_path / "experiment"
+    assert run_path == tmp_path / "experiment" / "0730" / "120000"
+    assert run_path.is_dir()
+    assert (month_day, hour_min_second) == ("0730", "120000")
+
+
 def test_parser_exposes_preparation_and_geometry_defaults(segmentation):
     args = segmentation.build_parser().parse_args(["train"])
 
@@ -705,7 +751,12 @@ def test_main_orders_seed_preparation_components_then_trainer(
     monkeypatch.setattr(
         segmentation,
         "_make_run_path",
-        lambda experiment_name: (tmp_path, tmp_path / "run", "0726", "120000"),
+        lambda experiment_name, results_root: (
+            tmp_path,
+            tmp_path / "run",
+            "0726",
+            "120000",
+        ),
     )
     monkeypatch.setattr(segmentation, "CADSynth", FakeDataset)
     monkeypatch.setattr(segmentation, "BrepSeg", FakeModel)

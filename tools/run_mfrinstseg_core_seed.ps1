@@ -107,6 +107,7 @@ foreach ($Experiment in $Experiments) {
         MaxEpochs = 100
         NumWorkers = 0
         PythonExe = $PythonExe
+        ResultBasePath = $ResultBasePath
     }
     if ($null -ne $Experiment.Mapping) {
         $TrainingArguments.InstanceRelationMapping = $Experiment.Mapping

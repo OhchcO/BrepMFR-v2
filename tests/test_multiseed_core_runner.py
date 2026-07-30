@@ -37,7 +37,8 @@ param(
     [int]$BatchSize,
     [int]$MaxEpochs,
     [int]$NumWorkers,
-    [string]$PythonExe
+    [string]$PythonExe,
+    [string]$ResultBasePath
 )
 $label = if ($InstanceRelationMapping -eq "positive_only") {
     "${Mode}_positive"
@@ -137,6 +138,8 @@ def test_core_runner_trains_and_tests_final_experiments_in_order(tmp_path):
     ] == [
         line.split("|")[5] for line in lines[::2]
     ]
+    source = CORE_RUNNER.read_text(encoding="utf-8")
+    assert "ResultBasePath = $ResultBasePath" in source
 
 
 def test_core_runner_defaults_to_versioned_10d_cache_base():

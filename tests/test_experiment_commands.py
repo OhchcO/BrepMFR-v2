@@ -11,6 +11,7 @@ EXPECTED_EXPERIMENT_IDENTITIES = [
     ("topo_aag", "signed"),
     ("uv_aag", "signed"),
     ("pc_aag", "signed"),
+    ("cyl_aag", "signed"),
     ("uv_pc_aag", "signed"),
     ("dynamic_no_loss", "signed"),
     ("affinity_only", "signed"),
@@ -259,3 +260,17 @@ if ($errors.Count -ne 0) {{
         capture_output=True,
         text=True,
     )
+
+
+def test_experiment_file_has_final_multiseed_runner_commands():
+    text = COMMAND_FILE.read_text(encoding="utf-8")
+
+    assert "# Final multi-seed 10-experiment runners" in text
+    for seed in (42, 2025, 2026, 2027):
+        script_name = "run_mfrinstseg_core_seed{}.ps1".format(seed)
+        assert text.count(script_name) == 1
+        assert (
+            "MFRInstSeg_BrepMFR_SPEPCAAG10D_seed{}".format(seed)
+            in text
+        )
+    assert "spe_instance" in text

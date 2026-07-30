@@ -1,8 +1,9 @@
 # 使用说明
 # 1. 每次只复制一个实验标题下面的完整代码块到 PowerShell。
-# 2. 每组固定使用 1% 数据、随机种子 2026、100 轮、BatchSize 16。
+# 2. 终版几何消融使用 1% 数据、随机种子 42、100 轮、BatchSize 16。
 # 3. 训练结束后会自动寻找该实验最新的 best-*.ckpt，然后运行完整 test.txt。
-# 4. 所有实验共用已有 BIN 缓存，不要添加 -RebuildPreparedData。
+# 4. 五组终版几何消融共用 MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42；
+#    首次运行会自动生成 10D BIN，之后复用，不要添加 -RebuildPreparedData。
 # 5. oracle 使用 GT 实例信息，只表示理论性能上界，不能作为正常推理结果。
 # 6. 实验 11-14 是正向映射（positive_only）消融，用于锁定论文对照链：
 #    Baseline → dynamic_no_loss+positive → affinity_only+positive
@@ -17,7 +18,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode baseline `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -35,7 +36,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -48,14 +49,14 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode topo_aag `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42" `
   -SamplePercent 0.01 `
-  -Seed 2026 `
+  -Seed 42 `
   -BatchSize 16 `
   -MaxEpochs 100 `
   -NumWorkers 0
 
-$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_topo_aag_seed2026"
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_topo_aag_seed42"
 $Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
   | Sort-Object LastWriteTime -Descending `
   | Select-Object -First 1 -ExpandProperty FullName
@@ -66,7 +67,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -79,14 +80,14 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode uv_aag `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42" `
   -SamplePercent 0.01 `
-  -Seed 2026 `
+  -Seed 42 `
   -BatchSize 16 `
   -MaxEpochs 100 `
   -NumWorkers 0
 
-$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_uv_aag_seed2026"
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_uv_aag_seed42"
 $Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
   | Sort-Object LastWriteTime -Descending `
   | Select-Object -First 1 -ExpandProperty FullName
@@ -97,7 +98,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -110,14 +111,14 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode pc_aag `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42" `
   -SamplePercent 0.01 `
-  -Seed 2026 `
+  -Seed 42 `
   -BatchSize 16 `
   -MaxEpochs 100 `
   -NumWorkers 0
 
-$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_pc_aag_seed2026"
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_pc_aag_seed42"
 $Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
   | Sort-Object LastWriteTime -Descending `
   | Select-Object -First 1 -ExpandProperty FullName
@@ -128,20 +129,51 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42" `
   -BatchSize 16 `
   -NumWorkers 0
 
 
 # ============================================================
-# 表示消融 D. uv_pc_aag：UV + 面点云 + AAG（与旧 point 表示相同）
+# 表示消融 D. cyl_aag：柱坐标 + AAG，不使用 UV 和面点云
+# ============================================================
+
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
+  -Mode cyl_aag `
+  -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42" `
+  -SamplePercent 0.01 `
+  -Seed 42 `
+  -BatchSize 16 `
+  -MaxEpochs 100 `
+  -NumWorkers 0
+
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_cyl_aag_seed42"
+$Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
+  | Sort-Object LastWriteTime -Descending `
+  | Select-Object -First 1 -ExpandProperty FullName
+if (-not $Checkpoint) {
+  throw "No best checkpoint found for cyl_aag"
+}
+Write-Host "Testing checkpoint: $Checkpoint"
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
+  -Checkpoint $Checkpoint `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42" `
+  -BatchSize 16 `
+  -NumWorkers 0
+
+
+# ============================================================
+# 表示消融 E. uv_pc_aag：UV + 面点云 + AAG（与旧 point 表示相同）
 # ============================================================
 
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode uv_pc_aag `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -159,7 +191,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -172,7 +204,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode dynamic_no_loss `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -190,7 +222,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -203,7 +235,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode affinity_only `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -221,7 +253,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -234,7 +266,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode instance `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -252,7 +284,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -265,7 +297,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode oracle `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -283,7 +315,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -296,7 +328,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode cyl `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -314,7 +346,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -327,7 +359,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode point `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -345,7 +377,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -358,14 +390,14 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode spe_pcaag `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42" `
   -SamplePercent 0.01 `
-  -Seed 2026 `
+  -Seed 42 `
   -BatchSize 16 `
   -MaxEpochs 100 `
   -NumWorkers 0
 
-$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_spe_pcaag_seed2026"
+$ResultRoot = "D:\Code\BrepMFR\results\MFRInstSeg_1pct_spe_pcaag_seed42"
 $Checkpoint = Get-ChildItem -LiteralPath $ResultRoot -Recurse -Filter "best-*.ckpt" `
   | Sort-Object LastWriteTime -Descending `
   | Select-Object -First 1 -ExpandProperty FullName
@@ -376,7 +408,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -389,7 +421,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode full `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -407,7 +439,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -421,7 +453,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_experiments.ps1" `
   -Mode cyl_affinity `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -439,7 +471,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -454,7 +486,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   -Mode dynamic_no_loss `
   -InstanceRelationMapping positive_only `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -472,7 +504,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -487,7 +519,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   -Mode affinity_only `
   -InstanceRelationMapping positive_only `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -505,7 +537,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -520,7 +552,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   -Mode instance `
   -InstanceRelationMapping positive_only `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -538,7 +570,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -553,7 +585,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
   -Mode oracle `
   -InstanceRelationMapping positive_only `
   -RawDatasetPath "D:\Code\Datasets\MFRInstSeg" `
-  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDatasetPath "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -SamplePercent 0.01 `
   -Seed 2026 `
   -BatchSize 16 `
@@ -571,7 +603,7 @@ Write-Host "Testing checkpoint: $Checkpoint"
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint $Checkpoint `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -BatchSize 16 `
   -NumWorkers 0
 
@@ -584,10 +616,41 @@ powershell.exe -ExecutionPolicy Bypass -File `
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint "D:\Code\BrepMFR\results\MFRInstSeg_1pct_dynamic_no_loss_positive_seed2026\0728\174518\best-080-0.165093.ckpt" `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -InstanceBiasScaleOverride 0 `
   -BatchSize 16 `
   -NumWorkers 0
+
+
+# ============================================================
+# Final multi-seed 10-experiment runners
+# 每个脚本依次运行：
+# topo_aag、uv_aag、pc_aag、cyl_aag、spe_pcaag、
+# dynamic_no_loss、affinity_only、instance、oracle、spe_instance。
+# 关系实验统一使用 positive_only。
+# 首组实验生成对应的 10D 缓存，后续九组自动复用：
+# MFRInstSeg_BrepMFR_SPEPCAAG10D_seed42
+# MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2025
+# MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026
+# MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2027
+# 每次只复制下面一个完整命令。
+# ============================================================
+
+# Seed 42
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_core_seed42.ps1"
+
+# Seed 2025
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_core_seed2025.ps1"
+
+# Seed 2026
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_core_seed2026.ps1"
+
+# Seed 2027
+powershell.exe -ExecutionPolicy Bypass -File `
+  "D:\Code\BrepMFR\tools\run_mfrinstseg_core_seed2027.ps1"
 
 
 # ============================================================
@@ -598,7 +661,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint "D:\Code\BrepMFR\results\MFRInstSeg_1pct_instance_positive_seed2026\0728\164959\best-095-0.142707.ckpt" `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -InstanceBiasScaleOverride 0 `
   -BatchSize 16 `
   -NumWorkers 0
@@ -612,7 +675,7 @@ powershell.exe -ExecutionPolicy Bypass -File `
 powershell.exe -ExecutionPolicy Bypass -File `
   "D:\Code\BrepMFR\tools\run_mfrinstseg_test.ps1" `
   -Checkpoint "D:\Code\BrepMFR\results\MFRInstSeg_1pct_oracle_positive_seed2026\0728\164959\best-086-0.152804.ckpt" `
-  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG" `
+  -PreparedDataset "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D_seed2026" `
   -InstanceBiasScaleOverride 0 `
   -BatchSize 16 `
   -NumWorkers 0

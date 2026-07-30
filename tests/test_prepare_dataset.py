@@ -123,7 +123,7 @@ def write_valid_contract_bin(path: Path) -> None:
     path.write_text(
         json.dumps(
             {
-                "face_points": [2, 96, 6],
+                "face_points": [2, 96, 10],
                 "face_point_mask": [2, 96],
                 "face_point_count": [2],
                 "cylindrical_pos": [2, 4],
@@ -141,7 +141,7 @@ def contract_validator(
     assert isinstance(point_sampling, FakePointSamplingConfig)
     document = json.loads(path.read_text(encoding="utf-8"))
     assert document == {
-        "face_points": [2, 96, 6],
+        "face_points": [2, 96, 10],
         "face_point_mask": [2, 96],
         "face_point_count": [2],
         "cylindrical_pos": [2, 4],
@@ -182,6 +182,56 @@ def test_sample_percent_applies_to_train_and_val_but_not_test(tmp_path):
     assert len(selected["train"]) < len(splits["train"])
     assert len(selected["val"]) < len(splits["val"])
     assert selected["test"] == splits["test"]
+
+
+def test_manifest_publishes_10d_point_feature_contract(tmp_path):
+    config = make_preparation_config(tmp_path)
+    samples = discover_raw_samples(config.raw_root)
+    splits = resolve_model_splits(
+        config.raw_root, tuple(samples), config.split_ratios, config.seed
+    )
+    selected = select_split_subsets(
+        config.raw_root, splits, config.sample_percent, config.seed
+    )
+
+    manifest = build_preparation_manifest(config, selected, samples=samples)
+
+    assert manifest["converter_format_version"] == 3
+    assert manifest["point_feature_contract"] == {
+        "dimension": 10,
+        "order": [
+            "x",
+            "y",
+            "z",
+            "nx",
+            "ny",
+            "nz",
+            "u_normalized",
+            "v_normalized",
+            "mean_curvature_times_length",
+            "gaussian_curvature_times_length_squared",
+        ],
+        "uv_range": [-1.0, 1.0],
+        "characteristic_length": "sampled_full_part_bounding_box_diagonal",
+    }
+
+
+def test_point_feature_contract_participates_in_cache_fingerprint(tmp_path):
+    config = make_preparation_config(tmp_path)
+    samples = discover_raw_samples(config.raw_root)
+    splits = resolve_model_splits(
+        config.raw_root, tuple(samples), config.split_ratios, config.seed
+    )
+    selected = select_split_subsets(
+        config.raw_root, splits, config.sample_percent, config.seed
+    )
+    manifest = build_preparation_manifest(config, selected, samples=samples)
+    changed = json.loads(json.dumps(manifest))
+    changed["point_feature_contract"]["dimension"] = 11
+
+    assert prepare_dataset._request_fingerprint(
+        manifest
+    ) != prepare_dataset._request_fingerprint(changed)
 
 
 def test_partial_official_manifests_are_rejected(tmp_path):
@@ -234,8 +284,12 @@ def test_discovery_accepts_case_insensitive_stp_and_rejects_duplicate_stems(tmp_
 
     assert discover_raw_samples(raw)["sample_000"].step_file.suffix == ".STP"
 
-    (raw / "steps" / "sample_000.stp").write_text("duplicate", encoding="utf-8")
-    with pytest.raises(ValueError, match="duplicate"):
+    # Use a genuinely different supported suffix.  On Windows, ``.STP`` and
+    # ``.stp`` name the same file and therefore cannot form a duplicate pair.
+    (raw / "steps" / "sample_000.step").write_text(
+        "duplicate", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match=r"(?i)duplicate"):
         discover_raw_samples(raw)
 
 

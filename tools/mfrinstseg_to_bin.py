@@ -32,6 +32,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.geometry_features import (
+    POINT_FEATURE_DIM,
     GeometryFeatureBatch,
     PointSamplingConfig,
     expected_point_counts,
@@ -67,6 +68,7 @@ POINTCLOUD_METADATA_KEYS = {
     "point_sampling_mode",
     "point_sampling_config",
     "point_candidate_grid",
+    "point_feature_contract",
 }
 CYLINDRICAL_NODE_KEYS = {"cylindrical_pos"}
 GRID_SIZE = 5
@@ -585,6 +587,10 @@ def geometry_metadata(config: PointSamplingConfig) -> Dict[str, torch.Tensor]:
         "point_candidate_grid": torch.tensor(
             [config.candidate_grids[0]], dtype=torch.int32
         ),
+        # [contract version, feature dimension, H length power, K length power]
+        "point_feature_contract": torch.tensor(
+            [2, POINT_FEATURE_DIM, 1, 2], dtype=torch.int16
+        ),
     }
 
 
@@ -596,7 +602,7 @@ def _geometry_batch_arrays(
     counts = np.asarray(batch.face_point_count)
     cylindrical = np.asarray(batch.cylindrical_pos)
     expected_shapes = (
-        (node_count, 96, 6),
+        (node_count, 96, POINT_FEATURE_DIM),
         (node_count, 96),
         (node_count,),
         (node_count, 4),
@@ -758,17 +764,19 @@ def validate_bin(
             "point_sampling_mode": metadata["point_sampling_mode"],
             "point_sampling_config": metadata["point_sampling_config"],
             "point_candidate_grid": metadata["point_candidate_grid"],
+            "point_feature_contract": metadata["point_feature_contract"],
         }
         point_shapes = {
             key: tuple(tensor.shape) for key, tensor in point_tensors.items()
         }
         expected_point_shapes = {
-            "face_points": (count, 96, 6),
+            "face_points": (count, 96, POINT_FEATURE_DIM),
             "face_point_mask": (count, 96),
             "face_point_count": (count,),
             "point_sampling_mode": (1,),
             "point_sampling_config": (4,),
             "point_candidate_grid": (1,),
+            "point_feature_contract": (4,),
         }
         if point_shapes != expected_point_shapes:
             raise ValueError(
@@ -782,6 +790,7 @@ def validate_bin(
             "point_sampling_mode": torch.int8,
             "point_sampling_config": torch.float32,
             "point_candidate_grid": torch.int32,
+            "point_feature_contract": torch.int16,
         }
         for key, tensor in point_tensors.items():
             if key == "face_point_mask":
@@ -822,6 +831,17 @@ def validate_bin(
             atol=1e-4,
         ):
             raise ValueError("BIN valid face_points must contain unit normals")
+        valid_uv = graph.ndata["face_points"][..., 6:8][mask]
+        uv_tolerance = 1e-5
+        if not bool(
+            (
+                (valid_uv >= -1.0 - uv_tolerance)
+                & (valid_uv <= 1.0 + uv_tolerance)
+            ).all()
+        ):
+            raise ValueError(
+                "BIN valid face_points normalized UV values are outside [-1, 1]"
+            )
         if point_sampling.mode == "fixed":
             if not bool((counts == point_sampling.fixed_count).all()):
                 raise ValueError("BIN fixed face_point_count values are invalid")

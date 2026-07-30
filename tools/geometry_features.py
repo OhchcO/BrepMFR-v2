@@ -16,6 +16,19 @@ from utils.reproducibility import derive_seed
 
 
 MAX_FACE_POINTS = 96
+POINT_FEATURE_DIM = 10
+POINT_FEATURE_ORDER = (
+    "x",
+    "y",
+    "z",
+    "nx",
+    "ny",
+    "nz",
+    "u_normalized",
+    "v_normalized",
+    "mean_curvature_times_length",
+    "gaussian_curvature_times_length_squared",
+)
 NORMAL_EPSILON = 1e-12
 ADAPTIVE_BASE_COUNT = 64
 DEFAULT_CANDIDATE_GRIDS = (20, 32, 48, 64, 80)
@@ -175,6 +188,58 @@ def cylindrical_positions(
     ).astype(np.float32)
 
 
+def normalize_uv_coordinates(uv_values: np.ndarray) -> np.ndarray:
+    """Normalize one face's sampled UV domain independently to ``[-1, 1]``."""
+    uv = np.asarray(uv_values, dtype=np.float64)
+    if uv.ndim != 3 or uv.shape[-1] != 2 or uv.shape[0] == 0 or uv.shape[1] == 0:
+        raise ValueError("uv_values must have shape [U, V, 2]")
+    if not np.isfinite(uv).all():
+        raise ValueError("uv_values must contain only finite values")
+
+    flat = uv.reshape(-1, 2)
+    minimum = flat.min(axis=0)
+    extent = flat.max(axis=0) - minimum
+    normalized = np.zeros_like(flat)
+    nondegenerate = extent > NORMAL_EPSILON
+    normalized[:, nondegenerate] = (
+        2.0
+        * (flat[:, nondegenerate] - minimum[nondegenerate])
+        / extent[nondegenerate]
+        - 1.0
+    )
+    return normalized.reshape(uv.shape).astype(np.float32)
+
+
+def dimensionless_curvature_features(
+    face_points: np.ndarray, face_point_mask: np.ndarray
+) -> Tuple[np.ndarray, float]:
+    """Scale raw H and K by the sampled full-part bounding-box diagonal."""
+    points = np.asarray(face_points)
+    mask = np.asarray(face_point_mask)
+    if points.ndim != 3 or points.shape[-1] != POINT_FEATURE_DIM:
+        raise ValueError("face_points must have shape [F, P, 10]")
+    if mask.shape != points.shape[:2] or mask.dtype != np.bool_:
+        raise ValueError("face_point_mask must be a boolean array with shape [F, P]")
+    if not bool(mask.any()):
+        raise ValueError("face_point_mask must contain at least one valid point")
+    if not np.isfinite(points[mask]).all():
+        raise ValueError("valid face_points must contain only finite values")
+
+    valid_xyz = points[..., :3][mask].astype(np.float64, copy=False)
+    diagonal = float(np.linalg.norm(valid_xyz.max(axis=0) - valid_xyz.min(axis=0)))
+    characteristic_length = (
+        diagonal
+        if math.isfinite(diagonal) and diagonal > NORMAL_EPSILON
+        else 1.0
+    )
+    scaled = points.astype(np.float32, copy=True)
+    scaled_mean = scaled[..., 8]
+    scaled_gaussian = scaled[..., 9]
+    scaled_mean[mask] *= characteristic_length
+    scaled_gaussian[mask] *= characteristic_length * characteristic_length
+    return scaled, characteristic_length
+
+
 def _surface_properties(face: object) -> Tuple[float, np.ndarray]:
     """Return true OCC surface area and center of mass for one occwl face."""
     from OCC.Core import BRepGProp, GProp
@@ -196,36 +261,86 @@ def _surface_properties(face: object) -> Tuple[float, np.ndarray]:
     return area, centroid
 
 
+def _safe_curvature_values(
+    face: object, uv_values: np.ndarray, candidate_mask: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Evaluate H and K pointwise, leaving singular/undefined samples invalid."""
+    uv = np.asarray(uv_values, dtype=np.float64).reshape(-1, 2)
+    candidates = np.asarray(candidate_mask, dtype=np.bool_).reshape(-1)
+    if candidates.shape != (uv.shape[0],):
+        raise ValueError("candidate_mask must align with uv_values")
+
+    mean = np.full(uv.shape[0], np.nan, dtype=np.float64)
+    gaussian = np.full(uv.shape[0], np.nan, dtype=np.float64)
+    for index in np.flatnonzero(candidates):
+        try:
+            mean_value = float(face.mean_curvature(uv[index]))
+            gaussian_value = float(face.gaussian_curvature(uv[index]))
+        except Exception:
+            # OCC raises RuntimeError/LProp_NotDefined at parameterization
+            # singularities such as sphere poles and cone apices.  Those
+            # isolated UV samples are not valid point-cloud candidates.
+            continue
+        if math.isfinite(mean_value) and math.isfinite(gaussian_value):
+            mean[index] = mean_value
+            gaussian[index] = gaussian_value
+    return mean, gaussian
+
+
 def _valid_uv_candidates(face: object, grid: int) -> np.ndarray:
     """Evaluate and filter one occwl UV candidate grid."""
     from occwl.uvgrid import uvgrid
 
-    points = np.asarray(uvgrid(face, grid, grid, method="point"), dtype=np.float64)
+    point_result = uvgrid(face, grid, grid, uvs=True, method="point")
+    if not isinstance(point_result, tuple) or len(point_result) != 2:
+        raise ValueError("occwl.uvgrid did not return point UV coordinates")
+    points = np.asarray(point_result[0], dtype=np.float64)
+    uv_values = np.asarray(point_result[1], dtype=np.float64)
     normals = np.asarray(uvgrid(face, grid, grid, method="normal"), dtype=np.float64)
     visibility = np.asarray(uvgrid(face, grid, grid, method="inside"))
     if points.shape != (grid, grid, 3) or normals.shape != (grid, grid, 3):
         raise ValueError("occwl.uvgrid returned an unexpected point or normal shape")
+    if uv_values.shape != (grid, grid, 2):
+        raise ValueError("occwl.uvgrid returned an unexpected UV-coordinate shape")
     if visibility.shape not in ((grid, grid), (grid, grid, 1)):
         raise ValueError("occwl.uvgrid returned an unexpected visibility-mask shape")
 
     points = points.reshape(-1, 3)
     normals = normals.reshape(-1, 3)
+    normalized_uv = normalize_uv_coordinates(uv_values).reshape(-1, 2)
     visibility = visibility.reshape(-1)
     valid_visibility = np.isfinite(visibility) & (visibility > 0.5)
     normal_norm = np.linalg.norm(normals, axis=1)
-    valid = (
+    geometric_valid = (
         valid_visibility
         & np.isfinite(points).all(axis=1)
         & np.isfinite(normals).all(axis=1)
         & np.isfinite(normal_norm)
         & (normal_norm > NORMAL_EPSILON)
     )
+    mean_curvature, gaussian_curvature = _safe_curvature_values(
+        face, uv_values, geometric_valid
+    )
+    valid = (
+        geometric_valid
+        & np.isfinite(mean_curvature)
+        & np.isfinite(gaussian_curvature)
+    )
     points = points[valid]
     normals = normals[valid]
     if points.shape[0] == 0:
-        return np.empty((0, 6), dtype=np.float32)
+        return np.empty((0, POINT_FEATURE_DIM), dtype=np.float32)
     normals = normals / normal_norm[valid, None]
-    return np.concatenate([points, normals], axis=1).astype(np.float32)
+    return np.concatenate(
+        [
+            points,
+            normals,
+            normalized_uv[valid],
+            mean_curvature[valid, None],
+            gaussian_curvature[valid, None],
+        ],
+        axis=1,
+    ).astype(np.float32)
 
 
 def _face_objects(extraction: Mapping) -> Tuple[object, ...]:
@@ -272,7 +387,7 @@ def extract_geometry_features(
         else np.zeros(len(faces), dtype=np.int32)
     )
     packed_points = np.zeros(
-        (len(faces), MAX_FACE_POINTS, 6), dtype=np.float32
+        (len(faces), MAX_FACE_POINTS, POINT_FEATURE_DIM), dtype=np.float32
     )
     packed_mask = np.zeros((len(faces), MAX_FACE_POINTS), dtype=np.bool_)
 
@@ -280,7 +395,7 @@ def extract_geometry_features(
         for face_index, (face, target_count) in enumerate(
             zip(faces, target_counts)
         ):
-            candidates = np.empty((0, 6), dtype=np.float32)
+            candidates = np.empty((0, POINT_FEATURE_DIM), dtype=np.float32)
             for grid in config.candidate_grids:
                 candidates = _valid_uv_candidates(face, grid)
                 if candidates.shape[0] >= int(target_count):
@@ -298,6 +413,9 @@ def extract_geometry_features(
                 selected = fps_order
             packed_points[face_index, : int(target_count)] = candidates[selected]
             packed_mask[face_index, : int(target_count)] = True
+        packed_points, _ = dimensionless_curvature_features(
+            packed_points, packed_mask
+        )
 
     return GeometryFeatureBatch(
         face_points=packed_points,

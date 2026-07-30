@@ -15,6 +15,7 @@ from utils.reproducibility import DEFAULT_SEED, make_torch_generator, seed_worke
 
 
 FACE_POINT_CAPACITY = 96
+FACE_POINT_FEATURE_DIM = 10
 POINTCLOUD_NODE_FIELDS = (
     "face_points",
     "face_point_mask",
@@ -124,7 +125,7 @@ class CADSynth(Dataset):
             )
         )
 
-    def _load_optional_geometry(self, graph, file_path):
+    def _load_optional_geometry(self, graph, metadata, file_path):
         geometry = {
             "face_points": None,
             "face_point_mask": None,
@@ -134,15 +135,35 @@ class CADSynth(Dataset):
         node_count = graph.num_nodes()
 
         if self.require_face_pointcloud:
+            contract = metadata.get("point_feature_contract")
+            expected_contract = torch.tensor([2, 10, 1, 2], dtype=torch.int16)
+            if (
+                contract is None
+                or contract.dtype != torch.int16
+                or tuple(contract.shape) != (4,)
+                or not torch.equal(contract.cpu(), expected_contract)
+            ):
+                self._invalid_geometry(
+                    file_path,
+                    "point_feature_contract",
+                    "expected int16 values [2, 10, 1, 2]",
+                )
             points = self._required_node_field(graph, "face_points", file_path)
             mask = self._required_node_field(graph, "face_point_mask", file_path)
             counts = self._required_node_field(graph, "face_point_count", file_path)
-            if tuple(points.shape) != (node_count, FACE_POINT_CAPACITY, 6):
+            if tuple(points.shape) != (
+                node_count,
+                FACE_POINT_CAPACITY,
+                FACE_POINT_FEATURE_DIM,
+            ):
                 self._invalid_geometry(
                     file_path,
                     "face_points",
-                    "expected shape ({}, {}, 6), got {}".format(
-                        node_count, FACE_POINT_CAPACITY, tuple(points.shape)
+                    "expected shape ({}, {}, {}), got {}".format(
+                        node_count,
+                        FACE_POINT_CAPACITY,
+                        FACE_POINT_FEATURE_DIM,
+                        tuple(points.shape),
                     ),
                 )
             if points.dtype != torch.float32:
@@ -211,6 +232,19 @@ class CADSynth(Dataset):
             ):
                 self._invalid_geometry(
                     file_path, "face_points", "valid normals must be unit length"
+                )
+            valid_uv = points[..., 6:8][logical_mask]
+            tolerance = 1e-5
+            if not bool(
+                (
+                    (valid_uv >= -1.0 - tolerance)
+                    & (valid_uv <= 1.0 + tolerance)
+                ).all()
+            ):
+                self._invalid_geometry(
+                    file_path,
+                    "face_points",
+                    "valid normalized UV values must be in [-1, 1]",
                 )
             geometry.update(
                 face_points=points,
@@ -289,7 +323,7 @@ class CADSynth(Dataset):
         graphfile = load_graphs(str(file_path))
         graph = graphfile[0][0]
         pyg_graph = PYGGraph()
-        geometry = self._load_optional_geometry(graph, file_path)
+        geometry = self._load_optional_geometry(graph, graphfile[1], file_path)
         self._normalize_graph_schema(graph)
         pyg_graph.graph = graph
         if(self.random_rotate):

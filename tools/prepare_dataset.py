@@ -25,11 +25,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.sample_mfrinstseg_1pct import select_balanced_sample_ids
+from tools.geometry_features import POINT_FEATURE_DIM, POINT_FEATURE_ORDER
 from utils.reproducibility import DEFAULT_SEED, derive_seed
 
 
 FORMAT_VERSION = 1
-CONVERTER_FORMAT_VERSION = 2
+CONVERTER_FORMAT_VERSION = 3
 SPLIT_NAMES = ("train", "val", "test")
 DEFAULT_CANDIDATE_GRIDS = (20, 32, 48, 64, 80)
 
@@ -360,6 +361,7 @@ def _conversion_options(config: PreparationConfig) -> dict:
         "face_pointcloud": True,
         "cylindrical_pos": True,
         "base_seed": config.seed,
+        "point_feature_dimension": POINT_FEATURE_DIM,
     }
 
 
@@ -401,6 +403,14 @@ def build_preparation_manifest(
         },
         "selected_ids": normalized,
         "output_features": {"face_pointcloud": True, "cylindrical_pos": True},
+        "point_feature_contract": {
+            "dimension": POINT_FEATURE_DIM,
+            "order": list(POINT_FEATURE_ORDER),
+            "uv_range": [-1.0, 1.0],
+            "characteristic_length": (
+                "sampled_full_part_bounding_box_diagonal"
+            ),
+        },
         "conversion_options": _conversion_options(config),
         "conversion": {},
         "successful_ids": {name: [] for name in SPLIT_NAMES},
@@ -445,6 +455,7 @@ def _request_fingerprint(manifest: Mapping[str, object]) -> dict:
             "converter_sources",
             "selected_ids",
             "output_features",
+            "point_feature_contract",
             "conversion_options",
         )
     }

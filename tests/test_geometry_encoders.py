@@ -12,18 +12,19 @@ from models.modules.pointcloud_encoder import PointCloudFaceEncoder
 
 
 def valid_face_point_batch(face_count=3):
-    points = torch.randn(face_count, 96, 6)
+    points = torch.randn(face_count, 96, 10)
     mask = torch.zeros(face_count, 96, dtype=torch.bool)
     mask[:, :32] = True
-    points[:, :32, 3:] = torch.nn.functional.normalize(
-        points[:, :32, 3:], dim=-1
+    points[:, :32, 3:6] = torch.nn.functional.normalize(
+        points[:, :32, 3:6], dim=-1
     )
+    points[:, :32, 6:8] = torch.tanh(points[:, :32, 6:8])
     return points, mask
 
 
 def test_point_encoder_ignores_padded_values():
     encoder = PointCloudFaceEncoder(hidden_dim=128).eval()
-    points = torch.randn(2, 96, 6)
+    points = torch.randn(2, 96, 10)
     mask = torch.zeros(2, 96, dtype=torch.bool)
     mask[:, :32] = True
     changed = points.clone()
@@ -31,6 +32,21 @@ def test_point_encoder_ignores_padded_values():
 
     with torch.no_grad():
         assert torch.allclose(encoder(points, mask), encoder(changed, mask))
+
+
+def test_point_encoder_consumes_uv_and_curvature_channels():
+    torch.manual_seed(2026)
+    encoder = PointCloudFaceEncoder(hidden_dim=32).eval()
+    points, mask = valid_face_point_batch(face_count=1)
+    changed = points.clone()
+    changed[:, :32, 6:] += 0.75
+
+    with torch.no_grad():
+        original_embedding = encoder(points, mask)
+        changed_embedding = encoder(changed, mask)
+
+    assert encoder.point_mlp[0].in_features == 10
+    assert not torch.allclose(original_embedding, changed_embedding)
 
 
 def test_encoders_return_finite_hidden_vectors_and_point_gradients():
@@ -51,7 +67,7 @@ def test_encoders_return_finite_hidden_vectors_and_point_gradients():
 def test_encoders_reject_malformed_inputs():
     points, mask = valid_face_point_batch(face_count=1)
     with pytest.raises(ValueError, match="face_points"):
-        PointCloudFaceEncoder(16)(points[..., :5], mask)
+        PointCloudFaceEncoder(16)(points[..., :9], mask)
     with pytest.raises(ValueError, match="zero valid"):
         PointCloudFaceEncoder(16)(points, torch.zeros_like(mask))
     with pytest.raises(ValueError, match="finite"):

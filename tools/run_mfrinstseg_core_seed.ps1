@@ -3,7 +3,7 @@ param(
     [ValidateRange(0, 2147483647)]
     [int]$Seed,
     [string]$RawDatasetPath = "D:\Code\Datasets\MFRInstSeg",
-    [string]$PreparedDatasetBase = "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG",
+    [string]$PreparedDatasetBase = "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D",
     [string]$ResultBasePath = "D:\Code\BrepMFR\results",
     [string]$PythonExe = "G:\ProgramData\anaconda3\envs\aagmspenv\python.exe",
     [string]$TrainingLauncher = "",
@@ -27,9 +27,29 @@ foreach ($Launcher in @($TrainingLauncher, $TestLauncher)) {
 $PreparedDatasetPath = "${PreparedDatasetBase}_seed${Seed}"
 $Experiments = @(
     [pscustomobject]@{
-        Mode = "baseline"
+        Mode = "topo_aag"
         Mapping = $null
-        ResultLabel = "baseline"
+        ResultLabel = "topo_aag"
+    },
+    [pscustomobject]@{
+        Mode = "uv_aag"
+        Mapping = $null
+        ResultLabel = "uv_aag"
+    },
+    [pscustomobject]@{
+        Mode = "pc_aag"
+        Mapping = $null
+        ResultLabel = "pc_aag"
+    },
+    [pscustomobject]@{
+        Mode = "cyl_aag"
+        Mapping = $null
+        ResultLabel = "cyl_aag"
+    },
+    [pscustomobject]@{
+        Mode = "spe_pcaag"
+        Mapping = $null
+        ResultLabel = "spe_pcaag"
     },
     [pscustomobject]@{
         Mode = "dynamic_no_loss"
@@ -37,9 +57,24 @@ $Experiments = @(
         ResultLabel = "dynamic_no_loss_positive"
     },
     [pscustomobject]@{
+        Mode = "affinity_only"
+        Mapping = "positive_only"
+        ResultLabel = "affinity_only_positive"
+    },
+    [pscustomobject]@{
         Mode = "instance"
         Mapping = "positive_only"
         ResultLabel = "instance_positive"
+    },
+    [pscustomobject]@{
+        Mode = "oracle"
+        Mapping = "positive_only"
+        ResultLabel = "oracle_positive"
+    },
+    [pscustomobject]@{
+        Mode = "spe_instance"
+        Mapping = "positive_only"
+        ResultLabel = "spe_instance_positive"
     }
 )
 

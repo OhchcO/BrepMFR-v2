@@ -44,8 +44,10 @@ instance_bias_scale = 1.0
 instance_bias_strategy = late_gated
 ```
 
-The legacy `full` alias remains available only for checkpoint/command
-compatibility and is not part of the final matrix.
+The legacy `full` alias remains available only for command compatibility and
+is not part of the final matrix. Checkpoints trained with the former 6D
+point-cloud encoder are intentionally not load-compatible with the finalized
+10D encoder; reproducing those checkpoints requires the former code and cache.
 
 ## Runner Architecture
 

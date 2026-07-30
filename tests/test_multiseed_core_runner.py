@@ -131,6 +131,12 @@ def test_core_runner_trains_and_tests_final_experiments_in_order(tmp_path):
     assert all(line.split("|")[4] == prepared for line in lines[::2])
     assert [line.split("|")[0] for line in lines] == ["train", "test"] * 10
     assert all(line.split("|")[2] == prepared for line in lines[1::2])
+    assert all(line.split("|")[1] == "42" for line in lines[1::2])
+    assert [
+        line.split("|")[3] for line in lines[1::2]
+    ] == [
+        line.split("|")[5] for line in lines[::2]
+    ]
 
 
 def test_core_runner_defaults_to_versioned_10d_cache_base():
@@ -176,6 +182,51 @@ param(
     stale.parent.mkdir(parents=True)
     stale.write_bytes(b"old")
     os.utime(stale, (1_600_000_000, 1_600_000_000))
+
+    completed, events, _, _ = _run_core(
+        tmp_path,
+        seed=42,
+        training_launcher=noop,
+    )
+
+    assert completed.returncode != 0
+    assert "No fresh best checkpoint found: topo_aag" in (
+        completed.stdout + completed.stderr
+    )
+    assert not events.exists()
+
+
+def test_core_runner_rejects_preexisting_checkpoint_inside_timestamp_tolerance(
+    tmp_path,
+):
+    noop = tmp_path / "noop-train.ps1"
+    noop.write_text(
+        r"""
+param(
+    [string]$Mode,
+    [string]$InstanceRelationMapping = "signed",
+    [string]$RawDatasetPath,
+    [string]$PreparedDatasetPath,
+    [double]$SamplePercent,
+    [int]$Seed,
+    [int]$BatchSize,
+    [int]$MaxEpochs,
+    [int]$NumWorkers,
+    [string]$PythonExe
+)
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    stale = (
+        tmp_path
+        / "results"
+        / "MFRInstSeg_1pct_topo_aag_seed42"
+        / "just-before-run"
+        / "best-preexisting.ckpt"
+    )
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"preexisting")
 
     completed, events, _, _ = _run_core(
         tmp_path,

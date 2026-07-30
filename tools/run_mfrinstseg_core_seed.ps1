@@ -82,7 +82,21 @@ Write-Host "Seed: $Seed"
 Write-Host "Prepared dataset: $PreparedDatasetPath"
 
 foreach ($Experiment in $Experiments) {
-    $StartedAt = Get-Date
+    $ResultRoot = Join-Path $ResultBasePath (
+        "MFRInstSeg_1pct_{0}_seed{1}" -f $Experiment.ResultLabel, $Seed
+    )
+    $ExistingCheckpointPaths = @{}
+    if (Test-Path -LiteralPath $ResultRoot -PathType Container) {
+        Get-ChildItem `
+            -LiteralPath $ResultRoot `
+            -Recurse `
+            -Filter "best-*.ckpt" `
+            -File `
+            | ForEach-Object {
+                $ExistingCheckpointPaths[$_.FullName] = $true
+            }
+    }
+
     $TrainingArguments = @{
         Mode = $Experiment.Mode
         RawDatasetPath = $RawDatasetPath
@@ -108,10 +122,6 @@ foreach ($Experiment in $Experiments) {
         throw "Training failed with exit code ${LASTEXITCODE}: $($Experiment.ResultLabel)"
     }
 
-    $ResultRoot = Join-Path $ResultBasePath (
-        "MFRInstSeg_1pct_{0}_seed{1}" -f $Experiment.ResultLabel, $Seed
-    )
-    $FreshnessBoundary = $StartedAt.AddSeconds(-2)
     $Checkpoint = $null
     if (Test-Path -LiteralPath $ResultRoot -PathType Container) {
         $Checkpoint = Get-ChildItem `
@@ -119,7 +129,9 @@ foreach ($Experiment in $Experiments) {
             -Recurse `
             -Filter "best-*.ckpt" `
             -File `
-            | Where-Object { $_.LastWriteTime -ge $FreshnessBoundary } `
+            | Where-Object {
+                -not $ExistingCheckpointPaths.ContainsKey($_.FullName)
+            } `
             | Sort-Object LastWriteTime -Descending `
             | Select-Object -First 1 -ExpandProperty FullName
     }

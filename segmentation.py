@@ -31,6 +31,7 @@ EXPERIMENT_ALIASES = (
     "topo_aag",
     "uv_aag",
     "pc_aag",
+    "cyl_aag",
     "uv_pc_aag",
     "dynamic_no_loss",
     "affinity_only",
@@ -40,6 +41,7 @@ EXPERIMENT_ALIASES = (
     "cyl_affinity",
     "point",
     "spe_pcaag",
+    "spe_instance",
     "full",
 )
 
@@ -59,6 +61,7 @@ _EXPERIMENT_SWITCHES = {
     "topo_aag": ExperimentSwitches("baseline", False, False, False, 1.0),
     "uv_aag": ExperimentSwitches("baseline", True, False, False, 1.0),
     "pc_aag": ExperimentSwitches("baseline", False, True, False, 1.0),
+    "cyl_aag": ExperimentSwitches("baseline", False, False, True, 1.0),
     "uv_pc_aag": ExperimentSwitches("baseline", True, True, False, 1.0),
     "dynamic_no_loss": ExperimentSwitches(
         "dynamic", True, False, False, 1.0, "late_gated"
@@ -77,7 +80,10 @@ _EXPERIMENT_SWITCHES = {
         "dynamic_affinity", True, False, True, 0.0
     ),
     "point": ExperimentSwitches("baseline", True, True, False, 1.0),
-    "spe_pcaag": ExperimentSwitches("baseline", True, True, True, 1.0),
+    "spe_pcaag": ExperimentSwitches("baseline", False, True, True, 1.0),
+    "spe_instance": ExperimentSwitches(
+        "dynamic_affinity", False, True, True, 1.0, "late_gated"
+    ),
     "full": ExperimentSwitches(
         "dynamic_affinity", True, True, True, 1.0
     ),

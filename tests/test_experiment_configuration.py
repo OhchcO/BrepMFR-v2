@@ -99,6 +99,7 @@ def test_importing_segmentation_does_not_parse_process_arguments(segmentation):
         ("topo_aag", "baseline", False, False, False, 1.0, "legacy"),
         ("uv_aag", "baseline", True, False, False, 1.0, "legacy"),
         ("pc_aag", "baseline", False, True, False, 1.0, "legacy"),
+        ("cyl_aag", "baseline", False, False, True, 1.0, "legacy"),
         ("uv_pc_aag", "baseline", True, True, False, 1.0, "legacy"),
         ("cyl", "baseline", True, False, True, 1.0, "legacy"),
         (
@@ -111,7 +112,16 @@ def test_importing_segmentation_does_not_parse_process_arguments(segmentation):
             "legacy",
         ),
         ("point", "baseline", True, True, False, 1.0, "legacy"),
-        ("spe_pcaag", "baseline", True, True, True, 1.0, "legacy"),
+        ("spe_pcaag", "baseline", False, True, True, 1.0, "legacy"),
+        (
+            "spe_instance",
+            "dynamic_affinity",
+            False,
+            True,
+            True,
+            1.0,
+            "late_gated",
+        ),
         (
             "dynamic_no_loss",
             "dynamic",
@@ -209,6 +219,7 @@ $attribute.ValidValues | ConvertTo-Json -Compress
         "topo_aag",
         "uv_aag",
         "pc_aag",
+        "cyl_aag",
         "uv_pc_aag",
         "dynamic_no_loss",
         "affinity_only",
@@ -218,6 +229,7 @@ $attribute.ValidValues | ConvertTo-Json -Compress
         "cyl_affinity",
         "point",
         "spe_pcaag",
+        "spe_instance",
         "full",
     ]
 
@@ -631,8 +643,10 @@ def test_legacy_dataset_path_does_not_run_preparation(
     [
         ["--use_cylindrical_pos"],
         ["--experiment_alias", "cyl"],
+        ["--experiment_alias", "cyl_aag"],
         ["--experiment_alias", "cyl_affinity"],
         ["--experiment_alias", "spe_pcaag"],
+        ["--experiment_alias", "spe_instance"],
         ["--experiment_alias", "full"],
     ],
 )

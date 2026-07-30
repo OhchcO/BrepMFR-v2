@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("baseline", "topo_aag", "uv_aag", "pc_aag", "uv_pc_aag", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "full")]
+    [ValidateSet("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_instance", "full")]
     [string]$Mode = "baseline",
     [switch]$All,
     [bool]$AutoPrepare = $true,
@@ -73,7 +73,7 @@ else {
 }
 
 if ($All) {
-    $Modes = @("baseline", "topo_aag", "uv_aag", "pc_aag", "uv_pc_aag", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "full")
+    $Modes = @("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_instance", "full")
 }
 else {
     $Modes = @($Mode)

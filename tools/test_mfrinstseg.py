@@ -30,6 +30,7 @@ class GeometryRequirements:
 
     use_face_uv: bool
     require_face_pointcloud: bool
+    require_parametric_surface: bool
     require_cylindrical_pos: bool
 
 
@@ -45,6 +46,12 @@ def geometry_requirements(hparams):
         use_face_uv=bool(_configuration_value(hparams, "use_face_uv", True)),
         require_face_pointcloud=bool(
             _configuration_value(hparams, "use_face_pointcloud", False)
+        ),
+        require_parametric_surface=(
+            _configuration_value(
+                hparams, "face_geometry_encoder", "mini_point"
+            )
+            == "param_surface"
         ),
         require_cylindrical_pos=bool(
             _configuration_value(hparams, "use_cylindrical_pos", False)
@@ -575,6 +582,16 @@ def write_results(output_dir, result):
         "use_face_uv={}".format(result["use_face_uv"]),
         "use_face_pointcloud={}".format(result["use_face_pointcloud"]),
         "use_cylindrical_pos={}".format(result["use_cylindrical_pos"]),
+        "face_geometry_encoder={}".format(
+            result.get("face_geometry_encoder", "mini_point")
+        ),
+        "surface_neighbor_metric={}".format(
+            result.get("surface_neighbor_metric", "intrinsic")
+        ),
+        "surface_trim_aware={}".format(
+            result.get("surface_trim_aware", False)
+        ),
+        "surface_fusion={}".format(result.get("surface_fusion", "add")),
         "pointcloud_scale={}".format(result["pointcloud_scale"]),
         "cylindrical_scale={}".format(result["cylindrical_scale"]),
         "instance_bias_strategy={}".format(
@@ -769,6 +786,22 @@ def main():
     cylindrical_scale = float(
         _model_configuration_value(model, "cylindrical_scale", 1.0)
     )
+    face_geometry_encoder = str(
+        _model_configuration_value(
+            model, "face_geometry_encoder", "mini_point"
+        )
+    )
+    surface_neighbor_metric = str(
+        _model_configuration_value(
+            model, "surface_neighbor_metric", "intrinsic"
+        )
+    )
+    surface_trim_aware = bool(
+        _model_configuration_value(model, "surface_trim_aware", False)
+    )
+    surface_fusion = str(
+        _model_configuration_value(model, "surface_fusion", "add")
+    )
     instance_bias_strategy = str(
         _model_configuration_value(model, "instance_bias_strategy", "legacy")
     )
@@ -831,6 +864,7 @@ def main():
         num_class=args.num_classes,
         require_instance=require_instance,
         require_face_pointcloud=requirements.require_face_pointcloud,
+        require_parametric_surface=requirements.require_parametric_surface,
         require_cylindrical_pos=requirements.require_cylindrical_pos,
         seed=args.seed,
     )
@@ -951,6 +985,10 @@ def main():
         "use_face_uv": requirements.use_face_uv,
         "use_face_pointcloud": requirements.require_face_pointcloud,
         "use_cylindrical_pos": requirements.require_cylindrical_pos,
+        "face_geometry_encoder": face_geometry_encoder,
+        "surface_neighbor_metric": surface_neighbor_metric,
+        "surface_trim_aware": surface_trim_aware,
+        "surface_fusion": surface_fusion,
         "pointcloud_scale": pointcloud_scale,
         "cylindrical_scale": cylindrical_scale,
         "instance_bias_strategy": instance_bias_strategy,

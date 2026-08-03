@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("baseline", "topo_aag", "uv_aag", "pc_aag", "uv_pc_aag", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "full")]
+    [ValidateSet("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_instance", "full")]
     [string]$Mode = "baseline",
     [switch]$All,
     [bool]$AutoPrepare = $true,
@@ -25,6 +25,13 @@ param(
     [int[]]$CandidateGrids = @(20, 32, 48, 64, 80),
     [double]$PointcloudScale = 1.0,
     [double]$CylindricalScale = 1.0,
+    [ValidateSet("mini_point", "param_surface")]
+    [string]$FaceGeometryEncoder = "mini_point",
+    [ValidateSet("xyz", "uv", "intrinsic")]
+    [string]$SurfaceNeighborMetric = "intrinsic",
+    [bool]$SurfaceTrimAware = $false,
+    [ValidateSet("add", "gated")]
+    [string]$SurfaceFusion = "add",
     [int]$AffinityDim = 64,
     [double]$AffinityTemperature = 0.2,
     [double]$AffinityLossWeight = 0.1,
@@ -36,7 +43,8 @@ param(
     [double]$InstanceBiasGateInit = 0.0,
     [double]$InstanceBiasMaxGateScale = 1.0,
     [int]$InstanceBiasDelayEpochs = 10,
-    [int]$InstanceBiasRampEpochs = 10
+    [int]$InstanceBiasRampEpochs = 10,
+    [string]$ResultBasePath = "D:\Code\BrepMFR\results"
 )
 
 $ErrorActionPreference = "Stop"
@@ -73,7 +81,7 @@ else {
 }
 
 if ($All) {
-    $Modes = @("baseline", "topo_aag", "uv_aag", "pc_aag", "uv_pc_aag", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "full")
+    $Modes = @("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_instance", "full")
 }
 else {
     $Modes = @($Mode)
@@ -87,6 +95,7 @@ $CommonArguments = @(
     "--num_workers", "$NumWorkers",
     "--max_epochs", "$MaxEpochs",
     "--seed", "$Seed",
+    "--results_root", $ResultBasePath,
     "--sample_percent", "$SamplePercent",
     "--split_ratios"
 ) + @($SplitRatios | ForEach-Object { "$_" }) + @(
@@ -99,6 +108,9 @@ $CommonArguments = @(
 ) + @($CandidateGrids | ForEach-Object { "$_" }) + @(
     "--pointcloud_scale", "$PointcloudScale",
     "--cylindrical_scale", "$CylindricalScale",
+    "--face_geometry_encoder", $FaceGeometryEncoder,
+    "--surface_neighbor_metric", $SurfaceNeighborMetric,
+    "--surface_fusion", $SurfaceFusion,
     "--affinity_dim", "$AffinityDim",
     "--affinity_temperature", "$AffinityTemperature",
     "--affinity_loss_weight", "$AffinityLossWeight",
@@ -111,6 +123,13 @@ $CommonArguments = @(
     "--instance_bias_delay_epochs", "$InstanceBiasDelayEpochs",
     "--instance_bias_ramp_epochs", "$InstanceBiasRampEpochs"
 )
+
+if ($SurfaceTrimAware) {
+    $CommonArguments += "--surface_trim_aware"
+}
+else {
+    $CommonArguments += "--no_surface_trim_aware"
+}
 
 if ($AutoPrepare) {
     $CommonArguments += @(
@@ -134,6 +153,10 @@ try {
         }
         else {
             $CurrentMode
+        }
+        if ($FaceGeometryEncoder -eq "param_surface") {
+            $TrimLabel = if ($SurfaceTrimAware) { "trim" } else { "untrimmed" }
+            $ExperimentLabel = "${ExperimentLabel}_param_surface_${SurfaceNeighborMetric}_${TrimLabel}_${SurfaceFusion}"
         }
         $ExperimentName = "MFRInstSeg_1pct_${ExperimentLabel}_seed${Seed}"
         $Arguments = @($CommonArguments) + @(

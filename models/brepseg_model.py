@@ -250,6 +250,16 @@ class BrepSeg(pl.LightningModule):
         self.cylindrical_scale = float(
             getattr(args, "cylindrical_scale", 1.0)
         )
+        self.face_geometry_encoder = getattr(
+            args, "face_geometry_encoder", "mini_point"
+        )
+        self.surface_neighbor_metric = getattr(
+            args, "surface_neighbor_metric", "intrinsic"
+        )
+        self.surface_trim_aware = bool(
+            getattr(args, "surface_trim_aware", False)
+        )
+        self.surface_fusion = getattr(args, "surface_fusion", "add")
         self.save_hyperparameters(
             {
                 "use_face_uv": self.use_face_uv,
@@ -257,6 +267,10 @@ class BrepSeg(pl.LightningModule):
                 "use_cylindrical_pos": self.use_cylindrical_pos,
                 "pointcloud_scale": self.pointcloud_scale,
                 "cylindrical_scale": self.cylindrical_scale,
+                "face_geometry_encoder": self.face_geometry_encoder,
+                "surface_neighbor_metric": self.surface_neighbor_metric,
+                "surface_trim_aware": self.surface_trim_aware,
+                "surface_fusion": self.surface_fusion,
                 "instance_bias_strategy": self.instance_bias_strategy,
                 "instance_relation_mapping": self.instance_relation_mapping,
                 "instance_bias_last_layers": self.instance_bias_last_layers,
@@ -312,6 +326,10 @@ class BrepSeg(pl.LightningModule):
             use_cylindrical_pos=self.use_cylindrical_pos,
             pointcloud_scale=self.pointcloud_scale,
             cylindrical_scale=self.cylindrical_scale,
+            face_geometry_encoder=self.face_geometry_encoder,
+            surface_neighbor_metric=self.surface_neighbor_metric,
+            surface_trim_aware=self.surface_trim_aware,
+            surface_fusion=self.surface_fusion,
         )
 
         self.attention = Attention(args.dim_node)

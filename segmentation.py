@@ -31,6 +31,7 @@ EXPERIMENT_ALIASES = (
     "topo_aag",
     "uv_aag",
     "pc_aag",
+    "cyl_aag",
     "uv_pc_aag",
     "dynamic_no_loss",
     "affinity_only",
@@ -40,6 +41,7 @@ EXPERIMENT_ALIASES = (
     "cyl_affinity",
     "point",
     "spe_pcaag",
+    "spe_instance",
     "full",
 )
 
@@ -59,6 +61,7 @@ _EXPERIMENT_SWITCHES = {
     "topo_aag": ExperimentSwitches("baseline", False, False, False, 1.0),
     "uv_aag": ExperimentSwitches("baseline", True, False, False, 1.0),
     "pc_aag": ExperimentSwitches("baseline", False, True, False, 1.0),
+    "cyl_aag": ExperimentSwitches("baseline", False, False, True, 1.0),
     "uv_pc_aag": ExperimentSwitches("baseline", True, True, False, 1.0),
     "dynamic_no_loss": ExperimentSwitches(
         "dynamic", True, False, False, 1.0, "late_gated"
@@ -77,7 +80,10 @@ _EXPERIMENT_SWITCHES = {
         "dynamic_affinity", True, False, True, 0.0
     ),
     "point": ExperimentSwitches("baseline", True, True, False, 1.0),
-    "spe_pcaag": ExperimentSwitches("baseline", True, True, True, 1.0),
+    "spe_pcaag": ExperimentSwitches("baseline", False, True, True, 1.0),
+    "spe_instance": ExperimentSwitches(
+        "dynamic_affinity", False, True, True, 1.0, "late_gated"
+    ),
     "full": ExperimentSwitches(
         "dynamic_affinity", True, True, True, 1.0
     ),
@@ -147,6 +153,32 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pointcloud_scale", type=float, default=1.0)
     parser.add_argument("--cylindrical_scale", type=float, default=1.0)
     parser.add_argument(
+        "--face_geometry_encoder",
+        choices=("mini_point", "param_surface"),
+        default="mini_point",
+    )
+    parser.add_argument(
+        "--surface_neighbor_metric",
+        choices=("xyz", "uv", "intrinsic"),
+        default="intrinsic",
+    )
+    parser.add_argument(
+        "--surface_trim_aware",
+        dest="surface_trim_aware",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--no_surface_trim_aware",
+        dest="surface_trim_aware",
+        action="store_false",
+    )
+    parser.set_defaults(surface_trim_aware=False)
+    parser.add_argument(
+        "--surface_fusion",
+        choices=("add", "gated"),
+        default="add",
+    )
+    parser.add_argument(
         "--point_sampling_mode",
         choices=("fixed", "area_adaptive"),
         default="area_adaptive",
@@ -171,6 +203,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--experiment_name", default="BrepMFR")
+    parser.add_argument(
+        "--results_root",
+        type=Path,
+        default=Path(__file__).parent / "results",
+    )
     parser.add_argument("--dropout", type=float, default=0.3)
     parser.add_argument("--attention_dropout", type=float, default=0.3)
     parser.add_argument("--act-dropout", type=float, default=0.3)
@@ -369,6 +406,17 @@ def _validate_configuration(
         parser.error(
             "--random_rotate cannot be combined with cylindrical positions"
         )
+    if args.face_geometry_encoder == "param_surface" and not args.use_face_pointcloud:
+        parser.error(
+            "--face_geometry_encoder param_surface requires --use_face_pointcloud"
+        )
+    if args.surface_trim_aware and (
+        args.face_geometry_encoder != "param_surface"
+        or args.surface_neighbor_metric != "intrinsic"
+    ):
+        parser.error(
+            "--surface_trim_aware requires param_surface with intrinsic neighbours"
+        )
     if args.instance_bias_last_layers < 1:
         parser.error("--instance_bias_last_layers must be positive")
     if args.instance_bias_confidence_power < 0:
@@ -413,8 +461,8 @@ def _validate_configuration(
         parser.error("--checkpoint is required in test mode")
 
 
-def _make_run_path(experiment_name: str):
-    results_path = Path(__file__).parent / "results" / experiment_name
+def _make_run_path(experiment_name: str, results_root: Path):
+    results_path = Path(results_root) / experiment_name
     month_day = time.strftime("%m%d")
     hour_min_second = time.strftime("%H%M%S")
     run_path = results_path / month_day / hour_min_second
@@ -462,6 +510,7 @@ def _run_configuration(
                 },
             ),
             "output_face_pointcloud": True if args.auto_prepare else None,
+            "output_parametric_surface": True if args.auto_prepare else None,
             "output_cylindrical_pos": True if args.auto_prepare else None,
         }
     )
@@ -483,6 +532,10 @@ def _dataset_options(
         "num_class": args.num_classes,
         "require_instance": require_instance,
         "require_face_pointcloud": args.use_face_pointcloud,
+        "require_parametric_surface": (
+            args.use_face_pointcloud
+            and args.face_geometry_encoder == "param_surface"
+        ),
         "require_cylindrical_pos": args.use_cylindrical_pos,
         "seed": args.seed,
     }
@@ -531,7 +584,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         raise ValueError("Unsupported dataset")
 
     results_path, run_path, month_day, hour_min_second = _make_run_path(
-        args.experiment_name
+        args.experiment_name,
+        args.results_root,
     )
     configuration = _run_configuration(args, dataset_root)
     print(

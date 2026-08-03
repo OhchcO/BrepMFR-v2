@@ -11,7 +11,11 @@ from fairseq.modules.quant_noise import quant_noise
 from .multihead_attention import MultiheadAttention
 from .feature_encoders import SurfaceEncoder, CurveEncoder
 from ..cylindrical_encoder import CylindricalPositionEncoder
-from ..pointcloud_encoder import PointCloudFaceEncoder
+from ..pointcloud_encoder import (
+    GeometryFeatureFusion,
+    ParametricSurfaceFaceEncoder,
+    PointCloudFaceEncoder,
+)
 
 
 @contextmanager
@@ -243,12 +247,21 @@ class GraphNodeFeature(nn.Module):
         use_cylindrical_pos=False,
         pointcloud_scale=1.0,
         cylindrical_scale=1.0,
+        face_geometry_encoder="mini_point",
+        surface_neighbor_metric="intrinsic",
+        surface_trim_aware=False,
+        surface_fusion="add",
     ):
         super(GraphNodeFeature, self).__init__()
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
         self.pointcloud_scale = float(pointcloud_scale)
         self.cylindrical_scale = float(cylindrical_scale)
+        if face_geometry_encoder not in ("mini_point", "param_surface"):
+            raise ValueError("Unsupported face_geometry_encoder")
+        if surface_fusion not in ("add", "gated"):
+            raise ValueError("Unsupported surface_fusion")
+        self.face_geometry_encoder = face_geometry_encoder
         # node_feature encode
         surface_encoder = SurfaceEncoder(
             in_channels=7, output_dims=int(0.5*hidden_dim)
@@ -266,11 +279,24 @@ class GraphNodeFeature(nn.Module):
 
         self.pointcloud_encoder = None
         self.cylindrical_encoder = None
+        self.geometry_fusion = None
         with preserve_torch_rng_state():
             if use_face_pointcloud:
-                self.pointcloud_encoder = PointCloudFaceEncoder(hidden_dim)
+                if face_geometry_encoder == "mini_point":
+                    self.pointcloud_encoder = PointCloudFaceEncoder(hidden_dim)
+                else:
+                    self.pointcloud_encoder = ParametricSurfaceFaceEncoder(
+                        hidden_dim=hidden_dim,
+                        neighbor_metric=surface_neighbor_metric,
+                        trim_aware=surface_trim_aware,
+                    )
             if use_cylindrical_pos:
                 self.cylindrical_encoder = CylindricalPositionEncoder(hidden_dim)
+            self.geometry_fusion = GeometryFeatureFusion(
+                hidden_dim=hidden_dim,
+                mode=surface_fusion,
+                branch_count=2,
+            )
 
     def forward(
         self,
@@ -282,6 +308,8 @@ class GraphNodeFeature(nn.Module):
         padding_mask,
         face_points=None,
         face_point_mask=None,
+        face_surface_metric=None,
+        face_trim_neighbors=None,
         cylindrical_pos=None,
     ):
         # x [total_node_num, U_grid, V_grid, pnt_feature]
@@ -298,24 +326,41 @@ class GraphNodeFeature(nn.Module):
         face_loop_ = self.face_loop_encoder(face_loop)
         face_degree_ = self.degree_encoder(face_degree)
         node_feature = torch.cat((x_, face_area_, face_type_, face_loop_, face_degree_), dim=-1)
+        pointcloud_feature = None
+        cylindrical_feature = None
         if self.pointcloud_encoder is not None:
             if face_points is None or face_point_mask is None:
                 raise ValueError(
                     "face_points and face_point_mask are required when "
                     "use_face_pointcloud is enabled"
                 )
-            node_feature = node_feature + self.pointcloud_scale * (
-                self.pointcloud_encoder(face_points, face_point_mask)
-            )
+            if self.face_geometry_encoder == "param_surface":
+                if face_surface_metric is None:
+                    raise ValueError(
+                        "face_surface_metric is required by param_surface"
+                    )
+                pointcloud_feature = self.pointcloud_encoder(
+                    face_points,
+                    face_point_mask,
+                    face_surface_metric,
+                    face_trim_neighbors,
+                )
+            else:
+                pointcloud_feature = self.pointcloud_encoder(
+                    face_points, face_point_mask
+                )
         if self.cylindrical_encoder is not None:
             if cylindrical_pos is None:
                 raise ValueError(
                     "cylindrical_pos is required when "
                     "use_cylindrical_pos is enabled"
                 )
-            node_feature = node_feature + self.cylindrical_scale * (
-                self.cylindrical_encoder(cylindrical_pos)
-            )
+            cylindrical_feature = self.cylindrical_encoder(cylindrical_pos)
+        node_feature = self.geometry_fusion(
+            node_feature,
+            (pointcloud_feature, cylindrical_feature),
+            (self.pointcloud_scale, self.cylindrical_scale),
+        )
 
         face_feature = torch.zeros([n_graph, n_node, self.hidden_dim], device=x.device, dtype=x.dtype)
         face_feature[node_pos] = node_feature[:]  # [total_nodes, n_hidden]->[n_graph, max_node_num, n_hidden] 空节点用0.0填充

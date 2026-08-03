@@ -12,18 +12,19 @@ from models.modules.pointcloud_encoder import PointCloudFaceEncoder
 
 
 def valid_face_point_batch(face_count=3):
-    points = torch.randn(face_count, 96, 6)
+    points = torch.randn(face_count, 96, 10)
     mask = torch.zeros(face_count, 96, dtype=torch.bool)
     mask[:, :32] = True
-    points[:, :32, 3:] = torch.nn.functional.normalize(
-        points[:, :32, 3:], dim=-1
+    points[:, :32, 3:6] = torch.nn.functional.normalize(
+        points[:, :32, 3:6], dim=-1
     )
+    points[:, :32, 6:8] = torch.tanh(points[:, :32, 6:8])
     return points, mask
 
 
 def test_point_encoder_ignores_padded_values():
     encoder = PointCloudFaceEncoder(hidden_dim=128).eval()
-    points = torch.randn(2, 96, 6)
+    points = torch.randn(2, 96, 10)
     mask = torch.zeros(2, 96, dtype=torch.bool)
     mask[:, :32] = True
     changed = points.clone()
@@ -31,6 +32,21 @@ def test_point_encoder_ignores_padded_values():
 
     with torch.no_grad():
         assert torch.allclose(encoder(points, mask), encoder(changed, mask))
+
+
+def test_point_encoder_consumes_uv_and_curvature_channels():
+    torch.manual_seed(2026)
+    encoder = PointCloudFaceEncoder(hidden_dim=32).eval()
+    points, mask = valid_face_point_batch(face_count=1)
+    changed = points.clone()
+    changed[:, :32, 6:] += 0.75
+
+    with torch.no_grad():
+        original_embedding = encoder(points, mask)
+        changed_embedding = encoder(changed, mask)
+
+    assert encoder.point_mlp[0].in_features == 10
+    assert not torch.allclose(original_embedding, changed_embedding)
 
 
 def test_encoders_return_finite_hidden_vectors_and_point_gradients():
@@ -51,7 +67,7 @@ def test_encoders_return_finite_hidden_vectors_and_point_gradients():
 def test_encoders_reject_malformed_inputs():
     points, mask = valid_face_point_batch(face_count=1)
     with pytest.raises(ValueError, match="face_points"):
-        PointCloudFaceEncoder(16)(points[..., :5], mask)
+        PointCloudFaceEncoder(16)(points[..., :9], mask)
     with pytest.raises(ValueError, match="zero valid"):
         PointCloudFaceEncoder(16)(points, torch.zeros_like(mask))
     with pytest.raises(ValueError, match="finite"):
@@ -64,6 +80,7 @@ def make_graph_node_feature(
     pointcloud_scale=1.0,
     cylindrical_scale=1.0,
     use_face_uv=True,
+    **surface_options,
 ):
     return GraphNodeFeature(
         num_heads=8,
@@ -75,11 +92,18 @@ def make_graph_node_feature(
         use_cylindrical_pos=use_cylindrical_pos,
         pointcloud_scale=pointcloud_scale,
         cylindrical_scale=cylindrical_scale,
+        **surface_options,
     ).eval()
 
 
 def graph_node_inputs():
     points, point_mask = valid_face_point_batch(face_count=2)
+    metrics = torch.zeros(2, 96, 3)
+    metrics[:, :32, 0] = 1.0
+    metrics[:, :32, 2] = 1.0
+    neighbors = torch.full((2, 96, 16), -1, dtype=torch.int16)
+    for index in range(32):
+        neighbors[:, index, 0] = (index + 1) % 32
     return {
         "x": torch.randn(2, 4, 4, 7),
         "face_area": torch.rand(2),
@@ -89,6 +113,8 @@ def graph_node_inputs():
         "padding_mask": torch.tensor([[False, False]]),
         "face_points": points,
         "face_point_mask": point_mask,
+        "face_surface_metric": metrics,
+        "face_trim_neighbors": neighbors,
         "cylindrical_pos": torch.randn(2, 4),
     }
 
@@ -209,6 +235,32 @@ def test_zero_geometry_scales_match_base_node_feature():
             inputs["face_degree"],
             inputs["padding_mask"],
         )
+
+
+def test_parametric_surface_gated_fusion_starts_as_exact_base():
+    torch.manual_seed(2026)
+    baseline = make_graph_node_feature()
+    torch.manual_seed(2026)
+    enhanced = make_graph_node_feature(
+        use_face_pointcloud=True,
+        use_cylindrical_pos=True,
+        face_geometry_encoder="param_surface",
+        surface_neighbor_metric="intrinsic",
+        surface_trim_aware=True,
+        surface_fusion="gated",
+    )
+    enhanced.load_state_dict(baseline.state_dict(), strict=False)
+    inputs = graph_node_inputs()
+
+    with torch.no_grad():
+        baseline_outputs = baseline(
+            inputs["x"],
+            inputs["face_area"],
+            inputs["face_type"],
+            inputs["face_loop"],
+            inputs["face_degree"],
+            inputs["padding_mask"],
+        )
         enhanced_outputs = enhanced(**inputs)
 
     for baseline_output, enhanced_output in zip(
@@ -220,6 +272,12 @@ def test_zero_geometry_scales_match_base_node_feature():
             atol=0.0,
             rtol=0.0,
         )
+        enhanced_outputs = enhanced(**inputs)
+
+    for baseline_output, enhanced_output in zip(
+        baseline_outputs, enhanced_outputs
+    ):
+        assert torch.equal(baseline_output, enhanced_output)
 
 
 class RecordingGraphAttnBias(nn.Module):

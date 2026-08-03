@@ -25,11 +25,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.sample_mfrinstseg_1pct import select_balanced_sample_ids
+from tools.geometry_features import POINT_FEATURE_DIM, POINT_FEATURE_ORDER
 from utils.reproducibility import DEFAULT_SEED, derive_seed
 
 
 FORMAT_VERSION = 1
-CONVERTER_FORMAT_VERSION = 2
+CONVERTER_FORMAT_VERSION = 4
 SPLIT_NAMES = ("train", "val", "test")
 DEFAULT_CANDIDATE_GRIDS = (20, 32, 48, 64, 80)
 
@@ -358,8 +359,10 @@ def _conversion_options(config: PreparationConfig) -> dict:
         "area_sampling_exponent": config.area_sampling_exponent,
         "candidate_grids": list(config.candidate_grids),
         "face_pointcloud": True,
+        "parametric_surface": True,
         "cylindrical_pos": True,
         "base_seed": config.seed,
+        "point_feature_dimension": POINT_FEATURE_DIM,
     }
 
 
@@ -400,7 +403,19 @@ def build_preparation_manifest(
             "schema": _external_file_fingerprint(config.schema_file),
         },
         "selected_ids": normalized,
-        "output_features": {"face_pointcloud": True, "cylindrical_pos": True},
+        "output_features": {
+            "face_pointcloud": True,
+            "parametric_surface": True,
+            "cylindrical_pos": True,
+        },
+        "point_feature_contract": {
+            "dimension": POINT_FEATURE_DIM,
+            "order": list(POINT_FEATURE_ORDER),
+            "uv_range": [-1.0, 1.0],
+            "characteristic_length": (
+                "sampled_full_part_bounding_box_diagonal"
+            ),
+        },
         "conversion_options": _conversion_options(config),
         "conversion": {},
         "successful_ids": {name: [] for name in SPLIT_NAMES},
@@ -445,6 +460,7 @@ def _request_fingerprint(manifest: Mapping[str, object]) -> dict:
             "converter_sources",
             "selected_ids",
             "output_features",
+            "point_feature_contract",
             "conversion_options",
         )
     }
@@ -560,11 +576,13 @@ def _converter_contract(config: PreparationConfig, converter: object) -> tuple[o
         point_sampling=point_sampling,
         include_face_pointcloud=True,
         include_cylindrical_pos=True,
+        include_parametric_surface=True,
     )
     requirements = converter.BinRequirements(
         require_instance=True,
         require_pointcloud=True,
         require_cylindrical=True,
+        require_parametric_surface=True,
     )
     return point_sampling, options, requirements
 

@@ -35,20 +35,38 @@ def _metadata(node_count=2):
         "spatial_pos": torch.zeros((node_count, node_count), dtype=torch.int32),
         "d2_distance": torch.zeros((node_count, node_count, 64), dtype=torch.float32),
         "angle_distance": torch.zeros((node_count, node_count, 64), dtype=torch.float32),
+        "point_feature_contract": torch.tensor([2, 10, 1, 2], dtype=torch.int16),
     }
 
 
-def _write_bin(root, sample_id, include_points=False, include_cylindrical=False):
+def _write_bin(
+    root,
+    sample_id,
+    include_points=False,
+    include_cylindrical=False,
+    include_parametric=False,
+):
     graph = _core_graph()
     if include_points:
-        points = torch.zeros((2, 96, 6), dtype=torch.float32)
+        points = torch.zeros((2, 96, 10), dtype=torch.float32)
         points[:, :64, 0] = 1.0
         points[:, :64, 4] = 1.0
+        points[:, :64, 6] = torch.linspace(-1.0, 1.0, 64)
+        points[:, :64, 7] = torch.linspace(1.0, -1.0, 64)
         graph.ndata["face_points"] = points
         graph.ndata["face_point_mask"] = (
             torch.arange(96)[None, :] < 64
         ).expand(2, -1).clone()
         graph.ndata["face_point_count"] = torch.full((2,), 64, dtype=torch.int32)
+    if include_parametric:
+        graph.ndata["face_surface_metric"] = torch.zeros(
+            (2, 96, 3), dtype=torch.float32
+        )
+        graph.ndata["face_surface_metric"][:, :64, 0] = 1.0
+        graph.ndata["face_surface_metric"][:, :64, 2] = 1.0
+        graph.ndata["face_trim_neighbors"] = torch.full(
+            (2, 96, 16), -1, dtype=torch.int16
+        )
     if include_cylindrical:
         graph.ndata["cylindrical_pos"] = torch.tensor(
             [[0.0, 0.0, 1.0, 0.0], [1.0, 1.0, 0.0, 1.0]],
@@ -56,7 +74,12 @@ def _write_bin(root, sample_id, include_points=False, include_cylindrical=False)
         )
     path = root / "bin" / (sample_id + ".bin")
     path.parent.mkdir(parents=True, exist_ok=True)
-    save_graphs(str(path), [graph], _metadata())
+    metadata = _metadata()
+    if include_parametric:
+        metadata["surface_feature_contract"] = torch.tensor(
+            [1, 3, 16], dtype=torch.int16
+        )
+    save_graphs(str(path), [graph], metadata)
     return path
 
 
@@ -89,6 +112,20 @@ def new_bin_dataset(tmp_path):
     return tmp_path
 
 
+@pytest.fixture
+def parametric_bin_dataset(tmp_path):
+    sample_ids = ("surface_part_001", "surface_part_002")
+    for sample_id in sample_ids:
+        _write_bin(
+            tmp_path,
+            sample_id,
+            include_points=True,
+            include_parametric=True,
+        )
+    _write_manifest(tmp_path, "train", sample_ids)
+    return tmp_path
+
+
 def test_old_bin_loads_when_geometry_is_disabled(old_bin_dataset):
     item = CADSynth(
         old_bin_dataset,
@@ -97,10 +134,10 @@ def test_old_bin_loads_when_geometry_is_disabled(old_bin_dataset):
         require_cylindrical_pos=False,
     )[0]
 
-    assert item.face_points is None
-    assert item.face_point_mask is None
-    assert item.face_point_count is None
-    assert item.cylindrical_pos is None
+    assert getattr(item, "face_points", None) is None
+    assert getattr(item, "face_point_mask", None) is None
+    assert getattr(item, "face_point_count", None) is None
+    assert getattr(item, "cylindrical_pos", None) is None
     assert item.data_id == "legacy_part_001"
 
 
@@ -127,13 +164,28 @@ def test_new_fields_are_concatenated_by_collator(new_bin_dataset):
     )
     batch = dataset._collate([dataset[0], dataset[1]])
 
-    assert batch["face_points"].shape == (batch["node_data"].shape[0], 96, 6)
+    assert batch["face_points"].shape == (batch["node_data"].shape[0], 96, 10)
     assert batch["face_point_mask"].shape == (batch["node_data"].shape[0], 96)
     assert batch["face_point_mask"].dtype == torch.bool
     assert batch["face_point_count"].shape == (batch["node_data"].shape[0],)
     assert batch["cylindrical_pos"].shape == (batch["node_data"].shape[0], 4)
     assert batch["data_ids"] == ("modern_part_001", "modern_part_002")
     assert isinstance(batch["data_ids"], tuple)
+
+
+def test_parametric_surface_fields_are_validated_and_collated(
+    parametric_bin_dataset,
+):
+    dataset = CADSynth(
+        parametric_bin_dataset,
+        "train",
+        require_face_pointcloud=True,
+        require_parametric_surface=True,
+    )
+    batch = dataset._collate([dataset[0], dataset[1]])
+    assert batch["face_surface_metric"].shape == (4, 96, 3)
+    assert batch["face_trim_neighbors"].shape == (4, 96, 16)
+    assert batch["face_trim_neighbors"].dtype == torch.int16
 
 
 def test_dataset_normalizes_dgl_roundtrip_uint8_mask_to_bool(new_bin_dataset):
@@ -162,6 +214,21 @@ def test_dataset_rejects_nonbinary_uint8_mask(new_bin_dataset):
     )
 
     with pytest.raises(ValueError, match="face_point_mask.*binary"):
+            dataset[0]
+
+
+def test_dataset_rejects_wrong_point_feature_contract(new_bin_dataset):
+    path = new_bin_dataset / "bin" / "modern_part_001.bin"
+    graphs, metadata = load_graphs(str(path))
+    metadata["point_feature_contract"] = torch.tensor(
+        [1, 10, 2, 1], dtype=torch.int16
+    )
+    save_graphs(str(path), graphs, metadata)
+    dataset = CADSynth(
+        new_bin_dataset, "train", require_face_pointcloud=True
+    )
+
+    with pytest.raises(ValueError, match="point_feature_contract"):
         dataset[0]
 
 
@@ -176,7 +243,7 @@ def test_collator_rejects_mixed_optional_geometry_batch(
         require_cylindrical_pos=True,
     )[0]
 
-    with pytest.raises(ValueError, match="face_points.*mixed"):
+    with pytest.raises(ValueError, match="face_points.*atomic"):
         CADSynth(new_bin_dataset, "train")._collate([old_item, new_item])
 
 
@@ -209,7 +276,11 @@ def test_random_rotation_rotates_face_point_positions_and_normals(new_bin_datase
         )
     )
 
-    assert torch.allclose(item.face_points[0, 0], expected)
+    assert torch.allclose(item.face_points[0, 0, :6], expected)
+    assert torch.allclose(
+        item.face_points[0, 0, 6:],
+        torch.tensor([-1.0, 1.0, 0.0, 0.0]),
+    )
     assert torch.allclose(item.node_data[0, 0, 0, :6], expected)
     assert torch.allclose(item.edge_data[0, 0, :6], expected)
 
@@ -371,7 +442,7 @@ def test_point_only_loading_normalizes_unrequested_cylindrical_field(tmp_path):
     dataset = CADSynth(tmp_path, "train", require_face_pointcloud=True)
     batch = dataset._collate([dataset[0], dataset[1]])
 
-    assert batch["face_points"].shape == (4, 96, 6)
+    assert batch["face_points"].shape == (4, 96, 10)
     assert "cylindrical_pos" not in batch["graph"].ndata
     assert "cylindrical_pos" not in batch
 

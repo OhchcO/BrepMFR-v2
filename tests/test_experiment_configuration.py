@@ -84,6 +84,29 @@ def test_importing_segmentation_does_not_parse_process_arguments(segmentation):
     assert callable(segmentation.main)
 
 
+def test_parametric_surface_cli_switches_are_configurable(segmentation):
+    args = segmentation.build_parser().parse_args(
+        [
+            "train",
+            "--dataset_path",
+            "prepared",
+            "--use_face_pointcloud",
+            "--face_geometry_encoder",
+            "param_surface",
+            "--surface_neighbor_metric",
+            "intrinsic",
+            "--surface_trim_aware",
+            "--surface_fusion",
+            "gated",
+        ]
+    )
+    segmentation._validate_configuration(segmentation.build_parser(), args)
+    assert args.face_geometry_encoder == "param_surface"
+    assert args.surface_neighbor_metric == "intrinsic"
+    assert args.surface_trim_aware is True
+    assert args.surface_fusion == "gated"
+
+
 @pytest.mark.parametrize(
     (
         "alias",
@@ -99,6 +122,7 @@ def test_importing_segmentation_does_not_parse_process_arguments(segmentation):
         ("topo_aag", "baseline", False, False, False, 1.0, "legacy"),
         ("uv_aag", "baseline", True, False, False, 1.0, "legacy"),
         ("pc_aag", "baseline", False, True, False, 1.0, "legacy"),
+        ("cyl_aag", "baseline", False, False, True, 1.0, "legacy"),
         ("uv_pc_aag", "baseline", True, True, False, 1.0, "legacy"),
         ("cyl", "baseline", True, False, True, 1.0, "legacy"),
         (
@@ -111,7 +135,16 @@ def test_importing_segmentation_does_not_parse_process_arguments(segmentation):
             "legacy",
         ),
         ("point", "baseline", True, True, False, 1.0, "legacy"),
-        ("spe_pcaag", "baseline", True, True, True, 1.0, "legacy"),
+        ("spe_pcaag", "baseline", False, True, True, 1.0, "legacy"),
+        (
+            "spe_instance",
+            "dynamic_affinity",
+            False,
+            True,
+            True,
+            1.0,
+            "late_gated",
+        ),
         (
             "dynamic_no_loss",
             "dynamic",
@@ -209,6 +242,7 @@ $attribute.ValidValues | ConvertTo-Json -Compress
         "topo_aag",
         "uv_aag",
         "pc_aag",
+        "cyl_aag",
         "uv_pc_aag",
         "dynamic_no_loss",
         "affinity_only",
@@ -218,8 +252,55 @@ $attribute.ValidValues | ConvertTo-Json -Compress
         "cyl_affinity",
         "point",
         "spe_pcaag",
+        "spe_instance",
         "full",
     ]
+
+
+def test_training_parser_and_launcher_expose_custom_results_root(
+    segmentation,
+    tmp_path,
+):
+    args = segmentation.build_parser().parse_args(
+        [
+            "train",
+            "--dataset_path",
+            str(tmp_path),
+            "--results_root",
+            str(tmp_path / "custom-results"),
+        ]
+    )
+    assert args.results_root == tmp_path / "custom-results"
+
+    launcher = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "run_mfrinstseg_experiments.ps1"
+    )
+    source = launcher.read_text(encoding="utf-8")
+    assert "[string]$ResultBasePath" in source
+    assert '"--results_root", $ResultBasePath' in source
+
+
+def test_make_run_path_uses_custom_results_root(
+    segmentation,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        segmentation.time,
+        "strftime",
+        lambda fmt: {"%m%d": "0730", "%H%M%S": "120000"}[fmt],
+    )
+
+    results_path, run_path, month_day, hour_min_second = (
+        segmentation._make_run_path("experiment", tmp_path)
+    )
+
+    assert results_path == tmp_path / "experiment"
+    assert run_path == tmp_path / "experiment" / "0730" / "120000"
+    assert run_path.is_dir()
+    assert (month_day, hour_min_second) == ("0730", "120000")
 
 
 def test_parser_exposes_preparation_and_geometry_defaults(segmentation):
@@ -631,8 +712,10 @@ def test_legacy_dataset_path_does_not_run_preparation(
     [
         ["--use_cylindrical_pos"],
         ["--experiment_alias", "cyl"],
+        ["--experiment_alias", "cyl_aag"],
         ["--experiment_alias", "cyl_affinity"],
         ["--experiment_alias", "spe_pcaag"],
+        ["--experiment_alias", "spe_instance"],
         ["--experiment_alias", "full"],
     ],
 )
@@ -691,7 +774,12 @@ def test_main_orders_seed_preparation_components_then_trainer(
     monkeypatch.setattr(
         segmentation,
         "_make_run_path",
-        lambda experiment_name: (tmp_path, tmp_path / "run", "0726", "120000"),
+        lambda experiment_name, results_root: (
+            tmp_path,
+            tmp_path / "run",
+            "0726",
+            "120000",
+        ),
     )
     monkeypatch.setattr(segmentation, "CADSynth", FakeDataset)
     monkeypatch.setattr(segmentation, "BrepSeg", FakeModel)
@@ -743,7 +831,19 @@ def test_test_dataset_requirements_come_from_checkpoint_hparams(test_mfrinstseg)
 
     assert requirements.use_face_uv is False
     assert requirements.require_face_pointcloud is True
+    assert requirements.require_parametric_surface is False
     assert requirements.require_cylindrical_pos is False
+
+
+def test_parametric_checkpoint_requires_surface_bin_fields(test_mfrinstseg):
+    requirements = test_mfrinstseg.geometry_requirements(
+        {
+            "use_face_pointcloud": True,
+            "face_geometry_encoder": "param_surface",
+        }
+    )
+    assert requirements.require_face_pointcloud is True
+    assert requirements.require_parametric_surface is True
 
 
 def test_old_checkpoint_defaults_to_uv_enabled(test_mfrinstseg):

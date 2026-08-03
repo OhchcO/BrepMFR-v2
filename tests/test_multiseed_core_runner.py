@@ -7,6 +7,18 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CORE_RUNNER = PROJECT_ROOT / "tools" / "run_mfrinstseg_core_seed.ps1"
+EXPECTED_FINAL_MATRIX = [
+    ("topo_aag", "signed"),
+    ("uv_aag", "signed"),
+    ("pc_aag", "signed"),
+    ("cyl_aag", "signed"),
+    ("spe_pcaag", "signed"),
+    ("dynamic_no_loss", "positive_only"),
+    ("affinity_only", "positive_only"),
+    ("instance", "positive_only"),
+    ("oracle", "positive_only"),
+    ("spe_instance", "positive_only"),
+]
 
 
 def _fake_launchers(tmp_path):
@@ -25,7 +37,8 @@ param(
     [int]$BatchSize,
     [int]$MaxEpochs,
     [int]$NumWorkers,
-    [string]$PythonExe
+    [string]$PythonExe,
+    [string]$ResultBasePath
 )
 $label = if ($InstanceRelationMapping -eq "positive_only") {
     "${Mode}_positive"
@@ -106,27 +119,40 @@ def _run_core(tmp_path, seed=42, training_launcher=None):
     return completed, events, prepared_base, result_base
 
 
-def test_core_runner_trains_and_tests_three_experiments_in_order(tmp_path):
+def test_core_runner_trains_and_tests_final_experiments_in_order(tmp_path):
     completed, events, prepared_base, _ = _run_core(tmp_path, seed=42)
 
     assert completed.returncode == 0, completed.stderr
     lines = events.read_text(encoding="utf-8").splitlines()
     prepared = str(prepared_base) + "_seed42"
     assert [line.split("|")[:4] for line in lines[::2]] == [
-        ["train", "baseline", "signed", "42"],
-        ["train", "dynamic_no_loss", "positive_only", "42"],
-        ["train", "instance", "positive_only", "42"],
+        ["train", mode, mapping, "42"]
+        for mode, mapping in EXPECTED_FINAL_MATRIX
     ]
     assert all(line.split("|")[4] == prepared for line in lines[::2])
-    assert [line.split("|")[0] for line in lines] == [
-        "train",
-        "test",
-        "train",
-        "test",
-        "train",
-        "test",
-    ]
+    assert [line.split("|")[0] for line in lines] == ["train", "test"] * 10
     assert all(line.split("|")[2] == prepared for line in lines[1::2])
+    assert all(line.split("|")[1] == "42" for line in lines[1::2])
+    assert [
+        line.split("|")[3] for line in lines[1::2]
+    ] == [
+        line.split("|")[5] for line in lines[::2]
+    ]
+    source = CORE_RUNNER.read_text(encoding="utf-8")
+    assert "ResultBasePath = $ResultBasePath" in source
+
+
+def test_core_runner_defaults_to_versioned_10d_cache_base():
+    source = CORE_RUNNER.read_text(encoding="utf-8")
+
+    assert (
+        r"D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D"
+        in source
+    )
+    assert (
+        r'"D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG"'
+        not in source
+    )
 
 
 def test_core_runner_rejects_stale_checkpoint_after_noop_training(tmp_path):
@@ -152,7 +178,7 @@ param(
     result_base = tmp_path / "results"
     stale = (
         result_base
-        / "MFRInstSeg_1pct_baseline_seed42"
+        / "MFRInstSeg_1pct_topo_aag_seed42"
         / "old-run"
         / "best-old.ckpt"
     )
@@ -167,7 +193,52 @@ param(
     )
 
     assert completed.returncode != 0
-    assert "No fresh best checkpoint found: baseline" in (
+    assert "No fresh best checkpoint found: topo_aag" in (
+        completed.stdout + completed.stderr
+    )
+    assert not events.exists()
+
+
+def test_core_runner_rejects_preexisting_checkpoint_inside_timestamp_tolerance(
+    tmp_path,
+):
+    noop = tmp_path / "noop-train.ps1"
+    noop.write_text(
+        r"""
+param(
+    [string]$Mode,
+    [string]$InstanceRelationMapping = "signed",
+    [string]$RawDatasetPath,
+    [string]$PreparedDatasetPath,
+    [double]$SamplePercent,
+    [int]$Seed,
+    [int]$BatchSize,
+    [int]$MaxEpochs,
+    [int]$NumWorkers,
+    [string]$PythonExe
+)
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    stale = (
+        tmp_path
+        / "results"
+        / "MFRInstSeg_1pct_topo_aag_seed42"
+        / "just-before-run"
+        / "best-preexisting.ckpt"
+    )
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"preexisting")
+
+    completed, events, _, _ = _run_core(
+        tmp_path,
+        seed=42,
+        training_launcher=noop,
+    )
+
+    assert completed.returncode != 0
+    assert "No fresh best checkpoint found: topo_aag" in (
         completed.stdout + completed.stderr
     )
     assert not events.exists()
@@ -178,6 +249,7 @@ param(
     [
         ("run_mfrinstseg_core_seed42.ps1", 42),
         ("run_mfrinstseg_core_seed2025.ps1", 2025),
+        ("run_mfrinstseg_core_seed2026.ps1", 2026),
         ("run_mfrinstseg_core_seed2027.ps1", 2027),
     ],
 )
@@ -223,16 +295,10 @@ def test_fixed_seed_entrypoint_forwards_declared_seed(
     assert completed.returncode == 0, completed.stderr
     train_lines = events.read_text(encoding="utf-8").splitlines()[::2]
     assert [int(line.split("|")[3]) for line in train_lines] == [
-        expected_seed,
-        expected_seed,
-        expected_seed,
-        expected_seed,
-    ]
-    assert [line.split("|")[1:3] for line in train_lines] == [
-        ["baseline", "signed"],
-        ["dynamic_no_loss", "positive_only"],
-        ["instance", "positive_only"],
-        ["affinity_only", "positive_only"],
+        expected_seed
+    ] * len(EXPECTED_FINAL_MATRIX)
+    assert [tuple(line.split("|")[1:3]) for line in train_lines] == [
+        (mode, mapping) for mode, mapping in EXPECTED_FINAL_MATRIX
     ]
     assert all(
         line.split("|")[4] == str(prepared_base) + "_seed" + str(expected_seed)

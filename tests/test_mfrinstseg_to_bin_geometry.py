@@ -8,7 +8,12 @@ import torch
 from dgl.data.utils import load_graphs, save_graphs
 
 from tools import mfrinstseg_to_bin
-from tools.geometry_features import GeometryFeatureBatch, PointSamplingConfig
+from tools.geometry_features import (
+    POINT_FEATURE_DIM,
+    SURFACE_NEIGHBOR_COUNT,
+    GeometryFeatureBatch,
+    PointSamplingConfig,
+)
 from tools.mfrinstseg_to_bin import (
     BinRequirements,
     ConversionOptions,
@@ -18,6 +23,7 @@ from tools.mfrinstseg_to_bin import (
     convert_one,
     convert_selected_samples,
     geometry_metadata,
+    surface_geometry_metadata,
     validate_bin,
 )
 
@@ -49,11 +55,15 @@ def make_core_metadata():
 
 
 def make_geometry_batch(counts=(64, 64)):
-    points = torch.zeros((2, 96, 6), dtype=torch.float32)
+    points = torch.zeros((2, 96, POINT_FEATURE_DIM), dtype=torch.float32)
     mask = torch.zeros((2, 96), dtype=torch.bool)
     for face_index, count in enumerate(counts):
         points[face_index, :count, 0] = torch.arange(count, dtype=torch.float32)
         points[face_index, :count, 5] = 1.0
+        points[face_index, :count, 6] = torch.linspace(-1.0, 1.0, count)
+        points[face_index, :count, 7] = torch.linspace(1.0, -1.0, count)
+        points[face_index, :count, 8] = 0.25
+        points[face_index, :count, 9] = -0.5
         mask[face_index, :count] = True
     return GeometryFeatureBatch(
         face_points=points.numpy(),
@@ -103,7 +113,7 @@ def test_geometry_bin_has_exact_shapes_and_dtypes_and_allows_extra_fields(tmp_pa
         point_sampling=PointSamplingConfig(),
     )
 
-    assert graph.ndata["face_points"].shape == (2, 96, 6)
+    assert graph.ndata["face_points"].shape == (2, 96, POINT_FEATURE_DIM)
     assert graph.ndata["face_points"].dtype == torch.float32
     assert graph.ndata["face_point_mask"].shape == (2, 96)
     assert graph.ndata["face_point_mask"].dtype == torch.bool
@@ -114,6 +124,55 @@ def test_geometry_bin_has_exact_shapes_and_dtypes_and_allows_extra_fields(tmp_pa
     assert metadata["point_sampling_mode"].dtype == torch.int8
     assert metadata["point_sampling_config"].dtype == torch.float32
     assert metadata["point_candidate_grid"].dtype == torch.int32
+    assert metadata["point_feature_contract"].tolist() == [2, 10, 1, 2]
+
+
+def test_parametric_surface_bin_contract_roundtrip(tmp_path):
+    path = tmp_path / "parametric.bin"
+    batch = make_geometry_batch()
+    metrics = np.zeros((2, 96, 3), dtype=np.float32)
+    metrics[:, :64, 0] = 1.0
+    metrics[:, :64, 2] = 1.0
+    neighbors = np.full(
+        (2, 96, SURFACE_NEIGHBOR_COUNT), -1, dtype=np.int16
+    )
+    neighbors[:, :64, 0] = (
+        np.arange(64, dtype=np.int16)[None, :] + 1
+    ) % 64
+    batch = replace(
+        batch,
+        face_surface_metric=metrics,
+        face_trim_neighbors=neighbors,
+    )
+    options = ConversionOptions(
+        include_face_pointcloud=True,
+        include_parametric_surface=True,
+    )
+    graph = make_core_graph()
+    attach_geometry_features(graph, batch, options)
+    metadata = make_core_metadata()
+    metadata.update(geometry_metadata(options.point_sampling))
+    metadata.update(surface_geometry_metadata())
+    save_graphs(str(path), [graph], metadata)
+
+    validate_bin(
+        path,
+        expected_nodes=2,
+        requirements=BinRequirements(
+            require_instance=True,
+            require_pointcloud=True,
+            require_parametric_surface=True,
+        ),
+    )
+    loaded_graph = load_graphs(str(path))[0][0]
+    assert loaded_graph.ndata["face_surface_metric"].shape == (2, 96, 3)
+    assert loaded_graph.ndata["face_surface_metric"].dtype == torch.float32
+    assert loaded_graph.ndata["face_trim_neighbors"].shape == (
+        2,
+        96,
+        SURFACE_NEIGHBOR_COUNT,
+    )
+    assert loaded_graph.ndata["face_trim_neighbors"].dtype == torch.int16
 
 
 def test_geometry_bin_accepts_dgl_roundtrip_uint8_logical_mask(tmp_path):
@@ -210,7 +269,12 @@ def test_geometry_bin_rejects_missing_requested_node_fields(
 
 @pytest.mark.parametrize(
     "metadata_field",
-    ["point_sampling_mode", "point_sampling_config", "point_candidate_grid"],
+    [
+        "point_sampling_mode",
+        "point_sampling_config",
+        "point_candidate_grid",
+        "point_feature_contract",
+    ],
 )
 def test_geometry_bin_rejects_missing_sampling_metadata(tmp_path, metadata_field):
     path = tmp_path / (metadata_field + ".bin")
@@ -315,6 +379,22 @@ def test_geometry_bin_rejects_sampling_metadata_for_different_request(tmp_path):
         )
 
 
+def test_geometry_bin_rejects_wrong_10d_feature_contract_values(tmp_path):
+    path = tmp_path / "feature-contract.bin"
+    graph, metadata = write_geometry_bin(path)
+    metadata["point_feature_contract"] = torch.tensor(
+        [1, 10, 2, 1], dtype=torch.int16
+    )
+    save_graphs(str(path), [graph], metadata)
+
+    with pytest.raises(ValueError, match="point_feature_contract"):
+        validate_bin(
+            path,
+            requirements=geometry_requirements(),
+            point_sampling=PointSamplingConfig(),
+        )
+
+
 def test_legacy_bin_is_valid_when_optional_geometry_is_not_requested(tmp_path):
     path = tmp_path / "legacy.bin"
     save_graphs(str(path), [make_core_graph()], make_core_metadata())
@@ -338,6 +418,23 @@ def test_geometry_bin_rejects_non_unit_valid_normals(tmp_path):
     save_graphs(str(path), [graph], metadata)
 
     with pytest.raises(ValueError, match="unit normals"):
+        validate_bin(
+            path,
+            requirements=geometry_requirements(),
+            point_sampling=PointSamplingConfig(),
+        )
+
+
+@pytest.mark.parametrize("column", [6, 7])
+def test_geometry_bin_rejects_uv_coordinates_outside_normalized_range(
+    tmp_path, column
+):
+    path = tmp_path / ("uv-{0}.bin".format(column))
+    graph, metadata = write_geometry_bin(path)
+    graph.ndata["face_points"][0, 0, column] = 1.01
+    save_graphs(str(path), [graph], metadata)
+
+    with pytest.raises(ValueError, match="normalized UV"):
         validate_bin(
             path,
             requirements=geometry_requirements(),

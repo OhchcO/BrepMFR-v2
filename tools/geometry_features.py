@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Mapping, Tuple
+from typing import Mapping, Optional, Tuple
 
 import numpy as np
 
@@ -16,6 +16,8 @@ from utils.reproducibility import derive_seed
 
 
 MAX_FACE_POINTS = 96
+SURFACE_NEIGHBOR_COUNT = 16
+SURFACE_METRIC_DIM = 3
 POINT_FEATURE_DIM = 10
 POINT_FEATURE_ORDER = (
     "x",
@@ -79,6 +81,120 @@ class GeometryFeatureBatch:
     face_point_mask: np.ndarray
     face_point_count: np.ndarray
     cylindrical_pos: np.ndarray
+    face_surface_metric: Optional[np.ndarray] = None
+    face_trim_neighbors: Optional[np.ndarray] = None
+
+
+def normalize_surface_metrics(
+    raw_metrics: np.ndarray, u_extent: float, v_extent: float
+) -> np.ndarray:
+    """Transform first fundamental forms from raw UV to normalized UV."""
+    metrics = np.asarray(raw_metrics, dtype=np.float64)
+    if metrics.ndim != 2 or metrics.shape[1] != SURFACE_METRIC_DIM:
+        raise ValueError("raw_metrics must have shape [N, 3]")
+    if not np.isfinite(metrics).all():
+        raise ValueError("raw_metrics must contain only finite values")
+    if not math.isfinite(u_extent) or not math.isfinite(v_extent):
+        raise ValueError("UV extents must be finite")
+    u_scale = max(abs(float(u_extent)), NORMAL_EPSILON) / 2.0
+    v_scale = max(abs(float(v_extent)), NORMAL_EPSILON) / 2.0
+    transformed = metrics.copy()
+    transformed[:, 0] *= u_scale * u_scale
+    transformed[:, 1] *= u_scale * v_scale
+    transformed[:, 2] *= v_scale * v_scale
+    return transformed.astype(np.float32)
+
+
+def dimensionless_surface_metrics(
+    metrics: np.ndarray,
+    mask: np.ndarray,
+    characteristic_length: float,
+) -> np.ndarray:
+    """Divide valid metric coefficients by the full-part length squared."""
+    values = np.asarray(metrics)
+    valid = np.asarray(mask)
+    if values.ndim != 3 or values.shape[-1] != SURFACE_METRIC_DIM:
+        raise ValueError("metrics must have shape [F, P, 3]")
+    if valid.shape != values.shape[:2] or valid.dtype != np.bool_:
+        raise ValueError("mask must be boolean with shape [F, P]")
+    if (
+        not math.isfinite(float(characteristic_length))
+        or float(characteristic_length) <= 0.0
+    ):
+        raise ValueError("characteristic_length must be positive and finite")
+    if not np.isfinite(values[valid]).all():
+        raise ValueError("valid metrics must contain only finite values")
+    output = values.astype(np.float32, copy=True)
+    output[valid] /= float(characteristic_length) ** 2
+    return output
+
+
+def _intrinsic_distance_squared(
+    uv: np.ndarray, metrics: np.ndarray
+) -> np.ndarray:
+    delta = uv[:, None, :] - uv[None, :, :]
+    average = (metrics[:, None, :] + metrics[None, :, :]) * 0.5
+    distance = (
+        average[..., 0] * delta[..., 0] ** 2
+        + 2.0 * average[..., 1] * delta[..., 0] * delta[..., 1]
+        + average[..., 2] * delta[..., 1] ** 2
+    )
+    return np.maximum(distance, 0.0)
+
+
+def _segment_is_visible(
+    start: np.ndarray,
+    end: np.ndarray,
+    visibility: np.ndarray,
+    segment_samples: int,
+) -> bool:
+    positions = np.linspace(start, end, int(segment_samples), dtype=np.float64)
+    height, width = visibility.shape
+    rows = np.rint((positions[:, 0] + 1.0) * 0.5 * (height - 1)).astype(int)
+    columns = np.rint((positions[:, 1] + 1.0) * 0.5 * (width - 1)).astype(int)
+    rows = np.clip(rows, 0, height - 1)
+    columns = np.clip(columns, 0, width - 1)
+    return bool(visibility[rows, columns].all())
+
+
+def build_trim_aware_neighbors(
+    normalized_uv: np.ndarray,
+    surface_metrics: np.ndarray,
+    visibility_grid: np.ndarray,
+    neighbor_count: int = SURFACE_NEIGHBOR_COUNT,
+    segment_samples: int = 9,
+) -> np.ndarray:
+    """Build deterministic intrinsic neighbours without crossing trim holes."""
+    uv = np.asarray(normalized_uv, dtype=np.float64)
+    metrics = np.asarray(surface_metrics, dtype=np.float64)
+    visibility = np.asarray(visibility_grid, dtype=np.bool_)
+    if uv.ndim != 2 or uv.shape[1] != 2 or uv.shape[0] < 1:
+        raise ValueError("normalized_uv must have shape [N, 2]")
+    if metrics.shape != (uv.shape[0], SURFACE_METRIC_DIM):
+        raise ValueError("surface_metrics must have shape [N, 3]")
+    if visibility.ndim != 2 or min(visibility.shape) < 2:
+        raise ValueError("visibility_grid must be a 2D grid")
+    if neighbor_count < 1 or segment_samples < 2:
+        raise ValueError("neighbor_count and segment_samples are invalid")
+    if not np.isfinite(uv).all() or not np.isfinite(metrics).all():
+        raise ValueError("UV and metrics must be finite")
+
+    result = np.full((uv.shape[0], neighbor_count), -1, dtype=np.int16)
+    distances = _intrinsic_distance_squared(uv, metrics)
+    np.fill_diagonal(distances, np.inf)
+    for source in range(uv.shape[0]):
+        accepted = []
+        for target in np.argsort(distances[source], kind="stable"):
+            if not math.isfinite(float(distances[source, target])):
+                continue
+            if _segment_is_visible(
+                uv[source], uv[target], visibility, segment_samples
+            ):
+                accepted.append(int(target))
+                if len(accepted) == neighbor_count:
+                    break
+        result[source, : len(accepted)] = accepted
+    return result
 
 
 def adaptive_point_count(
@@ -343,6 +459,64 @@ def _valid_uv_candidates(face: object, grid: int) -> np.ndarray:
     ).astype(np.float32)
 
 
+def _visibility_grid(face: object, grid: int) -> np.ndarray:
+    """Return the sampled trimmed-domain visibility used for neighbourhoods."""
+    from occwl.uvgrid import uvgrid
+
+    visibility = np.asarray(uvgrid(face, grid, grid, method="inside"))
+    if visibility.shape not in ((grid, grid), (grid, grid, 1)):
+        raise ValueError("occwl.uvgrid returned an unexpected visibility-mask shape")
+    visibility = visibility.reshape(grid, grid)
+    return (np.isfinite(visibility) & (visibility > 0.5)).astype(np.bool_)
+
+
+def _surface_metrics_for_normalized_uv(
+    face: object, normalized_uv: np.ndarray
+) -> np.ndarray:
+    """Evaluate normalized first fundamental forms at selected face samples."""
+    from OCC.Core.BRepAdaptor import BRepAdaptor_Surface
+    from OCC.Core.gp import gp_Pnt, gp_Vec
+
+    uv = np.asarray(normalized_uv, dtype=np.float64)
+    if uv.ndim != 2 or uv.shape[1] != 2:
+        raise ValueError("normalized_uv must have shape [N, 2]")
+    bounds = face.uv_bounds()
+    minimum = np.asarray(bounds.min_point(), dtype=np.float64)
+    maximum = np.asarray(bounds.max_point(), dtype=np.float64)
+    extent = maximum - minimum
+    raw_uv = minimum + (uv + 1.0) * 0.5 * extent
+    adaptor = BRepAdaptor_Surface(face.topods_shape(), True)
+    raw_metrics = np.empty((uv.shape[0], SURFACE_METRIC_DIM), dtype=np.float64)
+    for index, (u_value, v_value) in enumerate(raw_uv):
+        point, derivative_u, derivative_v = gp_Pnt(), gp_Vec(), gp_Vec()
+        adaptor.D1(
+            float(u_value),
+            float(v_value),
+            point,
+            derivative_u,
+            derivative_v,
+        )
+        du = np.asarray(derivative_u.Coord(), dtype=np.float64)
+        dv = np.asarray(derivative_v.Coord(), dtype=np.float64)
+        raw_metrics[index] = (
+            float(np.dot(du, du)),
+            float(np.dot(du, dv)),
+            float(np.dot(dv, dv)),
+        )
+    normalized = normalize_surface_metrics(
+        raw_metrics, float(extent[0]), float(extent[1])
+    )
+    determinant = normalized[:, 0] * normalized[:, 2] - normalized[:, 1] ** 2
+    if (
+        not np.isfinite(normalized).all()
+        or bool((normalized[:, 0] <= 0.0).any())
+        or bool((normalized[:, 2] <= 0.0).any())
+        or bool((determinant < -1e-5).any())
+    ):
+        raise ValueError("OCC returned an invalid first fundamental form")
+    return normalized
+
+
 def _face_objects(extraction: Mapping) -> Tuple[object, ...]:
     try:
         graph_data = extraction["graph"]
@@ -367,6 +541,7 @@ def extract_geometry_features(
     sample_id: str,
     include_face_pointcloud: bool = True,
     include_cylindrical_pos: bool = True,
+    include_parametric_surface: bool = False,
 ) -> GeometryFeatureBatch:
     """Extract complete-model geometry and pack each face to 96 positions.
 
@@ -375,6 +550,10 @@ def extract_geometry_features(
     contract without making tie-breaking depend on a process RNG.
     """
     derive_seed(base_seed, "point_sampling", sample_id)
+    if include_parametric_surface and not include_face_pointcloud:
+        raise ValueError(
+            "parametric surface extraction requires face pointcloud extraction"
+        )
     faces = _face_objects(extraction)
     areas = np.empty(len(faces), dtype=np.float64)
     centroids = np.empty((len(faces), 3), dtype=np.float64)
@@ -390,14 +569,28 @@ def extract_geometry_features(
         (len(faces), MAX_FACE_POINTS, POINT_FEATURE_DIM), dtype=np.float32
     )
     packed_mask = np.zeros((len(faces), MAX_FACE_POINTS), dtype=np.bool_)
+    packed_metrics = np.zeros(
+        (len(faces), MAX_FACE_POINTS, SURFACE_METRIC_DIM), dtype=np.float32
+    )
+    packed_neighbors = np.full(
+        (
+            len(faces),
+            MAX_FACE_POINTS,
+            SURFACE_NEIGHBOR_COUNT,
+        ),
+        -1,
+        dtype=np.int16,
+    )
 
     if include_face_pointcloud:
         for face_index, (face, target_count) in enumerate(
             zip(faces, target_counts)
         ):
             candidates = np.empty((0, POINT_FEATURE_DIM), dtype=np.float32)
+            selected_grid = config.candidate_grids[-1]
             for grid in config.candidate_grids:
                 candidates = _valid_uv_candidates(face, grid)
+                selected_grid = grid
                 if candidates.shape[0] >= int(target_count):
                     break
             if candidates.shape[0] == 0:
@@ -413,14 +606,49 @@ def extract_geometry_features(
                 selected = fps_order
             packed_points[face_index, : int(target_count)] = candidates[selected]
             packed_mask[face_index, : int(target_count)] = True
-        packed_points, _ = dimensionless_curvature_features(
+            if include_parametric_surface:
+                selected_uv = candidates[selected, 6:8]
+                if hasattr(face, "uv_bounds") and hasattr(
+                    face, "topods_shape"
+                ):
+                    selected_metrics = _surface_metrics_for_normalized_uv(
+                        face, selected_uv
+                    )
+                    visibility = _visibility_grid(face, selected_grid)
+                else:
+                    # Test doubles and legacy extractor faces may not expose D1.
+                    # Real STEP conversion uses OCC and therefore the exact path.
+                    selected_metrics = np.tile(
+                        np.asarray([[1.0, 0.0, 1.0]], dtype=np.float32),
+                        (int(target_count), 1),
+                    )
+                    visibility = np.ones(
+                        (selected_grid, selected_grid), dtype=np.bool_
+                    )
+                packed_metrics[
+                    face_index, : int(target_count)
+                ] = selected_metrics
+                packed_neighbors[face_index, : int(target_count)] = (
+                    build_trim_aware_neighbors(
+                        selected_uv,
+                        selected_metrics,
+                        visibility,
+                    )
+                )
+        packed_points, characteristic_length = dimensionless_curvature_features(
             packed_points, packed_mask
         )
+        if include_parametric_surface:
+            packed_metrics = dimensionless_surface_metrics(
+                packed_metrics, packed_mask, characteristic_length
+            )
 
     return GeometryFeatureBatch(
         face_points=packed_points,
         face_point_mask=packed_mask,
         face_point_count=target_counts,
+        face_surface_metric=packed_metrics,
+        face_trim_neighbors=packed_neighbors,
         cylindrical_pos=(
             cylindrical_positions(centroids)
             if include_cylindrical_pos

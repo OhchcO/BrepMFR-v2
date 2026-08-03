@@ -114,6 +114,10 @@ def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, P
     pointcloud = collate_optional_group(
         ("face_points", "face_point_mask", "face_point_count"), "face_points"
     )
+    parametric_surface = collate_optional_group(
+        ("face_surface_metric", "face_trim_neighbors"),
+        "parametric_surface",
+    )
     cylindrical_pos = collate_optional("cylindrical_pos")
 
     items = [
@@ -275,6 +279,9 @@ def collator(items, multi_hop_max_dist, spatial_pos_max):  #items({PYGGraph_1, P
         batch_data["face_points"] = pointcloud[0]
         batch_data["face_point_mask"] = pointcloud[1]
         batch_data["face_point_count"] = pointcloud[2]
+    if parametric_surface is not None:
+        batch_data["face_surface_metric"] = parametric_surface[0]
+        batch_data["face_trim_neighbors"] = parametric_surface[1]
     if cylindrical_pos is not None:
         batch_data["cylindrical_pos"] = cylindrical_pos
     return batch_data

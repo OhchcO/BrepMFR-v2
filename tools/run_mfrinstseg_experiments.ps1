@@ -25,6 +25,13 @@ param(
     [int[]]$CandidateGrids = @(20, 32, 48, 64, 80),
     [double]$PointcloudScale = 1.0,
     [double]$CylindricalScale = 1.0,
+    [ValidateSet("mini_point", "param_surface")]
+    [string]$FaceGeometryEncoder = "mini_point",
+    [ValidateSet("xyz", "uv", "intrinsic")]
+    [string]$SurfaceNeighborMetric = "intrinsic",
+    [bool]$SurfaceTrimAware = $false,
+    [ValidateSet("add", "gated")]
+    [string]$SurfaceFusion = "add",
     [int]$AffinityDim = 64,
     [double]$AffinityTemperature = 0.2,
     [double]$AffinityLossWeight = 0.1,
@@ -101,6 +108,9 @@ $CommonArguments = @(
 ) + @($CandidateGrids | ForEach-Object { "$_" }) + @(
     "--pointcloud_scale", "$PointcloudScale",
     "--cylindrical_scale", "$CylindricalScale",
+    "--face_geometry_encoder", $FaceGeometryEncoder,
+    "--surface_neighbor_metric", $SurfaceNeighborMetric,
+    "--surface_fusion", $SurfaceFusion,
     "--affinity_dim", "$AffinityDim",
     "--affinity_temperature", "$AffinityTemperature",
     "--affinity_loss_weight", "$AffinityLossWeight",
@@ -113,6 +123,13 @@ $CommonArguments = @(
     "--instance_bias_delay_epochs", "$InstanceBiasDelayEpochs",
     "--instance_bias_ramp_epochs", "$InstanceBiasRampEpochs"
 )
+
+if ($SurfaceTrimAware) {
+    $CommonArguments += "--surface_trim_aware"
+}
+else {
+    $CommonArguments += "--no_surface_trim_aware"
+}
 
 if ($AutoPrepare) {
     $CommonArguments += @(
@@ -136,6 +153,10 @@ try {
         }
         else {
             $CurrentMode
+        }
+        if ($FaceGeometryEncoder -eq "param_surface") {
+            $TrimLabel = if ($SurfaceTrimAware) { "trim" } else { "untrimmed" }
+            $ExperimentLabel = "${ExperimentLabel}_param_surface_${SurfaceNeighborMetric}_${TrimLabel}_${SurfaceFusion}"
         }
         $ExperimentName = "MFRInstSeg_1pct_${ExperimentLabel}_seed${Seed}"
         $Arguments = @($CommonArguments) + @(

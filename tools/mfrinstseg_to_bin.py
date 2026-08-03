@@ -33,6 +33,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from tools.geometry_features import (
     POINT_FEATURE_DIM,
+    SURFACE_METRIC_DIM,
+    SURFACE_NEIGHBOR_COUNT,
     GeometryFeatureBatch,
     PointSamplingConfig,
     expected_point_counts,
@@ -64,6 +66,10 @@ REQUIRED_METADATA_KEYS = {
     "angle_distance",
 }
 POINTCLOUD_NODE_KEYS = {"face_points", "face_point_mask", "face_point_count"}
+PARAMETRIC_SURFACE_NODE_KEYS = {
+    "face_surface_metric",
+    "face_trim_neighbors",
+}
 POINTCLOUD_METADATA_KEYS = {
     "point_sampling_mode",
     "point_sampling_config",
@@ -149,6 +155,7 @@ class BinRequirements:
     require_instance: bool = True
     require_pointcloud: bool = False
     require_cylindrical: bool = False
+    require_parametric_surface: bool = False
 
 
 @dataclass(frozen=True)
@@ -159,6 +166,7 @@ class ConversionOptions:
     point_sampling: PointSamplingConfig = field(default_factory=PointSamplingConfig)
     include_face_pointcloud: bool = False
     include_cylindrical_pos: bool = False
+    include_parametric_surface: bool = False
 
     def __post_init__(self) -> None:
         if isinstance(self.seed, bool):
@@ -166,6 +174,10 @@ class ConversionOptions:
         object.__setattr__(self, "seed", int(self.seed))
         if not isinstance(self.point_sampling, PointSamplingConfig):
             raise TypeError("point_sampling must be a PointSamplingConfig")
+        if self.include_parametric_surface and not self.include_face_pointcloud:
+            raise ValueError(
+                "parametric surface fields require face pointcloud fields"
+            )
 
 
 @dataclass(frozen=True)
@@ -594,6 +606,16 @@ def geometry_metadata(config: PointSamplingConfig) -> Dict[str, torch.Tensor]:
     }
 
 
+def surface_geometry_metadata() -> Dict[str, torch.Tensor]:
+    """Serialize the parametric-surface extension contract."""
+    return {
+        "surface_feature_contract": torch.tensor(
+            [1, SURFACE_METRIC_DIM, SURFACE_NEIGHBOR_COUNT],
+            dtype=torch.int16,
+        )
+    }
+
+
 def _geometry_batch_arrays(
     batch: GeometryFeatureBatch, node_count: int
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -635,6 +657,29 @@ def attach_geometry_features(
         graph.ndata["face_points"] = torch.from_numpy(points).to(torch.float32)
         graph.ndata["face_point_mask"] = torch.from_numpy(mask).to(torch.bool)
         graph.ndata["face_point_count"] = torch.from_numpy(counts).to(torch.int32)
+    if options.include_parametric_surface:
+        metrics = np.asarray(batch.face_surface_metric)
+        neighbors = np.asarray(batch.face_trim_neighbors)
+        if metrics.shape != (
+            graph.num_nodes(),
+            96,
+            SURFACE_METRIC_DIM,
+        ):
+            raise ValueError("face_surface_metric shape differs from the contract")
+        if neighbors.shape != (
+            graph.num_nodes(),
+            96,
+            SURFACE_NEIGHBOR_COUNT,
+        ):
+            raise ValueError("face_trim_neighbors shape differs from the contract")
+        if not np.isfinite(metrics).all():
+            raise ValueError("face_surface_metric contains non-finite values")
+        graph.ndata["face_surface_metric"] = torch.from_numpy(metrics).to(
+            torch.float32
+        )
+        graph.ndata["face_trim_neighbors"] = torch.from_numpy(neighbors).to(
+            torch.int16
+        )
     if options.include_cylindrical_pos:
         graph.ndata["cylindrical_pos"] = torch.from_numpy(cylindrical).to(
             torch.float32
@@ -670,6 +715,11 @@ def validate_bin(
     if requirements.require_pointcloud:
         _require_fields(set(graph.ndata), POINTCLOUD_NODE_KEYS, "node data")
         _require_fields(set(metadata), POINTCLOUD_METADATA_KEYS, "metadata")
+    if requirements.require_parametric_surface:
+        _require_fields(
+            set(graph.ndata), PARAMETRIC_SURFACE_NODE_KEYS, "node data"
+        )
+        _require_fields(set(metadata), {"surface_feature_contract"}, "metadata")
     if requirements.require_cylindrical:
         _require_fields(set(graph.ndata), CYLINDRICAL_NODE_KEYS, "node data")
 
@@ -876,6 +926,61 @@ def validate_bin(
                     "BIN {0} does not match the requested point sampling".format(key)
                 )
 
+    if requirements.require_parametric_surface:
+        metrics = graph.ndata["face_surface_metric"]
+        neighbors = graph.ndata["face_trim_neighbors"]
+        contract = metadata["surface_feature_contract"]
+        if tuple(metrics.shape) != (count, 96, SURFACE_METRIC_DIM):
+            raise ValueError("BIN face_surface_metric shape differs from the contract")
+        if tuple(neighbors.shape) != (
+            count,
+            96,
+            SURFACE_NEIGHBOR_COUNT,
+        ):
+            raise ValueError("BIN face_trim_neighbors shape differs from the contract")
+        if metrics.dtype != torch.float32 or neighbors.dtype != torch.int16:
+            raise ValueError("BIN parametric-surface dtypes are invalid")
+        expected_contract = surface_geometry_metadata()[
+            "surface_feature_contract"
+        ]
+        if not torch.equal(contract.cpu(), expected_contract):
+            raise ValueError("BIN surface_feature_contract is invalid")
+        if not bool(torch.isfinite(metrics).all()):
+            raise ValueError("BIN face_surface_metric contains non-finite values")
+        mask = graph.ndata["face_point_mask"].to(torch.bool)
+        if not bool(metrics[~mask].eq(0).all()):
+            raise ValueError("BIN padded face_surface_metric must be zero")
+        valid_metrics = metrics[mask]
+        determinant = (
+            valid_metrics[:, 0] * valid_metrics[:, 2]
+            - valid_metrics[:, 1].square()
+        )
+        if not bool(
+            (
+                (valid_metrics[:, 0] > 0)
+                & (valid_metrics[:, 2] > 0)
+                & (determinant >= -1e-5)
+            ).all()
+        ):
+            raise ValueError("BIN face_surface_metric is not positive semidefinite")
+        if not bool(neighbors[~mask].eq(-1).all()):
+            raise ValueError("BIN padded face_trim_neighbors must be -1")
+        if not bool(((neighbors >= -1) & (neighbors < 96)).all()):
+            raise ValueError("BIN face_trim_neighbors contains invalid indices")
+        valid_neighbor_entries = neighbors[mask]
+        if bool((valid_neighbor_entries >= 0).any()):
+            face_counts = graph.ndata["face_point_count"].to(torch.int64)
+            expanded_counts = face_counts[:, None, None].expand_as(neighbors)
+            if not bool(
+                (
+                    (neighbors < 0)
+                    | (neighbors.to(torch.int64) < expanded_counts)
+                ).all()
+            ):
+                raise ValueError(
+                    "BIN face_trim_neighbors indexes padded face points"
+                )
+
     if requirements.require_cylindrical:
         cylindrical = graph.ndata["cylindrical_pos"]
         if tuple(cylindrical.shape) != (count, 4):
@@ -920,6 +1025,7 @@ def convert_one(
     requirements = BinRequirements(
         require_instance=True,
         require_pointcloud=options.include_face_pointcloud,
+        require_parametric_surface=options.include_parametric_surface,
         require_cylindrical=options.include_cylindrical_pos,
     )
     if target.exists() and not overwrite:
@@ -954,10 +1060,13 @@ def convert_one(
                 sample_id,
                 include_face_pointcloud=options.include_face_pointcloud,
                 include_cylindrical_pos=options.include_cylindrical_pos,
+                include_parametric_surface=options.include_parametric_surface,
             )
             attach_geometry_features(graph, geometry, options)
         if options.include_face_pointcloud:
             metadata.update(geometry_metadata(options.point_sampling))
+        if options.include_parametric_surface:
+            metadata.update(surface_geometry_metadata())
         save_graphs(str(temporary), [graph], metadata)
         validate_bin(
             temporary,
@@ -1104,6 +1213,7 @@ def convert_selected_samples(
             "base_seed": options.seed,
             "point_sampling_mode": options.point_sampling.mode,
             "include_face_pointcloud": options.include_face_pointcloud,
+            "include_parametric_surface": options.include_parametric_surface,
             "include_cylindrical_pos": options.include_cylindrical_pos,
         },
     )
@@ -1139,6 +1249,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--include-face-pointcloud", action="store_true")
+    parser.add_argument("--include-parametric-surface", action="store_true")
     parser.add_argument("--include-cylindrical-pos", action="store_true")
     parser.add_argument(
         "--point-sampling-mode",
@@ -1190,6 +1301,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             seed=args.seed,
             point_sampling=point_sampling,
             include_face_pointcloud=args.include_face_pointcloud,
+            include_parametric_surface=args.include_parametric_surface,
             include_cylindrical_pos=args.include_cylindrical_pos,
         )
         report = convert_selected_samples(

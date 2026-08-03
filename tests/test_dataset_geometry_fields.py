@@ -39,7 +39,13 @@ def _metadata(node_count=2):
     }
 
 
-def _write_bin(root, sample_id, include_points=False, include_cylindrical=False):
+def _write_bin(
+    root,
+    sample_id,
+    include_points=False,
+    include_cylindrical=False,
+    include_parametric=False,
+):
     graph = _core_graph()
     if include_points:
         points = torch.zeros((2, 96, 10), dtype=torch.float32)
@@ -52,6 +58,15 @@ def _write_bin(root, sample_id, include_points=False, include_cylindrical=False)
             torch.arange(96)[None, :] < 64
         ).expand(2, -1).clone()
         graph.ndata["face_point_count"] = torch.full((2,), 64, dtype=torch.int32)
+    if include_parametric:
+        graph.ndata["face_surface_metric"] = torch.zeros(
+            (2, 96, 3), dtype=torch.float32
+        )
+        graph.ndata["face_surface_metric"][:, :64, 0] = 1.0
+        graph.ndata["face_surface_metric"][:, :64, 2] = 1.0
+        graph.ndata["face_trim_neighbors"] = torch.full(
+            (2, 96, 16), -1, dtype=torch.int16
+        )
     if include_cylindrical:
         graph.ndata["cylindrical_pos"] = torch.tensor(
             [[0.0, 0.0, 1.0, 0.0], [1.0, 1.0, 0.0, 1.0]],
@@ -59,7 +74,12 @@ def _write_bin(root, sample_id, include_points=False, include_cylindrical=False)
         )
     path = root / "bin" / (sample_id + ".bin")
     path.parent.mkdir(parents=True, exist_ok=True)
-    save_graphs(str(path), [graph], _metadata())
+    metadata = _metadata()
+    if include_parametric:
+        metadata["surface_feature_contract"] = torch.tensor(
+            [1, 3, 16], dtype=torch.int16
+        )
+    save_graphs(str(path), [graph], metadata)
     return path
 
 
@@ -88,6 +108,20 @@ def new_bin_dataset(tmp_path):
     sample_ids = ("modern_part_001", "modern_part_002")
     for sample_id in sample_ids:
         _write_bin(tmp_path, sample_id, include_points=True, include_cylindrical=True)
+    _write_manifest(tmp_path, "train", sample_ids)
+    return tmp_path
+
+
+@pytest.fixture
+def parametric_bin_dataset(tmp_path):
+    sample_ids = ("surface_part_001", "surface_part_002")
+    for sample_id in sample_ids:
+        _write_bin(
+            tmp_path,
+            sample_id,
+            include_points=True,
+            include_parametric=True,
+        )
     _write_manifest(tmp_path, "train", sample_ids)
     return tmp_path
 
@@ -137,6 +171,21 @@ def test_new_fields_are_concatenated_by_collator(new_bin_dataset):
     assert batch["cylindrical_pos"].shape == (batch["node_data"].shape[0], 4)
     assert batch["data_ids"] == ("modern_part_001", "modern_part_002")
     assert isinstance(batch["data_ids"], tuple)
+
+
+def test_parametric_surface_fields_are_validated_and_collated(
+    parametric_bin_dataset,
+):
+    dataset = CADSynth(
+        parametric_bin_dataset,
+        "train",
+        require_face_pointcloud=True,
+        require_parametric_surface=True,
+    )
+    batch = dataset._collate([dataset[0], dataset[1]])
+    assert batch["face_surface_metric"].shape == (4, 96, 3)
+    assert batch["face_trim_neighbors"].shape == (4, 96, 16)
+    assert batch["face_trim_neighbors"].dtype == torch.int16
 
 
 def test_dataset_normalizes_dgl_roundtrip_uint8_mask_to_bool(new_bin_dataset):

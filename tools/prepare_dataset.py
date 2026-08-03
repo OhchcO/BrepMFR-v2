@@ -30,7 +30,7 @@ from utils.reproducibility import DEFAULT_SEED, derive_seed
 
 
 FORMAT_VERSION = 1
-CONVERTER_FORMAT_VERSION = 3
+CONVERTER_FORMAT_VERSION = 4
 SPLIT_NAMES = ("train", "val", "test")
 DEFAULT_CANDIDATE_GRIDS = (20, 32, 48, 64, 80)
 
@@ -359,6 +359,7 @@ def _conversion_options(config: PreparationConfig) -> dict:
         "area_sampling_exponent": config.area_sampling_exponent,
         "candidate_grids": list(config.candidate_grids),
         "face_pointcloud": True,
+        "parametric_surface": True,
         "cylindrical_pos": True,
         "base_seed": config.seed,
         "point_feature_dimension": POINT_FEATURE_DIM,
@@ -402,7 +403,11 @@ def build_preparation_manifest(
             "schema": _external_file_fingerprint(config.schema_file),
         },
         "selected_ids": normalized,
-        "output_features": {"face_pointcloud": True, "cylindrical_pos": True},
+        "output_features": {
+            "face_pointcloud": True,
+            "parametric_surface": True,
+            "cylindrical_pos": True,
+        },
         "point_feature_contract": {
             "dimension": POINT_FEATURE_DIM,
             "order": list(POINT_FEATURE_ORDER),
@@ -571,11 +576,13 @@ def _converter_contract(config: PreparationConfig, converter: object) -> tuple[o
         point_sampling=point_sampling,
         include_face_pointcloud=True,
         include_cylindrical_pos=True,
+        include_parametric_surface=True,
     )
     requirements = converter.BinRequirements(
         require_instance=True,
         require_pointcloud=True,
         require_cylindrical=True,
+        require_parametric_surface=True,
     )
     return point_sampling, options, requirements
 

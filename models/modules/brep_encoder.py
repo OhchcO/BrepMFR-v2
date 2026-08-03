@@ -74,6 +74,10 @@ class BrepEncoder(nn.Module):
         use_cylindrical_pos: bool = False,
         pointcloud_scale: float = 1.0,
         cylindrical_scale: float = 1.0,
+        face_geometry_encoder: str = "mini_point",
+        surface_neighbor_metric: str = "intrinsic",
+        surface_trim_aware: bool = False,
+        surface_fusion: str = "add",
     ) -> None:
         super().__init__()
 
@@ -98,6 +102,10 @@ class BrepEncoder(nn.Module):
             use_cylindrical_pos=use_cylindrical_pos,
             pointcloud_scale=pointcloud_scale,
             cylindrical_scale=cylindrical_scale,
+            face_geometry_encoder=face_geometry_encoder,
+            surface_neighbor_metric=surface_neighbor_metric,
+            surface_trim_aware=surface_trim_aware,
+            surface_fusion=surface_fusion,
         )
 
         self.graph_attn_bias = GraphAttnBias(
@@ -157,8 +165,10 @@ class BrepEncoder(nn.Module):
         if self.apply_params_init:
             pointcloud_encoder = self.graph_node_feature.pointcloud_encoder
             cylindrical_encoder = self.graph_node_feature.cylindrical_encoder
+            geometry_fusion = self.graph_node_feature.geometry_fusion
             self.graph_node_feature.pointcloud_encoder = None
             self.graph_node_feature.cylindrical_encoder = None
+            self.graph_node_feature.geometry_fusion = None
             try:
                 self.apply(init_params)
             finally:
@@ -166,11 +176,14 @@ class BrepEncoder(nn.Module):
                 self.graph_node_feature.cylindrical_encoder = (
                     cylindrical_encoder
                 )
+                self.graph_node_feature.geometry_fusion = geometry_fusion
             with preserve_torch_rng_state():
                 if pointcloud_encoder is not None:
                     pointcloud_encoder.apply(init_params)
                 if cylindrical_encoder is not None:
                     cylindrical_encoder.apply(init_params)
+                geometry_fusion.apply(init_params)
+                geometry_fusion.reset_output_gates()
 
         # Initialize the experiment-only branch without advancing the RNG used
         # by the shared encoder/classifier. This keeps shared initial weights
@@ -258,6 +271,8 @@ class BrepEncoder(nn.Module):
                 batch_data["padding_mask"],
                 face_points=batch_data.get("face_points"),
                 face_point_mask=batch_data.get("face_point_mask"),
+                face_surface_metric=batch_data.get("face_surface_metric"),
+                face_trim_neighbors=batch_data.get("face_trim_neighbors"),
                 cylindrical_pos=batch_data.get("cylindrical_pos"),
             )
             # x[batch_size, max_node, embedding_dim] 每个节点均嵌入到长度embedding_dim的向量

@@ -99,6 +99,7 @@ class FakeConversionOptions:
     point_sampling: FakePointSamplingConfig
     include_face_pointcloud: bool
     include_cylindrical_pos: bool
+    include_parametric_surface: bool
 
 
 @dataclass(frozen=True)
@@ -106,6 +107,7 @@ class FakeBinRequirements:
     require_instance: bool
     require_pointcloud: bool
     require_cylindrical: bool
+    require_parametric_surface: bool
 
 
 class FakePaths:
@@ -126,6 +128,8 @@ def write_valid_contract_bin(path: Path) -> None:
                 "face_points": [2, 96, 10],
                 "face_point_mask": [2, 96],
                 "face_point_count": [2],
+                "face_surface_metric": [2, 96, 3],
+                "face_trim_neighbors": [2, 96, 16],
                 "cylindrical_pos": [2, 4],
             }
         ),
@@ -137,13 +141,15 @@ def contract_validator(
     path: Path, expected_nodes=None, requirements=None, point_sampling=None
 ) -> None:
     assert expected_nodes is None
-    assert requirements == FakeBinRequirements(True, True, True)
+    assert requirements == FakeBinRequirements(True, True, True, True)
     assert isinstance(point_sampling, FakePointSamplingConfig)
     document = json.loads(path.read_text(encoding="utf-8"))
     assert document == {
         "face_points": [2, 96, 10],
         "face_point_mask": [2, 96],
         "face_point_count": [2],
+        "face_surface_metric": [2, 96, 3],
+        "face_trim_neighbors": [2, 96, 16],
         "cylindrical_pos": [2, 4],
     }
 
@@ -196,7 +202,7 @@ def test_manifest_publishes_10d_point_feature_contract(tmp_path):
 
     manifest = build_preparation_manifest(config, selected, samples=samples)
 
-    assert manifest["converter_format_version"] == 3
+    assert manifest["converter_format_version"] == 4
     assert manifest["point_feature_contract"] == {
         "dimension": 10,
         "order": [
@@ -487,6 +493,7 @@ def test_converter_receives_published_options_and_automatic_path_contract(tmp_pa
             ),
             include_face_pointcloud=True,
             include_cylindrical_pos=True,
+            include_parametric_surface=True,
         )
         assert paths.dataset_root == config.raw_root
         assert paths.subset_root == config.prepared_root

@@ -84,6 +84,29 @@ def test_importing_segmentation_does_not_parse_process_arguments(segmentation):
     assert callable(segmentation.main)
 
 
+def test_parametric_surface_cli_switches_are_configurable(segmentation):
+    args = segmentation.build_parser().parse_args(
+        [
+            "train",
+            "--dataset_path",
+            "prepared",
+            "--use_face_pointcloud",
+            "--face_geometry_encoder",
+            "param_surface",
+            "--surface_neighbor_metric",
+            "intrinsic",
+            "--surface_trim_aware",
+            "--surface_fusion",
+            "gated",
+        ]
+    )
+    segmentation._validate_configuration(segmentation.build_parser(), args)
+    assert args.face_geometry_encoder == "param_surface"
+    assert args.surface_neighbor_metric == "intrinsic"
+    assert args.surface_trim_aware is True
+    assert args.surface_fusion == "gated"
+
+
 @pytest.mark.parametrize(
     (
         "alias",
@@ -808,7 +831,19 @@ def test_test_dataset_requirements_come_from_checkpoint_hparams(test_mfrinstseg)
 
     assert requirements.use_face_uv is False
     assert requirements.require_face_pointcloud is True
+    assert requirements.require_parametric_surface is False
     assert requirements.require_cylindrical_pos is False
+
+
+def test_parametric_checkpoint_requires_surface_bin_fields(test_mfrinstseg):
+    requirements = test_mfrinstseg.geometry_requirements(
+        {
+            "use_face_pointcloud": True,
+            "face_geometry_encoder": "param_surface",
+        }
+    )
+    assert requirements.require_face_pointcloud is True
+    assert requirements.require_parametric_surface is True
 
 
 def test_old_checkpoint_defaults_to_uv_enabled(test_mfrinstseg):

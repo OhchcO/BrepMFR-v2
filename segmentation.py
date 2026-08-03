@@ -153,6 +153,32 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pointcloud_scale", type=float, default=1.0)
     parser.add_argument("--cylindrical_scale", type=float, default=1.0)
     parser.add_argument(
+        "--face_geometry_encoder",
+        choices=("mini_point", "param_surface"),
+        default="mini_point",
+    )
+    parser.add_argument(
+        "--surface_neighbor_metric",
+        choices=("xyz", "uv", "intrinsic"),
+        default="intrinsic",
+    )
+    parser.add_argument(
+        "--surface_trim_aware",
+        dest="surface_trim_aware",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--no_surface_trim_aware",
+        dest="surface_trim_aware",
+        action="store_false",
+    )
+    parser.set_defaults(surface_trim_aware=False)
+    parser.add_argument(
+        "--surface_fusion",
+        choices=("add", "gated"),
+        default="add",
+    )
+    parser.add_argument(
         "--point_sampling_mode",
         choices=("fixed", "area_adaptive"),
         default="area_adaptive",
@@ -380,6 +406,17 @@ def _validate_configuration(
         parser.error(
             "--random_rotate cannot be combined with cylindrical positions"
         )
+    if args.face_geometry_encoder == "param_surface" and not args.use_face_pointcloud:
+        parser.error(
+            "--face_geometry_encoder param_surface requires --use_face_pointcloud"
+        )
+    if args.surface_trim_aware and (
+        args.face_geometry_encoder != "param_surface"
+        or args.surface_neighbor_metric != "intrinsic"
+    ):
+        parser.error(
+            "--surface_trim_aware requires param_surface with intrinsic neighbours"
+        )
     if args.instance_bias_last_layers < 1:
         parser.error("--instance_bias_last_layers must be positive")
     if args.instance_bias_confidence_power < 0:
@@ -473,6 +510,7 @@ def _run_configuration(
                 },
             ),
             "output_face_pointcloud": True if args.auto_prepare else None,
+            "output_parametric_surface": True if args.auto_prepare else None,
             "output_cylindrical_pos": True if args.auto_prepare else None,
         }
     )
@@ -494,6 +532,10 @@ def _dataset_options(
         "num_class": args.num_classes,
         "require_instance": require_instance,
         "require_face_pointcloud": args.use_face_pointcloud,
+        "require_parametric_surface": (
+            args.use_face_pointcloud
+            and args.face_geometry_encoder == "param_surface"
+        ),
         "require_cylindrical_pos": args.use_cylindrical_pos,
         "seed": args.seed,
     }

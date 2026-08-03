@@ -10,6 +10,7 @@ from dgl.data.utils import load_graphs, save_graphs
 from tools import mfrinstseg_to_bin
 from tools.geometry_features import (
     POINT_FEATURE_DIM,
+    SURFACE_NEIGHBOR_COUNT,
     GeometryFeatureBatch,
     PointSamplingConfig,
 )
@@ -22,6 +23,7 @@ from tools.mfrinstseg_to_bin import (
     convert_one,
     convert_selected_samples,
     geometry_metadata,
+    surface_geometry_metadata,
     validate_bin,
 )
 
@@ -123,6 +125,54 @@ def test_geometry_bin_has_exact_shapes_and_dtypes_and_allows_extra_fields(tmp_pa
     assert metadata["point_sampling_config"].dtype == torch.float32
     assert metadata["point_candidate_grid"].dtype == torch.int32
     assert metadata["point_feature_contract"].tolist() == [2, 10, 1, 2]
+
+
+def test_parametric_surface_bin_contract_roundtrip(tmp_path):
+    path = tmp_path / "parametric.bin"
+    batch = make_geometry_batch()
+    metrics = np.zeros((2, 96, 3), dtype=np.float32)
+    metrics[:, :64, 0] = 1.0
+    metrics[:, :64, 2] = 1.0
+    neighbors = np.full(
+        (2, 96, SURFACE_NEIGHBOR_COUNT), -1, dtype=np.int16
+    )
+    neighbors[:, :64, 0] = (
+        np.arange(64, dtype=np.int16)[None, :] + 1
+    ) % 64
+    batch = replace(
+        batch,
+        face_surface_metric=metrics,
+        face_trim_neighbors=neighbors,
+    )
+    options = ConversionOptions(
+        include_face_pointcloud=True,
+        include_parametric_surface=True,
+    )
+    graph = make_core_graph()
+    attach_geometry_features(graph, batch, options)
+    metadata = make_core_metadata()
+    metadata.update(geometry_metadata(options.point_sampling))
+    metadata.update(surface_geometry_metadata())
+    save_graphs(str(path), [graph], metadata)
+
+    validate_bin(
+        path,
+        expected_nodes=2,
+        requirements=BinRequirements(
+            require_instance=True,
+            require_pointcloud=True,
+            require_parametric_surface=True,
+        ),
+    )
+    loaded_graph = load_graphs(str(path))[0][0]
+    assert loaded_graph.ndata["face_surface_metric"].shape == (2, 96, 3)
+    assert loaded_graph.ndata["face_surface_metric"].dtype == torch.float32
+    assert loaded_graph.ndata["face_trim_neighbors"].shape == (
+        2,
+        96,
+        SURFACE_NEIGHBOR_COUNT,
+    )
+    assert loaded_graph.ndata["face_trim_neighbors"].dtype == torch.int16
 
 
 def test_geometry_bin_accepts_dgl_roundtrip_uint8_logical_mask(tmp_path):

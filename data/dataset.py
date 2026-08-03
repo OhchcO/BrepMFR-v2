@@ -21,6 +21,10 @@ POINTCLOUD_NODE_FIELDS = (
     "face_point_mask",
     "face_point_count",
 )
+PARAMETRIC_SURFACE_NODE_FIELDS = (
+    "face_surface_metric",
+    "face_trim_neighbors",
+)
 CYLINDRICAL_NODE_FIELDS = ("cylindrical_pos",)
 
 
@@ -38,6 +42,7 @@ class CADSynth(Dataset):
         num_class=25,
         require_instance=False,
         require_face_pointcloud=False,
+        require_parametric_surface=False,
         require_cylindrical_pos=False,
         seed=DEFAULT_SEED,
     ):
@@ -46,12 +51,17 @@ class CADSynth(Dataset):
             raise ValueError(
                 "random_rotate cannot be used with require_cylindrical_pos"
             )
+        if require_parametric_surface and not require_face_pointcloud:
+            raise ValueError(
+                "require_parametric_surface requires face pointcloud fields"
+            )
         path = pathlib.Path(root_dir)
         self.split = split
         self.num_class = num_class
         self.random_rotate = random_rotate
         self.require_instance = require_instance
         self.require_face_pointcloud = require_face_pointcloud
+        self.require_parametric_surface = require_parametric_surface
         self.require_cylindrical_pos = require_cylindrical_pos
         self.seed = int(seed)
         self.file_paths = []
@@ -130,6 +140,8 @@ class CADSynth(Dataset):
             "face_points": None,
             "face_point_mask": None,
             "face_point_count": None,
+            "face_surface_metric": None,
+            "face_trim_neighbors": None,
             "cylindrical_pos": None,
         }
         node_count = graph.num_nodes()
@@ -252,6 +264,101 @@ class CADSynth(Dataset):
                 face_point_count=counts,
             )
 
+        if self.require_parametric_surface:
+            contract = metadata.get("surface_feature_contract")
+            expected_contract = torch.tensor([1, 3, 16], dtype=torch.int16)
+            if (
+                contract is None
+                or contract.dtype != torch.int16
+                or tuple(contract.shape) != (3,)
+                or not torch.equal(contract.cpu(), expected_contract)
+            ):
+                self._invalid_geometry(
+                    file_path,
+                    "surface_feature_contract",
+                    "expected int16 values [1, 3, 16]",
+                )
+            metrics = self._required_node_field(
+                graph, "face_surface_metric", file_path
+            )
+            neighbors = self._required_node_field(
+                graph, "face_trim_neighbors", file_path
+            )
+            if tuple(metrics.shape) != (
+                node_count,
+                FACE_POINT_CAPACITY,
+                3,
+            ) or metrics.dtype != torch.float32:
+                self._invalid_geometry(
+                    file_path,
+                    "face_surface_metric",
+                    "expected float32 shape ({}, 96, 3)".format(node_count),
+                )
+            if not bool(torch.isfinite(metrics).all()):
+                self._invalid_geometry(
+                    file_path, "face_surface_metric", "contains non-finite values"
+                )
+            if tuple(neighbors.shape) != (
+                node_count,
+                FACE_POINT_CAPACITY,
+                16,
+            ) or neighbors.dtype != torch.int16:
+                self._invalid_geometry(
+                    file_path,
+                    "face_trim_neighbors",
+                    "expected int16 shape ({}, 96, 16)".format(node_count),
+                )
+            logical_mask = geometry["face_point_mask"]
+            if not bool(metrics[~logical_mask].eq(0).all()):
+                self._invalid_geometry(
+                    file_path,
+                    "face_surface_metric",
+                    "padded values must be zero",
+                )
+            valid_metrics = metrics[logical_mask]
+            determinant = (
+                valid_metrics[:, 0] * valid_metrics[:, 2]
+                - valid_metrics[:, 1].square()
+            )
+            if not bool(
+                (
+                    (valid_metrics[:, 0] > 0)
+                    & (valid_metrics[:, 2] > 0)
+                    & (determinant >= -1e-5)
+                ).all()
+            ):
+                self._invalid_geometry(
+                    file_path,
+                    "face_surface_metric",
+                    "valid metrics must be positive semidefinite",
+                )
+            if not bool(neighbors[~logical_mask].eq(-1).all()):
+                self._invalid_geometry(
+                    file_path,
+                    "face_trim_neighbors",
+                    "padded rows must be -1",
+                )
+            counts = geometry["face_point_count"].to(torch.int64)
+            expanded_counts = counts[:, None, None].expand_as(neighbors)
+            if not bool(
+                (
+                    (neighbors >= -1)
+                    & (
+                        (neighbors < 0)
+                        | (neighbors.to(torch.int64) < expanded_counts)
+                    )
+                ).all()
+            ):
+                self._invalid_geometry(
+                    file_path,
+                    "face_trim_neighbors",
+                    "contains padded or out-of-range indices",
+                )
+            geometry.update(
+                face_surface_metric=metrics,
+                face_trim_neighbors=neighbors,
+            )
+
         if self.require_cylindrical_pos:
             cylindrical = self._required_node_field(
                 graph, "cylindrical_pos", file_path
@@ -312,6 +419,8 @@ class CADSynth(Dataset):
         fields_to_remove = []
         if not self.require_face_pointcloud:
             fields_to_remove.extend(POINTCLOUD_NODE_FIELDS)
+        if not self.require_parametric_surface:
+            fields_to_remove.extend(PARAMETRIC_SURFACE_NODE_FIELDS)
         if not self.require_cylindrical_pos:
             fields_to_remove.extend(CYLINDRICAL_NODE_FIELDS)
         for field in fields_to_remove:
@@ -340,6 +449,8 @@ class CADSynth(Dataset):
         pyg_graph.face_points = geometry["face_points"]
         pyg_graph.face_point_mask = geometry["face_point_mask"]
         pyg_graph.face_point_count = geometry["face_point_count"]
+        pyg_graph.face_surface_metric = geometry["face_surface_metric"]
+        pyg_graph.face_trim_neighbors = geometry["face_trim_neighbors"]
         pyg_graph.cylindrical_pos = geometry["cylindrical_pos"]
 
         pyg_graph.face_type = graph.ndata["z"].type(torch.int)   # face_type[num_nodes]

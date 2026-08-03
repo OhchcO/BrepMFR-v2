@@ -80,6 +80,7 @@ def make_graph_node_feature(
     pointcloud_scale=1.0,
     cylindrical_scale=1.0,
     use_face_uv=True,
+    **surface_options,
 ):
     return GraphNodeFeature(
         num_heads=8,
@@ -91,11 +92,18 @@ def make_graph_node_feature(
         use_cylindrical_pos=use_cylindrical_pos,
         pointcloud_scale=pointcloud_scale,
         cylindrical_scale=cylindrical_scale,
+        **surface_options,
     ).eval()
 
 
 def graph_node_inputs():
     points, point_mask = valid_face_point_batch(face_count=2)
+    metrics = torch.zeros(2, 96, 3)
+    metrics[:, :32, 0] = 1.0
+    metrics[:, :32, 2] = 1.0
+    neighbors = torch.full((2, 96, 16), -1, dtype=torch.int16)
+    for index in range(32):
+        neighbors[:, index, 0] = (index + 1) % 32
     return {
         "x": torch.randn(2, 4, 4, 7),
         "face_area": torch.rand(2),
@@ -105,6 +113,8 @@ def graph_node_inputs():
         "padding_mask": torch.tensor([[False, False]]),
         "face_points": points,
         "face_point_mask": point_mask,
+        "face_surface_metric": metrics,
+        "face_trim_neighbors": neighbors,
         "cylindrical_pos": torch.randn(2, 4),
     }
 
@@ -225,6 +235,32 @@ def test_zero_geometry_scales_match_base_node_feature():
             inputs["face_degree"],
             inputs["padding_mask"],
         )
+
+
+def test_parametric_surface_gated_fusion_starts_as_exact_base():
+    torch.manual_seed(2026)
+    baseline = make_graph_node_feature()
+    torch.manual_seed(2026)
+    enhanced = make_graph_node_feature(
+        use_face_pointcloud=True,
+        use_cylindrical_pos=True,
+        face_geometry_encoder="param_surface",
+        surface_neighbor_metric="intrinsic",
+        surface_trim_aware=True,
+        surface_fusion="gated",
+    )
+    enhanced.load_state_dict(baseline.state_dict(), strict=False)
+    inputs = graph_node_inputs()
+
+    with torch.no_grad():
+        baseline_outputs = baseline(
+            inputs["x"],
+            inputs["face_area"],
+            inputs["face_type"],
+            inputs["face_loop"],
+            inputs["face_degree"],
+            inputs["padding_mask"],
+        )
         enhanced_outputs = enhanced(**inputs)
 
     for baseline_output, enhanced_output in zip(
@@ -236,6 +272,12 @@ def test_zero_geometry_scales_match_base_node_feature():
             atol=0.0,
             rtol=0.0,
         )
+        enhanced_outputs = enhanced(**inputs)
+
+    for baseline_output, enhanced_output in zip(
+        baseline_outputs, enhanced_outputs
+    ):
+        assert torch.equal(baseline_output, enhanced_output)
 
 
 class RecordingGraphAttnBias(nn.Module):

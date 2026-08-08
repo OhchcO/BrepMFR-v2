@@ -5,7 +5,7 @@ param(
     [string]$RawDatasetPath = "D:\Code\Datasets\MFRInstSeg",
     [string]$PreparedDatasetBase = "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG10D",
     [string]$ResultBasePath = "D:\Code\BrepMFR\results",
-    [string]$PythonExe = "G:\ProgramData\anaconda3\envs\aagmspenv\python.exe",
+    [string]$PythonExe = "F:\ProgramData\anaconda3\envs\aagmspenv\python.exe",
     [string]$TrainingLauncher = "",
     [string]$TestLauncher = ""
 )
@@ -158,3 +158,4 @@ foreach ($Experiment in $Experiments) {
 
 Write-Host ""
 Write-Host "Completed all core experiments for seed $Seed."
+

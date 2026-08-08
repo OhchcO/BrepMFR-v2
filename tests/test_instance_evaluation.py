@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import sys
 
 from tools import test_mfrinstseg
 from tools.test_mfrinstseg import (
@@ -28,6 +29,28 @@ def test_instance_bias_scale_override_none_preserves_checkpoint_value():
 
     assert values == (1.0, 1.0, False)
     assert relation_bias.bias_scale == 1.0
+
+
+def test_evaluation_parser_accepts_separate_shared_bin_root(monkeypatch, tmp_path):
+    checkpoint = tmp_path / "best.ckpt"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "test_mfrinstseg.py",
+            "--checkpoint",
+            str(checkpoint),
+            "--dataset-path",
+            str(tmp_path / "ten_pct"),
+            "--shared-bin-cache-path",
+            str(tmp_path / "shared"),
+        ],
+    )
+
+    args = test_mfrinstseg.parse_args()
+
+    assert args.dataset_path == tmp_path / "ten_pct"
+    assert args.shared_bin_cache_path == tmp_path / "shared"
 
 
 def test_instance_bias_scale_override_zero_disables_loaded_bias():

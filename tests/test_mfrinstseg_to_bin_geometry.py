@@ -1,4 +1,5 @@
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import dgl
@@ -26,6 +27,35 @@ from tools.mfrinstseg_to_bin import (
     surface_geometry_metadata,
     validate_bin,
 )
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_repository_schema_matches_converter_contract():
+    schema = mfrinstseg_to_bin.load_schema(PROJECT_ROOT / "tools" / "schema.json")
+
+    assert schema["UV-grid"] == {
+        "num_srf_u": 5,
+        "num_srf_v": 5,
+        "num_crv_u": 5,
+    }
+
+
+def test_repository_extractor_exposes_required_interfaces():
+    extractor, topology_utils = mfrinstseg_to_bin.load_extractor(
+        PROJECT_ROOT / "tools" / "AAGExtractor.py"
+    )
+
+    assert extractor.__name__ == "AAGExtractor"
+    assert topology_utils.__name__.endswith("TopologyUtils")
+
+
+def test_converter_defaults_to_repository_aag_assets():
+    args = mfrinstseg_to_bin.parse_args([])
+
+    assert args.extractor_file == PROJECT_ROOT / "tools" / "AAGExtractor.py"
+    assert args.schema_file == PROJECT_ROOT / "tools" / "schema.json"
 
 
 def make_core_graph():
@@ -538,6 +568,40 @@ def test_selected_conversion_accepts_automatic_preparation_root_contract(
     ) == "[]\n"
 
 
+def test_conversion_paths_can_store_bins_under_a_shared_cache(tmp_path):
+    paths = ConversionPaths(
+        dataset_root=tmp_path / "raw",
+        subset_root=tmp_path / "manifests",
+        output_root=tmp_path / "reports",
+        bin_cache_root=tmp_path / "shared",
+    )
+
+    assert paths.bins_root == tmp_path / "shared" / "bin"
+    assert paths.bin_file("sample_001") == (
+        tmp_path / "shared" / "bin" / "sample_001.bin"
+    )
+
+
+def test_conversion_paths_keep_legacy_output_bin_default(tmp_path):
+    paths = ConversionPaths(
+        dataset_root=tmp_path / "raw",
+        subset_root=tmp_path / "manifests",
+        output_root=tmp_path / "reports",
+    )
+
+    assert paths.bins_root == tmp_path / "reports" / "bin"
+
+
+def test_converter_cli_accepts_separate_bin_cache_root(tmp_path):
+    shared = tmp_path / "shared"
+
+    args = mfrinstseg_to_bin.parse_args(
+        ["--bin-cache-root", str(shared)]
+    )
+
+    assert args.bin_cache_root == shared
+
+
 def make_convert_one_fixture(tmp_path, monkeypatch):
     paths = ConversionPaths(
         dataset_root=tmp_path / "raw",
@@ -570,11 +634,43 @@ def make_convert_one_fixture(tmp_path, monkeypatch):
         def __init__(self, step_file, attribute_schema):
             self.step_file = step_file
             self.attribute_schema = attribute_schema
+            self._graph = object()
 
         def process(self):
             return {"extraction": True}
 
     return paths, FakeExtractor
+
+
+def test_convert_one_retains_extractor_topology_in_memory(tmp_path, monkeypatch):
+    paths, extractor_class = make_convert_one_fixture(tmp_path, monkeypatch)
+    captured = {}
+
+    def fake_build_graph(extraction, *args):
+        captured["extractor"] = extraction["_extractor"]
+        return make_core_graph()
+
+    monkeypatch.setattr(mfrinstseg_to_bin, "build_graph", fake_build_graph)
+    monkeypatch.setattr(
+        mfrinstseg_to_bin,
+        "save_graphs",
+        lambda path, *args: type(paths.bin_file("sample"))(path).write_bytes(b"bin"),
+    )
+    monkeypatch.setattr(mfrinstseg_to_bin, "validate_bin", lambda *args, **kwargs: None)
+
+    assert (
+        convert_one(
+            "sample",
+            paths,
+            extractor_class,
+            topology_utils=object(),
+            schema={},
+            options=ConversionOptions(),
+            overwrite=True,
+        )
+        == "converted"
+    )
+    assert captured["extractor"]._graph is not None
 
 
 def test_convert_one_validates_temporary_before_atomic_replace(

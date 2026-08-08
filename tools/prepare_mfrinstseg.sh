@@ -13,8 +13,8 @@ DATASET_ROOT="D:/Code/Datasets/MFRInstSeg"
 SUBSET_ROOT="${DATASET_ROOT}/subsets/train_val_1pct_balanced"
 OUTPUT_ROOT="D:/Code/Datasets/MFRInstSeg_BrepMFR"
 
-EXTRACTOR_FILE="D:/Code/BrepMFR-g/data_set_line/AAGExtractor.py"
-SCHEMA_FILE="D:/Code/BrepMFR-g/data_set_line/schema.json"
+EXTRACTOR_FILE="${PROJECT_ROOT}/tools/AAGExtractor.py"
+SCHEMA_FILE="${PROJECT_ROOT}/tools/schema.json"
 
 # 0.01 means 1%.  The ratio is applied to train and val independently.
 RATIO="0.01"

@@ -141,6 +141,20 @@ def test_old_bin_loads_when_geometry_is_disabled(old_bin_dataset):
     assert item.data_id == "legacy_part_001"
 
 
+def test_dataset_reads_manifests_and_bins_from_separate_roots(tmp_path):
+    manifest_root = tmp_path / "one_pct"
+    bin_root = tmp_path / "shared"
+    sample_id = "shared_part_001"
+    manifest_root.mkdir()
+    _write_manifest(manifest_root, "train", (sample_id,))
+    expected_bin = _write_bin(bin_root, sample_id)
+
+    dataset = CADSynth(manifest_root, "train", bin_root=bin_root)
+
+    assert dataset.file_paths == [expected_bin]
+    assert dataset[0].data_id == sample_id
+
+
 def test_missing_point_fields_fail_when_enabled(old_bin_dataset):
     dataset = CADSynth(old_bin_dataset, "train", require_face_pointcloud=True)
 

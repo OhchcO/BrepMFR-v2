@@ -2,7 +2,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Checkpoint,
     [string]$PreparedDataset = "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG",
-    [string]$PythonExe = "G:\ProgramData\anaconda3\envs\aagmspenv\python.exe",
+    [string]$SharedBinCachePath = "",
+    [string[]]$DonorPreparedDatasetPaths = @(),
+    [string]$PythonExe = "F:\ProgramData\anaconda3\envs\aagmspenv\python.exe",
     [int]$Seed = 2026,
     [int]$BatchSize = 16,
     [int]$NumWorkers = 0,
@@ -13,8 +15,8 @@ param(
     [switch]$Prepare,
     [switch]$RebuildPreparedData,
     [string]$RawDatasetPath = "D:\Code\Datasets\MFRInstSeg",
-    [string]$ExtractorFile = "D:\Code\BrepMFR-g\data_set_line\AAGExtractor.py",
-    [string]$SchemaFile = "D:\Code\BrepMFR-g\data_set_line\schema.json",
+    [string]$ExtractorFile = "",
+    [string]$SchemaFile = "",
     [double]$SamplePercent = 0.01,
     [double[]]$SplitRatios = @(0.8, 0.1, 0.1),
     [ValidateSet("fixed", "area_adaptive")]
@@ -31,6 +33,12 @@ $env:CUBLAS_WORKSPACE_CONFIG = ":4096:8"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Preparer = Join-Path $PSScriptRoot "prepare_dataset.py"
 $Evaluator = Join-Path $PSScriptRoot "test_mfrinstseg.py"
+if ([string]::IsNullOrWhiteSpace($ExtractorFile)) {
+    $ExtractorFile = Join-Path $PSScriptRoot "AAGExtractor.py"
+}
+if ([string]::IsNullOrWhiteSpace($SchemaFile)) {
+    $SchemaFile = Join-Path $PSScriptRoot "schema.json"
+}
 
 foreach ($RequiredFile in @(
     $PythonExe,
@@ -94,6 +102,15 @@ try {
         if ($RebuildPreparedData) {
             $PreparationArguments += "--rebuild"
         }
+        if (-not [string]::IsNullOrWhiteSpace($SharedBinCachePath)) {
+            $PreparationArguments += @(
+                "--shared-bin-cache", $SharedBinCachePath
+            )
+        }
+        if ($DonorPreparedDatasetPaths.Count -gt 0) {
+            $PreparationArguments += "--donor-prepared-dataset"
+            $PreparationArguments += $DonorPreparedDatasetPaths
+        }
 
         & $PythonExe @PreparationArguments
         if ($LASTEXITCODE -ne 0) {
@@ -121,6 +138,11 @@ try {
     if ($EvaluateInstances) {
         $EvaluationArguments += "--evaluate-instances"
     }
+    if (-not [string]::IsNullOrWhiteSpace($SharedBinCachePath)) {
+        $EvaluationArguments += @(
+            "--shared-bin-cache-path", $SharedBinCachePath
+        )
+    }
     if ($null -ne $InstanceBiasScaleOverride) {
         $EvaluationArguments += @(
             "--instance-bias-scale-override",
@@ -137,3 +159,4 @@ try {
 finally {
     Pop-Location
 }
+

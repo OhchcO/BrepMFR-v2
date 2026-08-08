@@ -1,0 +1,4 @@
+{"sessionId": "bm-write-crash", "runId": "pre", "hypothesisId": "C", "location": "repro:spawn", "msg": "spawning server cmd=F:\\ProgramData\\anaconda3\\envs\\basicmem\\Scripts\\basic-memory.exe", "data": {}, "ts": 1786083090228}
+{"sessionId": "bm-write-crash", "runId": "pre", "hypothesisId": "C", "location": "repro:exception", "msg": "client exception: ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)", "data": {}, "ts": 1786083093246}
+{"sessionId": "bm-write-crash", "runId": "pre", "hypothesisId": "C", "location": "repro:spawn", "msg": "spawning server cmd=F:\\ProgramData\\anaconda3\\envs\\basicmem\\Scripts\\basic-memory.exe", "data": {}, "ts": 1786083121546}
+{"sessionId": "bm-write-crash", "runId": "pre", "hypothesisId": "C", "location": "repro:exception", "msg": "client exception: ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)", "data": {}, "ts": 1786083124558}

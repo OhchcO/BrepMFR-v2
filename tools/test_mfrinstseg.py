@@ -125,6 +125,7 @@ def parse_args():
         type=Path,
         default=Path(r"D:\Code\Datasets\MFRInstSeg_BrepMFR"),
     )
+    parser.add_argument("--shared-bin-cache-path", type=Path)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument(
         "--split",
@@ -859,6 +860,7 @@ def main():
     )
     dataset = CADSynth(
         root_dir=args.dataset_path,
+        bin_root=args.shared_bin_cache_path or args.dataset_path,
         split=args.split,
         random_rotate=False,
         num_class=args.num_classes,
@@ -982,6 +984,9 @@ def main():
         "experiment_mode": mode,
         "seed": args.seed,
         "prepared_dataset_path": str(args.dataset_path.resolve()),
+        "bin_cache_path": str(
+            (args.shared_bin_cache_path or args.dataset_path).resolve()
+        ),
         "use_face_uv": requirements.use_face_uv,
         "use_face_pointcloud": requirements.require_face_pointcloud,
         "use_cylindrical_pos": requirements.require_cylindrical_pos,

@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +17,41 @@ from tools.prepare_dataset import (
     resolve_model_splits,
     select_split_subsets,
 )
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_prepare_cli_defaults_to_repository_aag_assets(tmp_path):
+    args = prepare_dataset.build_parser().parse_args(
+        ["--raw-dataset", str(tmp_path), "--prepared-dataset", str(tmp_path / "out")]
+    )
+
+    assert args.extractor_file == PROJECT_ROOT / "tools" / "AAGExtractor.py"
+    assert args.schema_file == PROJECT_ROOT / "tools" / "schema.json"
+
+
+def test_prepare_cli_accepts_shared_cache_and_donor_roots(tmp_path):
+    shared = tmp_path / "shared"
+    donor_one = tmp_path / "one_pct"
+    donor_five = tmp_path / "five_pct"
+
+    args = prepare_dataset.build_parser().parse_args(
+        [
+            "--raw-dataset",
+            str(tmp_path),
+            "--prepared-dataset",
+            str(tmp_path / "ten_pct"),
+            "--shared-bin-cache",
+            str(shared),
+            "--donor-prepared-dataset",
+            str(donor_one),
+            str(donor_five),
+        ]
+    )
+
+    assert args.shared_bin_cache == shared
+    assert args.donor_prepared_dataset == [donor_one, donor_five]
 
 
 def _label_document(sample_id: str) -> dict:
@@ -111,13 +147,14 @@ class FakeBinRequirements:
 
 
 class FakePaths:
-    def __init__(self, dataset_root, subset_root, output_root):
+    def __init__(self, dataset_root, subset_root, output_root, bin_cache_root=None):
         self.dataset_root = dataset_root
         self.subset_root = subset_root
         self.output_root = output_root
+        self.bin_cache_root = bin_cache_root
 
     def bin_file(self, sample_id):
-        return self.output_root / "bin" / (sample_id + ".bin")
+        return (self.bin_cache_root or self.output_root) / "bin" / (sample_id + ".bin")
 
 
 def write_valid_contract_bin(path: Path) -> None:
@@ -220,6 +257,116 @@ def test_manifest_publishes_10d_point_feature_contract(tmp_path):
         "uv_range": [-1.0, 1.0],
         "characteristic_length": "sampled_full_part_bounding_box_diagonal",
     }
+
+
+def test_manifest_initializes_effective_selection_and_exclusion_audit(tmp_path):
+    config = make_preparation_config(tmp_path)
+    samples = discover_raw_samples(config.raw_root)
+    splits = resolve_model_splits(
+        config.raw_root, tuple(samples), config.split_ratios, config.seed
+    )
+    selected = select_split_subsets(
+        config.raw_root, splits, config.sample_percent, config.seed
+    )
+
+    manifest = build_preparation_manifest(config, selected, samples=samples)
+
+    assert manifest["effective_selected_ids"] == {
+        name: list(selected[name]) for name in ("train", "val", "test")
+    }
+    assert manifest["conversion_exclusions"] == []
+    assert manifest["replacement_policy_version"] == 1
+
+
+def test_replacement_outputs_do_not_change_request_fingerprint(tmp_path):
+    config = make_preparation_config(tmp_path)
+    samples = discover_raw_samples(config.raw_root)
+    splits = resolve_model_splits(
+        config.raw_root, tuple(samples), config.split_ratios, config.seed
+    )
+    selected = select_split_subsets(
+        config.raw_root, splits, config.sample_percent, config.seed
+    )
+    manifest = build_preparation_manifest(config, selected, samples=samples)
+    recovered = json.loads(json.dumps(manifest))
+    recovered["effective_selected_ids"]["train"] = ["replacement"]
+    recovered["conversion_exclusions"] = [{"failed_sample_id": "failed"}]
+
+    assert prepare_dataset._request_fingerprint(manifest) == (
+        prepare_dataset._request_fingerprint(recovered)
+    )
+
+
+def test_effective_selection_falls_back_to_legacy_selected_ids():
+    legacy = {
+        "selected_ids": {
+            "train": ["train-id"],
+            "val": ["val-id"],
+            "test": ["test-id"],
+        }
+    }
+
+    assert prepare_dataset._effective_selected_ids(legacy) == {
+        "train": ("train-id",),
+        "val": ("val-id",),
+        "test": ("test-id",),
+    }
+
+
+def test_matching_cache_validates_and_returns_effective_selection(
+    tmp_path, monkeypatch
+):
+    config = make_preparation_config(tmp_path, sample_percent=0.5)
+    samples = discover_raw_samples(config.raw_root)
+    splits = resolve_model_splits(
+        config.raw_root, tuple(samples), config.split_ratios, config.seed
+    )
+    selected = select_split_subsets(
+        config.raw_root, splits, config.sample_percent, config.seed
+    )
+    replacement = next(
+        sample_id
+        for sample_id in splits["train"]
+        if sample_id not in selected["train"]
+    )
+    effective = {
+        "train": tuple(sorted(selected["train"][:-1] + (replacement,))),
+        "val": tuple(selected["val"]),
+        "test": tuple(selected["test"]),
+    }
+    manifest = build_preparation_manifest(config, selected, samples=samples)
+    manifest["effective_selected_ids"] = {
+        name: list(effective[name]) for name in ("train", "val", "test")
+    }
+    manifest["successful_ids"] = {
+        name: list(effective[name]) for name in ("train", "val", "test")
+    }
+    config.prepared_root.mkdir()
+    for split_name, sample_ids in effective.items():
+        (config.prepared_root / (split_name + ".txt")).write_text(
+            "\n".join(sample_ids) + "\n", encoding="utf-8"
+        )
+        for sample_id in sample_ids:
+            write_valid_contract_bin(
+                config.prepared_root / "bin" / (sample_id + ".bin")
+            )
+    (config.prepared_root / "preparation_manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        prepare_dataset,
+        "_load_converter",
+        lambda: fake_converter(
+            lambda *args: pytest.fail("complete effective cache must be reused")
+        ),
+    )
+
+    prepared = ensure_prepared_dataset(config)
+
+    assert prepared.reused is True
+    assert prepared.train_ids == effective["train"]
+    assert prepared.val_ids == effective["val"]
+    assert prepared.test_ids == effective["test"]
 
 
 def test_point_feature_contract_participates_in_cache_fingerprint(tmp_path):
@@ -476,6 +623,130 @@ def test_conversion_is_one_shot_and_records_successful_manifests(tmp_path, monke
     assert (config.prepared_root / "preparation_manifest.json").is_file()
 
 
+def test_shared_bin_identity_excludes_percentage_and_selected_ids(tmp_path):
+    one = make_preparation_config(tmp_path, sample_percent=0.01)
+    samples = discover_raw_samples(one.raw_root)
+    splits = resolve_model_splits(one.raw_root, tuple(samples), one.split_ratios, one.seed)
+    one_selected = select_split_subsets(one.raw_root, splits, 0.01, one.seed)
+    ten = PreparationConfig(**{**one.__dict__, "sample_percent": 0.10})
+    ten_selected = select_split_subsets(ten.raw_root, splits, 0.10, ten.seed)
+
+    one_manifest = build_preparation_manifest(one, one_selected, samples=samples)
+    ten_manifest = build_preparation_manifest(ten, ten_selected, samples=samples)
+
+    assert prepare_dataset._bin_cache_fingerprint(one_manifest) == (
+        prepare_dataset._bin_cache_fingerprint(ten_manifest)
+    )
+
+
+def test_shared_cache_fingerprint_mismatch_fails_closed(tmp_path):
+    config = make_preparation_config(tmp_path, sample_percent=0.10)
+    samples = discover_raw_samples(config.raw_root)
+    splits = resolve_model_splits(
+        config.raw_root, tuple(samples), config.split_ratios, config.seed
+    )
+    selected = select_split_subsets(
+        config.raw_root, splits, config.sample_percent, config.seed
+    )
+    request = build_preparation_manifest(config, selected, samples=samples)
+    shared = tmp_path / "shared"
+    prepare_dataset._ensure_shared_cache_manifest(shared, request)
+    changed = json.loads(json.dumps(request))
+    changed["conversion_options"]["max_point_count"] = 64
+
+    with pytest.raises(PreparationMismatchError, match="Shared BIN cache fingerprint"):
+        prepare_dataset._ensure_shared_cache_manifest(shared, changed)
+
+
+def test_shared_cache_routes_bins_away_from_percentage_root(tmp_path, monkeypatch):
+    base = make_preparation_config(tmp_path, sample_percent=1.0)
+    shared = tmp_path / "shared"
+    config = PreparationConfig(
+        **{**base.__dict__, "shared_bin_cache_root": shared}
+    )
+
+    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+        assert paths.output_root == config.prepared_root
+        assert paths.bin_cache_root == shared
+        for sample_ids in sample_ids_by_split.values():
+            for sample_id in sample_ids:
+                write_valid_contract_bin(paths.bin_file(sample_id))
+        return {"successful_ids": sample_ids_by_split, "failed_ids": []}
+
+    monkeypatch.setattr(
+        prepare_dataset,
+        "_load_converter",
+        lambda: fake_converter(convert_selected_samples),
+    )
+
+    prepared = ensure_prepared_dataset(config)
+
+    assert prepared.root == config.prepared_root
+    assert prepared.bin_root == shared
+    assert (shared / "bin_cache_manifest.json").is_file()
+    assert not (config.prepared_root / "bin").exists()
+
+
+def test_compatible_donor_bins_are_hard_linked_into_shared_cache(tmp_path, monkeypatch):
+    donor_config = make_preparation_config(tmp_path, sample_percent=1.0)
+    samples = discover_raw_samples(donor_config.raw_root)
+    splits = resolve_model_splits(
+        donor_config.raw_root,
+        tuple(samples),
+        donor_config.split_ratios,
+        donor_config.seed,
+    )
+    selected = select_split_subsets(
+        donor_config.raw_root, splits, donor_config.sample_percent, donor_config.seed
+    )
+    donor_manifest = build_preparation_manifest(
+        donor_config, selected, samples=samples
+    )
+    donor_manifest["successful_ids"] = {
+        name: list(ids) for name, ids in selected.items()
+    }
+    donor_config.prepared_root.mkdir()
+    for split_name, ids in selected.items():
+        _write_manifest = donor_config.prepared_root / (split_name + ".txt")
+        _write_manifest.write_text("\n".join(ids) + "\n", encoding="utf-8")
+        for sample_id in ids:
+            write_valid_contract_bin(
+                donor_config.prepared_root / "bin" / (sample_id + ".bin")
+            )
+    (donor_config.prepared_root / "preparation_manifest.json").write_text(
+        json.dumps(donor_manifest), encoding="utf-8"
+    )
+    shared = tmp_path / "shared"
+    target_root = tmp_path / "ten_pct"
+    config = PreparationConfig(
+        **{
+            **donor_config.__dict__,
+            "prepared_root": target_root,
+            "shared_bin_cache_root": shared,
+            "donor_prepared_roots": (donor_config.prepared_root,),
+        }
+    )
+
+    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+        for ids in sample_ids_by_split.values():
+            for sample_id in ids:
+                assert paths.bin_file(sample_id).is_file()
+        return {"successful_ids": sample_ids_by_split, "failed_ids": []}
+
+    monkeypatch.setattr(
+        prepare_dataset,
+        "_load_converter",
+        lambda: fake_converter(convert_selected_samples),
+    )
+
+    ensure_prepared_dataset(config)
+
+    sample_id = selected["train"][0]
+    donor_bin = donor_config.prepared_root / "bin" / (sample_id + ".bin")
+    shared_bin = shared / "bin" / (sample_id + ".bin")
+    assert os.path.samefile(donor_bin, shared_bin)
+
+
 def test_converter_receives_published_options_and_automatic_path_contract(tmp_path, monkeypatch):
     config = make_preparation_config(tmp_path)
 
@@ -576,3 +847,465 @@ def test_conversion_failures_stop_preparation_and_are_persisted(tmp_path, monkey
         (config.prepared_root / "conversion_failures.json").read_text(encoding="utf-8")
     )
     assert failures[0]["sample_id"] == "sample_000"
+
+
+def _replacement_test_selection(config):
+    samples = discover_raw_samples(config.raw_root)
+    splits = resolve_model_splits(
+        config.raw_root, tuple(samples), config.split_ratios, config.seed
+    )
+    selected = select_split_subsets(
+        config.raw_root, splits, config.sample_percent, config.seed
+    )
+    return splits, selected
+
+
+def test_train_conversion_failure_is_replaced_without_changing_subset_size(
+    tmp_path, monkeypatch
+):
+    config = make_preparation_config(tmp_path, sample_percent=0.5)
+    splits, selected = _replacement_test_selection(config)
+    failed_id = selected["train"][-1]
+    calls = []
+
+    def convert_selected_samples(
+        sample_ids_by_split, paths, extractor_file, schema_file, options, overwrite
+    ):
+        batch = {
+            name: tuple(sample_ids_by_split.get(name, ()))
+            for name in ("train", "val", "test")
+        }
+        calls.append(batch)
+        if len(calls) == 1:
+            successful = {
+                name: tuple(
+                    sample_id
+                    for sample_id in batch[name]
+                    if sample_id != failed_id
+                )
+                for name in ("train", "val", "test")
+            }
+            for sample_ids in successful.values():
+                for sample_id in sample_ids:
+                    write_valid_contract_bin(paths.bin_file(sample_id))
+            return {
+                "successful_ids": successful,
+                "failed_ids": [
+                    {
+                        "split": "train",
+                        "sample_id": failed_id,
+                        "exception_type": "ValueError",
+                        "message": "Face 14 has no valid UV candidates",
+                    }
+                ],
+                "conversion": {
+                    "converted": sum(map(len, successful.values())),
+                    "skipped": 0,
+                },
+            }
+        replacement_ids = [sample_id for ids in batch.values() for sample_id in ids]
+        assert len(replacement_ids) == 1
+        write_valid_contract_bin(paths.bin_file(replacement_ids[0]))
+        return {
+            "successful_ids": batch,
+            "failed_ids": [],
+            "conversion": {"converted": 1, "skipped": 0},
+        }
+
+    monkeypatch.setattr(
+        prepare_dataset,
+        "_load_converter",
+        lambda: fake_converter(convert_selected_samples),
+    )
+
+    prepared = ensure_prepared_dataset(config)
+
+    assert len(calls) == 2
+    replacement_id = calls[1]["train"][0]
+    assert replacement_id in splits["train"]
+    assert replacement_id not in selected["train"]
+    assert len(prepared.train_ids) == len(selected["train"])
+    assert failed_id not in prepared.train_ids
+    assert replacement_id in prepared.train_ids
+    assert set(selected["train"][:-1]).issubset(prepared.train_ids)
+    assert prepared.test_ids == selected["test"]
+    exclusions = json.loads(
+        (config.prepared_root / "conversion_exclusions.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert len(exclusions) == 1
+    assert exclusions[0]["failed_sample_id"] == failed_id
+    assert exclusions[0]["replacement_sample_id"] == replacement_id
+    assert exclusions[0]["replacement_succeeded"] is True
+    assert json.loads(
+        (config.prepared_root / "conversion_failures.json").read_text(
+            encoding="utf-8"
+        )
+    ) == []
+    for split_name, expected_ids in (
+        ("train", prepared.train_ids),
+        ("val", prepared.val_ids),
+        ("test", prepared.test_ids),
+    ):
+        assert tuple(
+            (config.prepared_root / (split_name + ".txt"))
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ) == expected_ids
+
+
+def test_failed_replacement_is_audited_before_trying_another_candidate(
+    tmp_path, monkeypatch
+):
+    config = make_preparation_config(tmp_path, sample_percent=0.5)
+    _, selected = _replacement_test_selection(config)
+    initial_failure = selected["train"][-1]
+    calls = []
+
+    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+        batch = {
+            name: tuple(sample_ids_by_split.get(name, ()))
+            for name in ("train", "val", "test")
+        }
+        calls.append(batch)
+        if len(calls) == 1:
+            successful = {
+                name: tuple(
+                    sample_id
+                    for sample_id in batch[name]
+                    if sample_id != initial_failure
+                )
+                for name in ("train", "val", "test")
+            }
+            for sample_ids in successful.values():
+                for sample_id in sample_ids:
+                    write_valid_contract_bin(paths.bin_file(sample_id))
+            return {
+                "successful_ids": successful,
+                "failed_ids": [
+                    {
+                        "split": "train",
+                        "sample_id": initial_failure,
+                        "exception_type": "ValueError",
+                        "message": "initial failure",
+                    }
+                ],
+                "conversion": {"converted": sum(map(len, successful.values()))},
+            }
+        replacement_id = batch["train"][0]
+        if len(calls) == 2:
+            return {
+                "successful_ids": {"train": [], "val": [], "test": []},
+                "failed_ids": [
+                    {
+                        "split": "train",
+                        "sample_id": replacement_id,
+                        "exception_type": "ValueError",
+                        "message": "replacement failure",
+                    }
+                ],
+                "conversion": {"converted": 0},
+            }
+        write_valid_contract_bin(paths.bin_file(replacement_id))
+        return {
+            "successful_ids": batch,
+            "failed_ids": [],
+            "conversion": {"converted": 1},
+        }
+
+    monkeypatch.setattr(
+        prepare_dataset,
+        "_load_converter",
+        lambda: fake_converter(convert_selected_samples),
+    )
+
+    prepared = ensure_prepared_dataset(config)
+
+    assert len(calls) == 3
+    first_replacement = calls[1]["train"][0]
+    second_replacement = calls[2]["train"][0]
+    assert first_replacement != second_replacement
+    assert first_replacement not in prepared.train_ids
+    assert second_replacement in prepared.train_ids
+    exclusions = json.loads(
+        (config.prepared_root / "conversion_exclusions.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert [record["failed_sample_id"] for record in exclusions] == [
+        initial_failure,
+        first_replacement,
+    ]
+    assert [record["replacement_sample_id"] for record in exclusions] == [
+        first_replacement,
+        second_replacement,
+    ]
+    assert [record["replacement_succeeded"] for record in exclusions] == [
+        False,
+        True,
+    ]
+
+
+@pytest.mark.parametrize(
+    "failure_kind",
+    ("test", "missing_sample", "unknown_split", "unknown_selected_id"),
+)
+def test_nonreplaceable_conversion_failures_remain_fatal(
+    tmp_path, monkeypatch, failure_kind
+):
+    config = make_preparation_config(tmp_path, sample_percent=0.5)
+    _, selected = _replacement_test_selection(config)
+    if failure_kind == "test":
+        split_name = "test"
+        failed_id = selected["test"][0]
+    elif failure_kind == "missing_sample":
+        split_name = "train"
+        failed_id = None
+    elif failure_kind == "unknown_split":
+        split_name = "holdout"
+        failed_id = selected["train"][0]
+    else:
+        split_name = "train"
+        failed_id = "not_in_the_selected_subset"
+
+    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+        successful = {
+            name: tuple(
+                sample_id
+                for sample_id in sample_ids_by_split[name]
+                if not (name == split_name and sample_id == failed_id)
+            )
+            for name in ("train", "val", "test")
+        }
+        return {
+            "successful_ids": successful,
+            "failed_ids": [
+                {
+                    "split": split_name,
+                    "sample_id": failed_id,
+                    "exception_type": "ValueError",
+                    "message": failure_kind,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        prepare_dataset,
+        "_load_converter",
+        lambda: fake_converter(convert_selected_samples),
+    )
+
+    with pytest.raises(PreparationError, match="failed"):
+        ensure_prepared_dataset(config)
+
+    persisted = json.loads(
+        (config.prepared_root / "conversion_failures.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert persisted[0]["message"] == failure_kind
+    assert json.loads(
+        (config.prepared_root / "conversion_exclusions.json").read_text(
+            encoding="utf-8"
+        )
+    ) == []
+
+
+def test_replacement_candidate_exhaustion_remains_fatal(tmp_path, monkeypatch):
+    config = make_preparation_config(tmp_path, sample_percent=1.0)
+    _, selected = _replacement_test_selection(config)
+    failed_id = selected["train"][-1]
+
+    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+        successful = {
+            name: tuple(
+                sample_id
+                for sample_id in sample_ids_by_split[name]
+                if sample_id != failed_id
+            )
+            for name in ("train", "val", "test")
+        }
+        for sample_ids in successful.values():
+            for sample_id in sample_ids:
+                write_valid_contract_bin(paths.bin_file(sample_id))
+        return {
+            "successful_ids": successful,
+            "failed_ids": [
+                {
+                    "split": "train",
+                    "sample_id": failed_id,
+                    "exception_type": "ValueError",
+                    "message": "no usable UV samples",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        prepare_dataset,
+        "_load_converter",
+        lambda: fake_converter(convert_selected_samples),
+    )
+
+    with pytest.raises(PreparationError, match="failed"):
+        ensure_prepared_dataset(config)
+
+    persisted = json.loads(
+        (config.prepared_root / "conversion_failures.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert persisted[0]["sample_id"] == failed_id
+    assert persisted[0]["reason"] == "replacement_candidates_exhausted"
+
+
+def test_matching_failed_cache_converts_only_one_balanced_replacement(
+    tmp_path, monkeypatch
+):
+    config = make_preparation_config(tmp_path, sample_percent=0.5)
+    samples = discover_raw_samples(config.raw_root)
+    splits, selected = _replacement_test_selection(config)
+    failed_id = selected["train"][-1]
+    successful = {
+        "train": list(selected["train"][:-1]),
+        "val": list(selected["val"]),
+        "test": list(selected["test"]),
+    }
+    failure = {
+        "split": "train",
+        "sample_id": failed_id,
+        "exception_type": "ValueError",
+        "message": "Face 14 has no valid UV candidates",
+    }
+    manifest = build_preparation_manifest(config, selected, samples=samples)
+    manifest["successful_ids"] = successful
+    manifest["failed_ids"] = [failure]
+    manifest["conversion"] = {
+        "converted": sum(len(ids) for ids in successful.values()),
+        "skipped": 0,
+    }
+    config.prepared_root.mkdir()
+    for split_name, sample_ids in successful.items():
+        (config.prepared_root / (split_name + ".txt")).write_text(
+            "\n".join(sample_ids) + ("\n" if sample_ids else ""),
+            encoding="utf-8",
+        )
+        for sample_id in sample_ids:
+            write_valid_contract_bin(
+                config.prepared_root / "bin" / (sample_id + ".bin")
+            )
+    (config.prepared_root / "preparation_manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    (config.prepared_root / "conversion_failures.json").write_text(
+        json.dumps([failure]), encoding="utf-8"
+    )
+    calls = []
+
+    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+        batch = {
+            name: tuple(sample_ids_by_split.get(name, ()))
+            for name in ("train", "val", "test")
+        }
+        calls.append(batch)
+        submitted = [sample_id for ids in batch.values() for sample_id in ids]
+        assert len(submitted) == 1
+        replacement_id = submitted[0]
+        assert replacement_id not in set().union(*map(set, successful.values()))
+        assert replacement_id not in set().union(*map(set, selected.values()))
+        assert replacement_id in splits["train"]
+        write_valid_contract_bin(paths.bin_file(replacement_id))
+        return {
+            "successful_ids": batch,
+            "failed_ids": [],
+            "conversion": {"converted": 1, "skipped": 0},
+        }
+
+    monkeypatch.setattr(
+        prepare_dataset,
+        "_load_converter",
+        lambda: fake_converter(convert_selected_samples),
+    )
+
+    prepared = ensure_prepared_dataset(config)
+
+    assert prepared.reused is False
+    assert len(calls) == 1
+    assert len(prepared.train_ids) == len(selected["train"])
+    assert failed_id not in prepared.train_ids
+    assert set(successful["train"]).issubset(prepared.train_ids)
+    assert prepared.val_ids == tuple(selected["val"])
+    assert prepared.test_ids == tuple(selected["test"])
+    assert json.loads(
+        (config.prepared_root / "conversion_failures.json").read_text(
+            encoding="utf-8"
+        )
+    ) == []
+    exclusions = json.loads(
+        (config.prepared_root / "conversion_exclusions.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert len(exclusions) == 1
+    assert exclusions[0]["failed_sample_id"] == failed_id
+
+
+def test_unstructured_replacement_converter_error_is_fatal_without_retry(
+    tmp_path, monkeypatch
+):
+    config = make_preparation_config(tmp_path, sample_percent=0.5)
+    _, selected = _replacement_test_selection(config)
+    failed_id = selected["train"][-1]
+    calls = []
+
+    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+        batch = {
+            name: tuple(sample_ids_by_split.get(name, ()))
+            for name in ("train", "val", "test")
+        }
+        calls.append(batch)
+        if len(calls) > 1:
+            raise RuntimeError("converter setup failed")
+        successful = {
+            name: tuple(
+                sample_id for sample_id in batch[name] if sample_id != failed_id
+            )
+            for name in ("train", "val", "test")
+        }
+        for sample_ids in successful.values():
+            for sample_id in sample_ids:
+                write_valid_contract_bin(paths.bin_file(sample_id))
+        return {
+            "successful_ids": successful,
+            "failed_ids": [
+                {
+                    "split": "train",
+                    "sample_id": failed_id,
+                    "exception_type": "ValueError",
+                    "message": "initial model failure",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        prepare_dataset,
+        "_load_converter",
+        lambda: fake_converter(convert_selected_samples),
+    )
+
+    with pytest.raises(PreparationError, match="failed"):
+        ensure_prepared_dataset(config)
+
+    assert len(calls) == 2
+    persisted = json.loads(
+        (config.prepared_root / "conversion_failures.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert persisted == [
+        {
+            "exception_type": "RuntimeError",
+            "message": "converter setup failed",
+            "sample_id": None,
+        }
+    ]

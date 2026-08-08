@@ -1,15 +1,18 @@
 param(
-    [ValidateSet("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_instance", "full")]
+    [ValidateSet("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "pc_dynamic_no_loss", "affinity_only", "pc_affinity_only", "instance", "pc_instance", "oracle", "pc_oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_instance", "full")]
     [string]$Mode = "baseline",
     [switch]$All,
-    [bool]$AutoPrepare = $true,
+    [switch]$AutoPrepare,
+    [switch]$NoAutoPrepare,
     [switch]$RebuildPreparedData,
     [string]$DatasetPath = "D:\Code\Datasets\MFRInstSeg_BrepMFR",
     [string]$RawDatasetPath = "D:\Code\Datasets\MFRInstSeg",
     [string]$PreparedDatasetPath = "D:\Code\Datasets\MFRInstSeg_BrepMFR_SPEPCAAG",
-    [string]$ExtractorFile = "D:\Code\BrepMFR-g\data_set_line\AAGExtractor.py",
-    [string]$SchemaFile = "D:\Code\BrepMFR-g\data_set_line\schema.json",
-    [string]$PythonExe = "G:\ProgramData\anaconda3\envs\aagmspenv\python.exe",
+    [string]$SharedBinCachePath = "",
+    [string[]]$DonorPreparedDatasetPaths = @(),
+    [string]$ExtractorFile = "",
+    [string]$SchemaFile = "",
+    [string]$PythonExe = "F:\ProgramData\anaconda3\envs\aagmspenv\python.exe",
     [int]$BatchSize = 16,
     [int]$MaxEpochs = 100,
     [int]$Seed = 2026,
@@ -48,9 +51,37 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# Resolve auto-prepare: default on, -NoAutoPrepare to disable
+$EffectiveAutoPrepare = if ($NoAutoPrepare) { $false } else { (-not $AutoPrepare.IsPresent) -or $AutoPrepare }
 $env:CUBLAS_WORKSPACE_CONFIG = ":4096:8"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Segmentation = Join-Path $ProjectRoot "segmentation.py"
+if ([string]::IsNullOrWhiteSpace($ExtractorFile)) {
+    $ExtractorFile = Join-Path $PSScriptRoot "AAGExtractor.py"
+}
+if ([string]::IsNullOrWhiteSpace($SchemaFile)) {
+    $SchemaFile = Join-Path $PSScriptRoot "schema.json"
+}
+
+function Get-SamplePercentLabel {
+    param([double]$Value)
+    if (
+        [double]::IsNaN($Value) -or
+        [double]::IsInfinity($Value) -or
+        $Value -le 0.0 -or
+        $Value -gt 1.0
+    ) {
+        throw "SamplePercent must be finite and in the interval (0, 1]."
+    }
+    $PercentValue = 100.0 * $Value
+    $PercentText = $PercentValue.ToString(
+        "0.############",
+        [System.Globalization.CultureInfo]::InvariantCulture
+    ).Replace(".", "p")
+    return "${PercentText}pct"
+}
+
+$SampleLabel = Get-SamplePercentLabel -Value $SamplePercent
 
 if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
     throw "Python executable not found: $PythonExe"
@@ -59,7 +90,7 @@ if (-not (Test-Path -LiteralPath $Segmentation -PathType Leaf)) {
     throw "Training entry not found: $Segmentation"
 }
 
-if ($AutoPrepare) {
+if ($EffectiveAutoPrepare) {
     foreach ($Directory in @($RawDatasetPath, (Join-Path $RawDatasetPath "steps"), (Join-Path $RawDatasetPath "labels"))) {
         if (-not (Test-Path -LiteralPath $Directory -PathType Container)) {
             throw "Raw dataset directory not found: $Directory"
@@ -81,7 +112,7 @@ else {
 }
 
 if ($All) {
-    $Modes = @("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "affinity_only", "instance", "oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_instance", "full")
+    $Modes = @("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "pc_dynamic_no_loss", "affinity_only", "pc_affinity_only", "instance", "pc_instance", "oracle", "pc_oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_instance", "full")
 }
 else {
     $Modes = @($Mode)
@@ -131,7 +162,7 @@ else {
     $CommonArguments += "--no_surface_trim_aware"
 }
 
-if ($AutoPrepare) {
+if ($EffectiveAutoPrepare) {
     $CommonArguments += @(
         "--auto_prepare",
         "--raw_dataset_path", $RawDatasetPath,
@@ -139,9 +170,24 @@ if ($AutoPrepare) {
         "--extractor_file", $ExtractorFile,
         "--schema_file", $SchemaFile
     )
+    if (-not [string]::IsNullOrWhiteSpace($SharedBinCachePath)) {
+        $CommonArguments += @(
+            "--shared_bin_cache_path", $SharedBinCachePath
+        )
+    }
+    if ($DonorPreparedDatasetPaths.Count -gt 0) {
+        $CommonArguments += "--donor_prepared_dataset_paths"
+        $CommonArguments += $DonorPreparedDatasetPaths
+    }
 }
 else {
     $CommonArguments += @("--dataset_path", $DatasetPath)
+    if (-not [string]::IsNullOrWhiteSpace($SharedBinCachePath)) {
+        $CommonArguments += @("--bin_root", $SharedBinCachePath)
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($PreparedDatasetPath)) {
+        $CommonArguments += @("--bin_root", $PreparedDatasetPath)
+    }
 }
 
 Push-Location $ProjectRoot
@@ -158,14 +204,14 @@ try {
             $TrimLabel = if ($SurfaceTrimAware) { "trim" } else { "untrimmed" }
             $ExperimentLabel = "${ExperimentLabel}_param_surface_${SurfaceNeighborMetric}_${TrimLabel}_${SurfaceFusion}"
         }
-        $ExperimentName = "MFRInstSeg_1pct_${ExperimentLabel}_seed${Seed}"
+        $ExperimentName = "MFRInstSeg_${SampleLabel}_${ExperimentLabel}_seed${Seed}"
         $Arguments = @($CommonArguments) + @(
             "--experiment_name", $ExperimentName,
             "--experiment_alias", $CurrentMode
         )
         # Rebuild applies only to the first formal run. Every later alias
         # requests the identical cache fingerprint and reuses that result.
-        if ($AutoPrepare -and $RebuildPreparedData -and $Index -eq 0) {
+        if ($EffectiveAutoPrepare -and $RebuildPreparedData -and $Index -eq 0) {
             $Arguments += "--rebuild_prepared_data"
         }
 
@@ -187,3 +233,4 @@ try {
 finally {
     Pop-Location
 }
+

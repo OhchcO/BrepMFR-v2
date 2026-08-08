@@ -45,6 +45,7 @@ class CADSynth(Dataset):
         require_parametric_surface=False,
         require_cylindrical_pos=False,
         seed=DEFAULT_SEED,
+        bin_root=None,
     ):
         assert split in ("train", "val", "test")
         if random_rotate and require_cylindrical_pos:
@@ -65,11 +66,12 @@ class CADSynth(Dataset):
         self.require_cylindrical_pos = require_cylindrical_pos
         self.seed = int(seed)
         self.file_paths = []
-        self._get_filenames(path, filelist=split+".txt")
+        self._get_filenames(path, filelist=split+".txt", bin_root=bin_root)
 
-    def _get_filenames(self, root_dir, filelist):
+    def _get_filenames(self, root_dir, filelist, bin_root=None):
         print(f"Loading data...")
         root_dir = pathlib.Path(root_dir).resolve()
+        bins_dir = pathlib.Path(bin_root or root_dir).resolve() / "bin"
         manifest_path = (root_dir / filelist).resolve()
         if not manifest_path.is_file():
             raise FileNotFoundError(
@@ -99,7 +101,7 @@ class CADSynth(Dataset):
             raise ValueError("empty manifest {}".format(manifest_path))
         requested = set(file_list)
         paths_by_stem = {}
-        for x in tqdm(sorted(root_dir.rglob("*.bin"))):
+        for x in tqdm(sorted(bins_dir.rglob("*.bin"))):
             if x.stem in requested:
                 if x.stem in paths_by_stem:
                     raise ValueError(
@@ -109,8 +111,8 @@ class CADSynth(Dataset):
         missing_ids = [sample_id for sample_id in file_list if sample_id not in paths_by_stem]
         if missing_ids:
             raise ValueError(
-                "missing BIN sample IDs in manifest {} under root {}: {}".format(
-                    manifest_path, root_dir, ", ".join(missing_ids)
+                "missing BIN sample IDs in manifest {} under BIN root {}: {}".format(
+                    manifest_path, bins_dir, ", ".join(missing_ids)
                 )
             )
         self.file_paths = [paths_by_stem[sample_id] for sample_id in file_list]

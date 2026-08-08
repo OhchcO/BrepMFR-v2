@@ -11,6 +11,7 @@ source inspection in environments without PyOCC.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import importlib.util
 import json
 import math
@@ -28,6 +29,8 @@ from tqdm import tqdm
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_EXTRACTOR_FILE = PROJECT_ROOT / "tools" / "AAGExtractor.py"
+DEFAULT_SCHEMA_FILE = PROJECT_ROOT / "tools" / "schema.json"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -126,10 +129,11 @@ class ConversionPaths:
     dataset_root: Path
     subset_root: Path
     output_root: Path
+    bin_cache_root: Optional[Path] = None
 
     @property
     def bins_root(self) -> Path:
-        return self.output_root / "bin"
+        return (self.bin_cache_root or self.output_root) / "bin"
 
     def step_file(self, sample_id: str) -> Path:
         validate_sample_id(sample_id)
@@ -1049,6 +1053,7 @@ def convert_one(
     try:
         extractor = extractor_class(step_file=step_file, attribute_schema=schema)
         extraction = extractor.process()
+        extraction["_extractor"] = extractor
         graph = build_graph(extraction, label, schema, topology_utils)
         metadata = shortest_path_metadata(graph, graph.ndata["x"].cpu().numpy())
         metadata["instance"] = torch.from_numpy(label.instance).to(torch.int8)
@@ -1096,10 +1101,13 @@ def _read_ids(path: Path) -> List[str]:
 
 def _reject_source_output(paths: ConversionPaths) -> None:
     output = paths.output_root.resolve()
+    bin_cache = Path(paths.bin_cache_root or paths.output_root).resolve()
     source = paths.dataset_root.resolve()
     subset = paths.subset_root.resolve()
-    if output == source or output == subset:
-        raise ValueError("Output root must differ from dataset and subset roots")
+    if output in (source, subset) or bin_cache in (source, subset):
+        raise ValueError(
+            "Output and BIN cache roots must differ from dataset and subset roots"
+        )
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
@@ -1131,6 +1139,36 @@ def _global_failure(error: Exception) -> dict:
         "message": str(error),
     }
 
+# Module-level globals for worker processes (populated by _init_worker)
+_worker_extractor_class = None
+_worker_topology_utils = None
+_worker_schema = None
+_worker_paths = None
+_worker_options = None
+
+
+def _init_worker(extractor_file: str, schema_file: str, raw_root: str,
+                 prepared_root: str, bin_cache_root: str,
+                 options_dict: dict):
+    """Initialise each worker process with picklable paths only."""
+    global _worker_extractor_class, _worker_topology_utils
+    global _worker_schema, _worker_paths, _worker_options
+    _worker_extractor_class, _worker_topology_utils = load_extractor(Path(extractor_file))
+    _worker_schema = load_schema(Path(schema_file))
+    _worker_paths = ConversionPaths(
+        Path(raw_root), Path(prepared_root), Path(prepared_root),
+        Path(bin_cache_root) if bin_cache_root else None,
+    )
+    _worker_options = ConversionOptions(**options_dict)
+
+
+def _convert_one_worker(sample_id: str, overwrite: bool) -> str:
+    """Wrapper for convert_one that reads from worker globals."""
+    return convert_one(
+        sample_id, _worker_paths, _worker_extractor_class,
+        _worker_topology_utils, _worker_schema, _worker_options, overwrite,
+    )
+
 
 def convert_selected_samples(
     sample_ids_by_split: Mapping[str, Sequence[str]],
@@ -1139,6 +1177,7 @@ def convert_selected_samples(
     schema_file: Path,
     options: ConversionOptions,
     overwrite: bool,
+    num_workers: int = 1,
 ) -> ConversionReport:
     """Convert explicit split selections through the shared atomic BIN path."""
     if not isinstance(sample_ids_by_split, Mapping) or not sample_ids_by_split:
@@ -1170,31 +1209,71 @@ def convert_selected_samples(
 
     for split, sample_ids in normalized.items():
         successful: List[str] = []
-        progress = tqdm(sample_ids, desc="[{0}]".format(split), unit="model")
-        for sample_id in progress:
-            progress.set_postfix_str(sample_id, refresh=False)
-            try:
-                outcome = convert_one(
-                    sample_id,
-                    paths,
-                    extractor_class,
-                    topology_utils,
-                    schema,
-                    options,
-                    overwrite,
-                )
-                converted += int(outcome == "converted")
-                skipped += int(outcome == "skipped")
-                successful.append(sample_id)
-            except Exception as error:
-                failures.append(
-                    {
-                        "split": split,
-                        "sample_id": sample_id,
-                        "exception_type": type(error).__name__,
-                        "message": str(error),
-                    }
-                )
+        if num_workers > 1:
+            options_dict = {
+                "point_sampling": options.point_sampling,
+                "seed": options.seed,
+                "include_face_pointcloud": options.include_face_pointcloud,
+                "include_parametric_surface": options.include_parametric_surface,
+                "include_cylindrical_pos": options.include_cylindrical_pos,
+            }
+            shared_root = str(paths.bin_cache_root) if paths.bin_cache_root else ""
+            progress = tqdm(total=len(sample_ids), desc="[{0}]".format(split), unit="model")
+            with ProcessPoolExecutor(
+                max_workers=num_workers,
+                initializer=_init_worker,
+                initargs=(
+                    str(extractor_file), str(schema_file),
+                    str(paths.dataset_root), str(paths.output_root),
+                    shared_root, options_dict,
+                ),
+            ) as executor:
+                future_to_id = {
+                    executor.submit(
+                        _convert_one_worker, sid, overwrite,
+                    ): sid
+                    for sid in sample_ids
+                }
+                for future in as_completed(future_to_id):
+                    sid = future_to_id[future]
+                    progress.set_postfix_str(sid, refresh=False)
+                    try:
+                        outcome = future.result()
+                        converted += int(outcome == "converted")
+                        skipped += int(outcome == "skipped")
+                        successful.append(sid)
+                    except Exception as error:
+                        failures.append(
+                            {
+                                "split": split,
+                                "sample_id": sid,
+                                "exception_type": type(error).__name__,
+                                "message": str(error),
+                            }
+                        )
+                    progress.update(1)
+            progress.close()
+        else:
+            progress = tqdm(sample_ids, desc="[{0}]".format(split), unit="model")
+            for sample_id in progress:
+                progress.set_postfix_str(sample_id, refresh=False)
+                try:
+                    outcome = convert_one(
+                        sample_id, paths, extractor_class, topology_utils,
+                        schema, options, overwrite,
+                    )
+                    converted += int(outcome == "converted")
+                    skipped += int(outcome == "skipped")
+                    successful.append(sample_id)
+                except Exception as error:
+                    failures.append(
+                        {
+                            "split": split,
+                            "sample_id": sample_id,
+                            "exception_type": type(error).__name__,
+                            "message": str(error),
+                        }
+                    )
         successful_ids[split] = successful
         _atomic_write_text(
             paths.output_root / (split + ".txt"),
@@ -1229,15 +1308,16 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         default=Path(r"D:\Code\Datasets\MFRInstSeg\subsets\train_val_1pct_balanced"),
     )
     parser.add_argument("--output-root", type=Path, default=Path(r"D:\Code\Datasets\MFRInstSeg_BrepMFR"))
+    parser.add_argument("--bin-cache-root", type=Path)
     parser.add_argument(
         "--extractor-file",
         type=Path,
-        default=Path(r"D:\Code\BrepMFR-g\data_set_line\AAGExtractor.py"),
+        default=DEFAULT_EXTRACTOR_FILE,
     )
     parser.add_argument(
         "--schema-file",
         type=Path,
-        default=Path(r"D:\Code\BrepMFR-g\data_set_line\schema.json"),
+        default=DEFAULT_SCHEMA_FILE,
     )
     parser.add_argument(
         "--split",
@@ -1272,7 +1352,12 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[Iterable[str]] = None) -> int:
     """Convert selected manifests and write successful output manifests."""
     args = parse_args(argv)
-    paths = ConversionPaths(args.dataset_root, args.subset_root, args.output_root)
+    paths = ConversionPaths(
+        args.dataset_root,
+        args.subset_root,
+        args.output_root,
+        args.bin_cache_root,
+    )
     try:
         _reject_source_output(paths)
     except ValueError as error:

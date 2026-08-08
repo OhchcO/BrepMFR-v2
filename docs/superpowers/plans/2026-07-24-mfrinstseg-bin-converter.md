@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Create only `tools/mfrinstseg_to_bin.py`.
-- Reuse `D:\Code\BrepMFR-g\data_set_line\AAGExtractor.py`; do not copy or refactor it.
+- Use the versioned repository asset `tools/AAGExtractor.py`.
 - Do not read `aag/graphs.json`.
 - Save all fields required by `data/dataset.py`.
 - Save `instance` and `bottom` as extra DGL metadata tensors.
@@ -26,8 +26,8 @@
 **Files:**
 - Create: `tools/mfrinstseg_to_bin.py`
 - Reference only: `data/dataset.py`
-- Reference only: `D:\Code\BrepMFR-g\data_set_line\AAGExtractor.py`
-- Reference only: `D:\Code\BrepMFR-g\data_set_line\schema.json`
+- Reference: `tools/AAGExtractor.py`
+- Reference: `tools/schema.json`
 
 **Interfaces:**
 

@@ -26,6 +26,10 @@ TextMetricsLogger = None
 PreparationConfig = None
 ensure_prepared_dataset = None
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+DEFAULT_EXTRACTOR_FILE = PROJECT_ROOT / "tools" / "AAGExtractor.py"
+DEFAULT_SCHEMA_FILE = PROJECT_ROOT / "tools" / "schema.json"
+
 EXPERIMENT_ALIASES = (
     "baseline",
     "topo_aag",
@@ -34,9 +38,13 @@ EXPERIMENT_ALIASES = (
     "cyl_aag",
     "uv_pc_aag",
     "dynamic_no_loss",
+    "pc_dynamic_no_loss",
     "affinity_only",
+    "pc_affinity_only",
     "instance",
+    "pc_instance",
     "oracle",
+    "pc_oracle",
     "cyl",
     "cyl_affinity",
     "point",
@@ -66,14 +74,26 @@ _EXPERIMENT_SWITCHES = {
     "dynamic_no_loss": ExperimentSwitches(
         "dynamic", True, False, False, 1.0, "late_gated"
     ),
+    "pc_dynamic_no_loss": ExperimentSwitches(
+        "dynamic", False, True, False, 1.0, "late_gated"
+    ),
     "affinity_only": ExperimentSwitches(
         "dynamic_affinity", True, False, False, 0.0, "late_gated"
+    ),
+    "pc_affinity_only": ExperimentSwitches(
+        "dynamic_affinity", False, True, False, 0.0, "late_gated"
     ),
     "instance": ExperimentSwitches(
         "dynamic_affinity", True, False, False, 1.0, "late_gated"
     ),
+    "pc_instance": ExperimentSwitches(
+        "dynamic_affinity", False, True, False, 1.0, "late_gated"
+    ),
     "oracle": ExperimentSwitches(
         "oracle", True, False, False, 1.0, "late_gated"
+    ),
+    "pc_oracle": ExperimentSwitches(
+        "oracle", False, True, False, 1.0, "late_gated"
     ),
     "cyl": ExperimentSwitches("baseline", True, False, True, 1.0),
     "cyl_affinity": ExperimentSwitches(
@@ -123,8 +143,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--raw_dataset_path", type=Path)
     parser.add_argument("--prepared_dataset_path", type=Path)
+    parser.add_argument("--shared_bin_cache_path", type=Path)
+    parser.add_argument(
+        "--donor_prepared_dataset_paths",
+        type=Path,
+        nargs="*",
+        default=[],
+    )
     parser.add_argument("--auto_prepare", action="store_true")
     parser.add_argument("--rebuild_prepared_data", action="store_true")
+    parser.add_argument(
+        "--bin_root",
+        type=Path,
+        default=None,
+        help="Explicit BIN root directory. When set with --dataset_path "
+             "(and without --auto_prepare), skips all data preparation.",
+    )
     parser.add_argument("--sample_percent", type=float, default=0.01)
     parser.add_argument(
         "--split_ratios",
@@ -133,8 +167,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=[0.8, 0.1, 0.1],
         metavar=("TRAIN", "VAL", "TEST"),
     )
-    parser.add_argument("--extractor_file", type=Path)
-    parser.add_argument("--schema_file", type=Path)
+    parser.add_argument(
+        "--extractor_file", type=Path, default=DEFAULT_EXTRACTOR_FILE
+    )
+    parser.add_argument("--schema_file", type=Path, default=DEFAULT_SCHEMA_FILE)
     parser.add_argument(
         "--use_face_uv",
         dest="use_face_uv",
@@ -334,6 +370,7 @@ def prepare_training_data(args: argparse.Namespace) -> Path:
             )
         dataset_root = Path(args.dataset_path)
         args.preparation_reuse_status = "legacy"
+        args.bin_root = Path(args.bin_root) if args.bin_root else dataset_root
         args.selected_split_counts = {
             split: _manifest_count(dataset_root, split)
             for split in ("train", "val", "test")
@@ -376,6 +413,8 @@ def prepare_training_data(args: argparse.Namespace) -> Path:
         face_pointcloud=True,
         cylindrical_pos=True,
         rebuild=args.rebuild_prepared_data,
+        shared_bin_cache_root=args.shared_bin_cache_path,
+        donor_prepared_roots=tuple(args.donor_prepared_dataset_paths),
     )
     prepared = ensure_prepared_dataset(config)
     args.preparation_reuse_status = "reused" if prepared.reused else "built"
@@ -384,6 +423,7 @@ def prepare_training_data(args: argparse.Namespace) -> Path:
         "val": len(prepared.val_ids),
         "test": len(prepared.test_ids),
     }
+    args.bin_root = Path(prepared.bin_root)
     return Path(prepared.root)
 
 
@@ -497,6 +537,9 @@ def _run_configuration(
                 if args.auto_prepare
                 else _json_value(args.prepared_dataset_path)
             ),
+            "bin_cache_path": str(
+                getattr(args, "bin_root", dataset_root)
+            ),
             "preparation_reuse_status": getattr(
                 args, "preparation_reuse_status", "unknown"
             ),
@@ -538,6 +581,7 @@ def _dataset_options(
         ),
         "require_cylindrical_pos": args.use_cylindrical_pos,
         "seed": args.seed,
+        "bin_root": getattr(args, "bin_root", dataset_root),
     }
 
 

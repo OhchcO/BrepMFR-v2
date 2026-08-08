@@ -12,10 +12,10 @@
 - 小样本清单目录，包含：
   - `train.txt`
   - `val.txt`
-- 旧版几何提取器：
-  - `D:\Code\BrepMFR-g\data_set_line\AAGExtractor.py`
+- 几何提取器：
+  - `tools\AAGExtractor.py`
 - AAG 属性配置：
-  - `D:\Code\BrepMFR-g\data_set_line\schema.json`
+  - `tools\schema.json`
 
 转换器不读取约 20 GB 的 `aag/graphs.json`。
 

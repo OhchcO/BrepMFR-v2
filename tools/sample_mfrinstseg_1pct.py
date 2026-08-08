@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
+from tqdm import tqdm
+
+from utils.reproducibility import derive_seed
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -43,6 +46,13 @@ class SampleRecord:
     sample_id: str
     instance_counts: np.ndarray
     face_counts: np.ndarray
+
+
+@dataclass(frozen=True)
+class ReplacementSelection:
+    sample_id: str
+    balance_before: Objective
+    balance_after: Objective
 
 
 @dataclass(frozen=True)
@@ -397,7 +407,7 @@ def select_balanced_sample_ids(
 
     records = tuple(
         load_record(dataset_root / "labels", sample_id, DEFAULT_CLASSES)
-        for sample_id in normalized_ids
+        for sample_id in tqdm(normalized_ids, desc="[prepare] Loading {0} labels".format(split_name), unit="model", file=sys.stdout)
     )
     selection_size = max(1, int(math.floor(len(records) * sample_percent)))
     matrix = class_statistics(records)
@@ -408,6 +418,85 @@ def select_balanced_sample_ids(
         matrix[:, available_columns], selection_size, seed, swap_attempts, split_name
     )
     return tuple(sorted(records[int(index)].sample_id for index in selected))
+
+
+def select_balanced_replacement_id(
+    dataset_root: Path,
+    successful_ids: Sequence[str],
+    candidate_ids: Sequence[str],
+    base_seed: int,
+    split_name: str,
+    attempt: int,
+) -> ReplacementSelection:
+    """Choose one deterministic candidate that best restores class balance."""
+    successful = tuple(successful_ids)
+    candidates = tuple(candidate_ids)
+    if any(not sample_id for sample_id in successful):
+        raise ValueError("successful_ids must not contain blank IDs")
+    if any(not sample_id for sample_id in candidates):
+        raise ValueError("candidate_ids must not contain blank IDs")
+    if len(set(successful)) != len(successful):
+        raise ValueError("successful_ids must be unique")
+    if not candidates:
+        raise ValueError("candidate_ids must be non-empty")
+    if len(set(candidates)) != len(candidates):
+        raise ValueError("candidate_ids must be unique")
+    if set(successful).intersection(candidates):
+        raise ValueError("successful_ids and candidate_ids must be disjoint")
+    if split_name not in ("train", "val"):
+        raise ValueError("split_name must be 'train' or 'val'")
+    if attempt < 1:
+        raise ValueError("attempt must be at least 1")
+
+    successful_records = tuple(
+        load_record(dataset_root / "labels", sample_id, DEFAULT_CLASSES)
+        for sample_id in sorted(successful)
+    )
+    candidate_records = tuple(
+        load_record(dataset_root / "labels", sample_id, DEFAULT_CLASSES)
+        for sample_id in sorted(candidates)
+    )
+    candidate_matrix = class_statistics(candidate_records).astype(np.int64)
+    if successful_records:
+        successful_counts = class_statistics(successful_records).sum(axis=0)
+    else:
+        successful_counts = np.zeros(len(DEFAULT_CLASSES), dtype=np.int64)
+    available = successful_counts + candidate_matrix.sum(axis=0)
+    available_columns = np.flatnonzero(available > 0)
+    if len(available_columns) == 0:
+        raise ValueError("No balancing classes are present in replacement pool")
+
+    active_counts = successful_counts[available_columns]
+    proposed = active_counts[None, :] + candidate_matrix[:, available_columns]
+    objectives = tuple(balance_objective(row) for row in proposed)
+    rarity = candidate_matrix[:, available_columns].dot(
+        1.0 / available[available_columns].astype(np.float64)
+    )
+    replacement_seed = derive_seed(
+        base_seed,
+        "conversion_replacement:" + split_name,
+        str(attempt),
+    )
+    rng = np.random.default_rng(replacement_seed)
+    tie_rank = np.empty(len(candidate_records), dtype=np.int64)
+    tie_rank[rng.permutation(len(candidate_records))] = np.arange(
+        len(candidate_records)
+    )
+    chosen = min(
+        range(len(candidate_records)),
+        key=lambda index: (
+            objectives[index][0],
+            objectives[index][1],
+            objectives[index][2],
+            -float(rarity[index]),
+            int(tie_rank[index]),
+        ),
+    )
+    return ReplacementSelection(
+        sample_id=candidate_records[chosen].sample_id,
+        balance_before=balance_objective(active_counts),
+        balance_after=objectives[chosen],
+    )
 
 
 def sample_split(

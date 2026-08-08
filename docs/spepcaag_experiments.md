@@ -113,6 +113,50 @@ powershell.exe -ExecutionPolicy Bypass -File `
 This invokes `tools\prepare_dataset.py`; it does not use the old test-only
 converter path.
 
+## Prepare the shared seed42 BIN cache without training
+
+Run 10% first. This creates the shared parameter-surface BIN pool and the
+independent 10% manifests without starting a trainer:
+
+```powershell
+$Python = 'F:\ProgramData\anaconda3\envs\aagmspenv\python.exe'
+$Project = 'D:\Code\BrepMFR'
+$Raw = 'D:\Code\Datasets\MFRInstSeg'
+$Shared = 'D:\Code\Datasets\MFRInstSeg_BrepMFR_ParamSurface_v4_shared_seed42'
+$Prepared10 = 'D:\Code\Datasets\MFRInstSeg_BrepMFR_ParamSurface_v4_10pct_seed42'
+
+& $Python "$Project\tools\prepare_dataset.py" `
+  --raw-dataset $Raw `
+  --prepared-dataset $Prepared10 `
+  --shared-bin-cache $Shared `
+  --seed 42 `
+  --sample-percent 0.10 `
+  --split-ratios 0.8 0.1 0.1
+```
+
+After 10% completes, prepare 5% and 1% against the same `$Shared` path.
+Existing compatible BINs are validated and skipped; only absent IDs are
+converted:
+
+```powershell
+foreach ($Item in @(
+  @{ Percent = 0.05; Root = 'D:\Code\Datasets\MFRInstSeg_BrepMFR_ParamSurface_v4_5pct_seed42' },
+  @{ Percent = 0.01; Root = 'D:\Code\Datasets\MFRInstSeg_BrepMFR_ParamSurface_v4_seed42' }
+)) {
+  & $Python "$Project\tools\prepare_dataset.py" `
+    --raw-dataset $Raw `
+    --prepared-dataset $Item.Root `
+    --shared-bin-cache $Shared `
+    --seed 42 `
+    --sample-percent $Item.Percent `
+    --split-ratios 0.8 0.1 0.1
+  if ($LASTEXITCODE -ne 0) { throw "Preparation failed: $($Item.Percent)" }
+}
+```
+
+Do not add `--rebuild` merely to prepare another percentage. Each percentage
+uses its own preparation root while the shared cache remains incremental.
+
 ## Fixed-64 versus area-adaptive comparison
 
 Sampling configuration is part of the cache fingerprint. Use different
@@ -171,7 +215,7 @@ A prepared directory is reused only when its manifest fingerprint exactly
 matches the raw STEP/label content, extractor and schema, seed, split ratios,
 sample percentage, point-sampling configuration, converter sources, and output
 feature contract. On a mismatch, either select a new
-`-PreparedDatasetPath`â€”preferred for comparisonsâ€”or deliberately rebuild the
+`-PreparedDatasetPath`¡ªpreferred for comparisons¡ªor deliberately rebuild the
 same cache:
 
 ```powershell
@@ -204,7 +248,7 @@ may still be run with `-AutoPrepare:$false -DatasetPath <old-bin-directory>`,
 but those results must not be placed in the formal seven-way matrix.
 
 For a fair formal matrix, prepare one new full-geometry cache and point both
-`baseline` and `full`â€”and all five intermediate aliasesâ€”at that exact same
+`baseline` and `full`¡ªand all five intermediate aliases¡ªat that exact same
 directory. Mixing an old baseline BIN directory with a new full BIN directory
 changes the data/conversion provenance at the same time as the model, so the
 result is not an ablation of model switches.

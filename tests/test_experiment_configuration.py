@@ -2,6 +2,7 @@ import ast
 import importlib
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +23,14 @@ def _module(name, **attributes):
     for key, value in attributes.items():
         setattr(module, key, value)
     return module
+
+
+def test_training_parser_defaults_to_repository_aag_assets(segmentation):
+    args = segmentation.build_parser().parse_args(["train"])
+    project_root = Path(segmentation.__file__).resolve().parent
+
+    assert args.extractor_file == project_root / "tools" / "AAGExtractor.py"
+    assert args.schema_file == project_root / "tools" / "schema.json"
 
 
 @pytest.fixture
@@ -155,10 +164,28 @@ def test_parametric_surface_cli_switches_are_configurable(segmentation):
             "late_gated",
         ),
         (
+            "pc_dynamic_no_loss",
+            "dynamic",
+            False,
+            True,
+            False,
+            1.0,
+            "late_gated",
+        ),
+        (
             "instance",
             "dynamic_affinity",
             True,
             False,
+            False,
+            1.0,
+            "late_gated",
+        ),
+        (
+            "pc_instance",
+            "dynamic_affinity",
+            False,
+            True,
             False,
             1.0,
             "late_gated",
@@ -173,10 +200,28 @@ def test_parametric_surface_cli_switches_are_configurable(segmentation):
             "late_gated",
         ),
         (
+            "pc_affinity_only",
+            "dynamic_affinity",
+            False,
+            True,
+            False,
+            0.0,
+            "late_gated",
+        ),
+        (
             "oracle",
             "oracle",
             True,
             False,
+            False,
+            1.0,
+            "late_gated",
+        ),
+        (
+            "pc_oracle",
+            "oracle",
+            False,
+            True,
             False,
             1.0,
             "late_gated",
@@ -245,9 +290,13 @@ $attribute.ValidValues | ConvertTo-Json -Compress
         "cyl_aag",
         "uv_pc_aag",
         "dynamic_no_loss",
+        "pc_dynamic_no_loss",
         "affinity_only",
+        "pc_affinity_only",
         "instance",
+        "pc_instance",
         "oracle",
+        "pc_oracle",
         "cyl",
         "cyl_affinity",
         "point",
@@ -255,6 +304,26 @@ $attribute.ValidValues | ConvertTo-Json -Compress
         "spe_instance",
         "full",
     ]
+
+
+def test_launcher_all_matrix_includes_param_surface_instance_aliases():
+    launcher = Path(__file__).resolve().parents[1] / "tools" / "run_mfrinstseg_experiments.ps1"
+    text = launcher.read_text(encoding="utf-8")
+    all_matrix = re.search(
+        r"if \(\$All\) \{\s*\$Modes = @\((.*?)\)\s*\}",
+        text,
+        flags=re.DOTALL,
+    )
+
+    assert all_matrix is not None
+    modes = re.findall(r'"([a-z_]+)"', all_matrix.group(1))
+    for alias in (
+        "pc_dynamic_no_loss",
+        "pc_affinity_only",
+        "pc_instance",
+        "pc_oracle",
+    ):
+        assert alias in modes
 
 
 def test_training_parser_and_launcher_expose_custom_results_root(
@@ -573,6 +642,59 @@ exit 0
     assert captured.read_text(encoding="utf-8") == ":4096:8"
 
 
+def test_training_launcher_uses_repository_aag_assets_by_default(tmp_path):
+    raw = tmp_path / "raw"
+    (raw / "steps").mkdir(parents=True)
+    (raw / "labels").mkdir()
+    captured = tmp_path / "captured-args.txt"
+    fake_python = tmp_path / "fake-python.ps1"
+    fake_python.write_text(
+        """
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CapturedArguments
+)
+[System.IO.File]::WriteAllLines(
+    $env:MFRINSTSEG_TRAIN_ARGUMENTS,
+    $CapturedArguments
+)
+exit 0
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    project_root = Path(__file__).resolve().parents[1]
+    launcher = project_root / "tools" / "run_mfrinstseg_experiments.ps1"
+    command = (
+        "& '{0}' -Mode baseline -RawDatasetPath '{1}' "
+        "-PreparedDatasetPath '{2}' -PythonExe '{3}'"
+    ).format(launcher, raw, tmp_path / "prepared", fake_python)
+    environment = os.environ.copy()
+    environment["MFRINSTSEG_TRAIN_ARGUMENTS"] = str(captured)
+
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    arguments = captured.read_text(encoding="utf-8").splitlines()
+    extractor_index = arguments.index("--extractor_file")
+    schema_index = arguments.index("--schema_file")
+    assert Path(arguments[extractor_index + 1]) == project_root / "tools" / "AAGExtractor.py"
+    assert Path(arguments[schema_index + 1]) == project_root / "tools" / "schema.json"
+
+
 def test_launcher_forwards_positive_mapping_and_uses_positive_result_name(
     tmp_path,
 ):
@@ -642,6 +764,81 @@ exit 0
     assert arguments[name_index + 1] == "MFRInstSeg_1pct_oracle_positive_seed2026"
 
 
+@pytest.mark.parametrize(
+    ("sample_percent", "expected_prefix"),
+    [(0.01, "1pct"), (0.05, "5pct"), (0.10, "10pct")],
+)
+def test_launcher_derives_result_identity_from_sample_percent(
+    tmp_path,
+    sample_percent,
+    expected_prefix,
+):
+    dataset = tmp_path / "prepared"
+    dataset.mkdir()
+    for split in ("train", "val"):
+        (dataset / (split + ".txt")).write_text(
+            "sample-id\n",
+            encoding="utf-8",
+        )
+    captured = tmp_path / "captured-args.txt"
+    fake_python = tmp_path / "fake-python.ps1"
+    fake_python.write_text(
+        r'''
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CapturedArguments
+)
+[System.IO.File]::WriteAllLines(
+    $env:MFRINSTSEG_TRAIN_ARGUMENTS,
+    $CapturedArguments
+)
+exit 0
+'''.strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    launcher = (
+        Path(__file__).resolve().parents[1]
+        / "tools"
+        / "run_mfrinstseg_experiments.ps1"
+    )
+    quote = lambda value: str(value).replace("'", "''")
+    command = (
+        "& '{launcher}' -Mode baseline -AutoPrepare $false "
+        "-DatasetPath '{dataset}' -PythonExe '{python}' "
+        "-SamplePercent {sample_percent}"
+    ).format(
+        launcher=quote(launcher),
+        dataset=quote(dataset),
+        python=quote(fake_python),
+        sample_percent=sample_percent,
+    )
+    environment = os.environ.copy()
+    environment["MFRINSTSEG_TRAIN_ARGUMENTS"] = str(captured)
+
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    arguments = captured.read_text(encoding="utf-8").splitlines()
+    name_index = arguments.index("--experiment_name")
+    assert arguments[name_index + 1] == (
+        f"MFRInstSeg_{expected_prefix}_baseline_seed2026"
+    )
+
+
 def test_automatic_preparation_always_requests_full_geometry_contract(
     segmentation, monkeypatch, tmp_path
 ):
@@ -657,6 +854,7 @@ def test_automatic_preparation_always_requests_full_geometry_contract(
         "ensure_prepared_dataset",
         lambda config: SimpleNamespace(
             root=tmp_path / "prepared",
+            bin_root=tmp_path / "shared",
             train_ids=("train-1",),
             val_ids=("val-1",),
             test_ids=("test-1",),
@@ -675,6 +873,8 @@ def test_automatic_preparation_always_requests_full_geometry_contract(
             str(tmp_path / "extractor.py"),
             "--schema_file",
             str(tmp_path / "schema.json"),
+            "--shared_bin_cache_path",
+            str(tmp_path / "shared"),
         ]
     )
 
@@ -685,8 +885,25 @@ def test_automatic_preparation_always_requests_full_geometry_contract(
     assert captured["cylindrical_pos"] is True
     assert captured["sample_percent"] == 0.01
     assert captured["candidate_grids"] == (20, 32, 48, 64, 80)
+    assert captured["shared_bin_cache_root"] == tmp_path / "shared"
+    assert args.bin_root == tmp_path / "shared"
     assert args.preparation_reuse_status == "built"
     assert args.selected_split_counts == {"train": 1, "val": 1, "test": 1}
+
+
+def test_powershell_launchers_propagate_shared_bin_cache_path():
+    tools_root = Path(__file__).resolve().parents[1] / "tools"
+    training = (tools_root / "run_mfrinstseg_experiments.ps1").read_text(
+        encoding="utf-8"
+    )
+    evaluation = (tools_root / "run_mfrinstseg_test.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "[string]$SharedBinCachePath" in training
+    assert '"--shared_bin_cache_path", $SharedBinCachePath' in training
+    assert "[string]$SharedBinCachePath" in evaluation
+    assert '"--shared-bin-cache-path", $SharedBinCachePath' in evaluation
 
 
 def test_legacy_dataset_path_does_not_run_preparation(
@@ -818,6 +1035,7 @@ def test_main_orders_seed_preparation_components_then_trainer(
     assert all(options["require_face_pointcloud"] for options in dataset_options)
     assert all(options["require_cylindrical_pos"] for options in dataset_options)
     assert all(options["random_rotate"] is False for options in dataset_options)
+    assert all(options["bin_root"] == tmp_path for options in dataset_options)
 
 
 def test_test_dataset_requirements_come_from_checkpoint_hparams(test_mfrinstseg):

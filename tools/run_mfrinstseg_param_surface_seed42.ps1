@@ -2,7 +2,7 @@ param(
     [string]$RawDatasetPath = "D:\Code\Datasets\MFRInstSeg",
     [string]$PreparedDatasetPath = "D:\Code\Datasets\MFRInstSeg_BrepMFR_ParamSurface_v4_seed42",
     [string]$ResultBasePath = "D:\Code\BrepMFR\results",
-    [string]$PythonExe = "G:\ProgramData\anaconda3\envs\aagmspenv\python.exe",
+    [string]$PythonExe = "F:\ProgramData\anaconda3\envs\aagmspenv\python.exe",
     [int]$BatchSize = 16,
     [int]$MaxEpochs = 100,
     [int]$NumWorkers = 0,
@@ -176,3 +176,4 @@ for ($Index = 0; $Index -lt $Experiments.Count; $Index++) {
 
 Write-Host ""
 Write-Host "Completed all seed42 parameter-surface screening experiments."
+

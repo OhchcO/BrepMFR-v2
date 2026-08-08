@@ -624,7 +624,7 @@ Create `mfrinstseg_aag_schema.json`:
 Use the existing user-owned implementation at:
 
 ```text
-D:\Code\BrepMFR-g\data_set_line\AAGExtractor.py
+tools\AAGExtractor.py
 ```
 
 Port only `scale_solid_to_unit_box`, `TopologyChecker`, and `AAGExtractor`. Do not port the dataset-statistics CLI, multiprocessing entry point, the old UV-clamping point helpers, or hard-coded paths.

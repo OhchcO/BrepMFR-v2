@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="900" viewBox="0 0 1680 900">
+  <defs>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#245a78"/></marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#d66e1e"/></marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#7045a2"/></marker>
+  </defs>
+  <style>
+    text{font-family:"Microsoft YaHei","SimHei",sans-serif;fill:#12344a}.section{font-size:21px;font-weight:700}.subsection{font-size:16px;font-weight:700}.label{font-size:13px;font-weight:700}.body{font-size:11.5px}.small{font-size:10.5px}.tiny{font-size:9.5px}.formula{font-family:Cambria,"Times New Roman",serif;font-size:11.5px;font-style:italic}.formula-sm{font-family:Cambria,"Times New Roman",serif;font-size:10px;font-style:italic}.white{fill:#fff;font-size:12px;font-weight:700}
+    .column{stroke:#5d7484;stroke-width:1.5}.panel{fill:#fff;fill-opacity:.83;stroke:#91a8b7;stroke-width:1.35;rx:8}.panel-green{fill:#fbfffb;stroke:#5c9253;stroke-width:1.45;rx:8}.panel-orange{fill:#fffaf5;stroke:#df741e;stroke-width:1.5;rx:8}.panel-purple{fill:#fcf9ff;stroke:#7650a4;stroke-width:1.5;rx:8}.box{fill:#fff;stroke:#7893a4;stroke-width:1.3;rx:6}.box-green{fill:#fff;stroke:#5c9253;stroke-width:1.4;rx:6}.box-orange{fill:#fff;stroke:#dd6d19;stroke-width:1.45;rx:6}.box-purple{fill:#fff;stroke:#7650a4;stroke-width:1.45;rx:6}
+    .flow{fill:none;stroke:#245a78;stroke-width:2.4;marker-end:url(#arrow-blue)}.flow-thin{fill:none;stroke:#245a78;stroke-width:1.7;marker-end:url(#arrow-blue)}.dynamic{fill:none;stroke:#d66e1e;stroke-width:2.1;marker-end:url(#arrow-orange)}.supervision{fill:none;stroke:#7045a2;stroke-width:2;stroke-dasharray:7 5;marker-end:url(#arrow-purple)}.bus{fill:none;stroke:#245a78;stroke-width:1.6}.dynamic-bus{fill:none;stroke:#d66e1e;stroke-width:1.8}
+  </style>
+  <rect width="1680" height="900" fill="#fff"/>
+
+  <!-- five columns: 240 / 300 / 360 / 455 / 275 -->
+  <rect class="column" x="25" y="25" width="240" height="850" fill="#e8eef2"/>
+  <rect class="column" x="265" y="25" width="300" height="850" fill="#e8f3e4"/>
+  <rect class="column" x="565" y="25" width="360" height="850" fill="#f0eafa"/>
+  <rect class="column" x="925" y="25" width="455" height="850" fill="#fff1e6"/>
+  <rect class="column" x="1380" y="25" width="275" height="850" fill="#eaf4f8"/>
+  <line x1="25" y1="83" x2="1655" y2="83" stroke="#5d7484" stroke-width="1.5"/>
+  <text class="section" x="145" y="62" text-anchor="middle">图序列与固定偏置</text>
+  <text class="section" x="415" y="62" text-anchor="middle">前层基础编码</text>
+  <text class="section" x="745" y="62" text-anchor="middle">IAAB 亲和预测</text>
+  <text class="section" x="1152" y="62" text-anchor="middle">第7～8层双路径注意力</text>
+  <text class="section" x="1517" y="62" text-anchor="middle">输出与学习目标</text>
+
+  <!-- Column 1: input sequence -->
+  <rect class="panel" x="40" y="102" width="210" height="285"/>
+  <text class="subsection" x="145" y="134" text-anchor="middle">图变换器输入序列</text>
+  <rect class="box" x="56" y="161" width="178" height="67"/>
+  <text class="label" x="145" y="187" text-anchor="middle">可学习图级令牌</text>
+  <text class="formula" x="145" y="213" text-anchor="middle">g⁰∈Rᵈ</text>
+  <rect class="box" x="56" y="246" width="178" height="67"/>
+  <text class="label" x="145" y="272" text-anchor="middle">N个面级初始嵌入</text>
+  <text class="formula" x="145" y="298" text-anchor="middle">H⁰={h₁⁰,…,h_N⁰}</text>
+  <rect x="64" y="328" width="162" height="48" rx="7" fill="#3179a0"/>
+  <text x="145" y="359" text-anchor="middle" style="font-family:Cambria,serif;font-size:15px;font-style:italic;fill:#fff">X⁰=[g⁰;H⁰]</text>
+  <path class="flow" d="M145 228 V238 H110 V246"/><path class="flow" d="M145 313 V320 H180 V328"/>
+
+  <rect class="panel-green" x="40" y="401" width="210" height="454"/>
+  <text class="subsection" x="145" y="433" text-anchor="middle">固定图结构偏置 B_AAG</text>
+  <rect class="box-green" x="57" y="461" width="176" height="68"/>
+  <text class="label" x="145" y="487" text-anchor="middle">拓扑关系</text>
+  <text class="small" x="145" y="511" text-anchor="middle">最短路径 · 多跳边</text>
+  <rect class="box-green" x="57" y="549" width="176" height="68"/>
+  <text class="label" x="145" y="575" text-anchor="middle">面对几何</text>
+  <text class="small" x="145" y="599" text-anchor="middle">距离径向基 · 夹角径向基</text>
+  <rect class="box-green" x="57" y="637" width="176" height="68"/>
+  <text class="label" x="145" y="663" text-anchor="middle">邻接边属性</text>
+  <text class="small" x="145" y="687" text-anchor="middle">类型 · 长度 · 夹角 · 凹凸性</text>
+  <rect x="67" y="731" width="156" height="58" rx="7" fill="#3d8171"/>
+  <text class="white" x="145" y="755" text-anchor="middle">固定注意力偏置</text>
+  <text x="145" y="778" text-anchor="middle" style="font-family:Cambria,serif;font-size:14px;font-style:italic;fill:#fff">B_AAG</text>
+  <path class="flow-thin" d="M145 529 V541 H100 V549"/><path class="flow-thin" d="M145 617 V629 H190 V637"/><path class="flow-thin" d="M145 705 V719 H145 V731"/>
+  <text class="tiny" x="145" y="823" text-anchor="middle">B_AAG 是偏置项，基础注意力仍包含 QKᵀ</text>
+
+  <!-- column 1 outputs -->
+  <path class="flow" d="M226 352 H285"/>
+  <path class="flow" d="M223 760 H255 V240 H285"/>
+
+  <!-- Column 2: early layers -->
+  <rect class="panel-green" x="285" y="102" width="260" height="385"/>
+  <text class="subsection" x="415" y="134" text-anchor="middle">第1～4层 · 前层图编码</text>
+  <rect class="box-green" x="304" y="163" width="222" height="104"/>
+  <text class="label" x="415" y="189" text-anchor="middle">多头图自注意力</text>
+  <text class="formula-sm" x="415" y="216" text-anchor="middle">O=Softmax(QKᵀ/√d+B_AAG)V</text>
+  <text class="small" x="415" y="242" text-anchor="middle">内容相关性＋固定图结构先验</text>
+  <path class="flow" d="M415 267 V289"/>
+  <rect class="box-green" x="304" y="289" width="222" height="78"/>
+  <text class="label" x="415" y="315" text-anchor="middle">残差连接＋前馈网络</text>
+  <text class="small" x="415" y="341" text-anchor="middle">逐层更新全部令牌</text>
+  <path class="flow" d="M415 367 V389"/>
+  <rect x="321" y="389" width="188" height="70" rx="8" fill="#5b9153"/>
+  <text class="white" x="415" y="415" text-anchor="middle">第4层中间表示</text>
+  <text x="415" y="442" text-anchor="middle" style="font-family:Cambria,serif;font-size:14px;font-style:italic;fill:#fff">X⁴=[g⁴;H_mid]</text>
+
+  <rect class="panel-green" x="285" y="510" width="260" height="233"/>
+  <text class="subsection" x="415" y="542" text-anchor="middle">第5～6层 · 基础图编码</text>
+  <rect class="box-green" x="304" y="571" width="222" height="93"/>
+  <text class="label" x="415" y="597" text-anchor="middle">继续使用基础注意力</text>
+  <text class="formula-sm" x="415" y="624" text-anchor="middle">QKᵀ/√d+B_AAG</text>
+  <text class="small" x="415" y="648" text-anchor="middle">稳定建模语义与拓扑上下文</text>
+  <rect x="327" y="682" width="176" height="44" rx="7" fill="#5b9153"/>
+  <text class="white" x="415" y="710" text-anchor="middle">第6层基础表示</text>
+  <path class="flow" d="M415 459 V510"/><path class="flow" d="M415 664 V682"/>
+
+  <rect class="panel" x="285" y="765" width="260" height="90"/>
+  <text class="label" x="415" y="793" text-anchor="middle">主干路径保持连续</text>
+  <text class="small" x="415" y="818" text-anchor="middle">IAAB 是由 H_mid 引出的旁路</text>
+  <text class="tiny" x="415" y="839" text-anchor="middle">不插入第4层与第5层之间</text>
+
+  <!-- Hmid branch into IAAB; main path to late layers -->
+  <path class="supervision" d="M509 424 H575 V213 H606"/>
+  <path class="flow" d="M503 704 H555 V90 H935 V220 H945"/>
+
+  <!-- Column 3 IAAB -->
+  <rect class="panel-purple" x="585" y="102" width="320" height="753"/>
+  <rect x="601" y="91" width="122" height="28" rx="14" fill="#7444a7"/><text class="white" x="662" y="110" text-anchor="middle">创新点 2 · IAAB</text>
+  <text class="subsection" x="745" y="139" text-anchor="middle">由 H_mid 预测动态实例关系</text>
+
+  <rect class="box-purple" x="606" y="170" width="278" height="87"/>
+  <text class="label" x="745" y="195" text-anchor="middle">排除图级令牌＋层归一化＋64维投影</text>
+  <text class="formula-sm" x="745" y="220" text-anchor="middle">Z=P(LN(H_mid))，Z∈R^(N×64)</text>
+  <text class="tiny" x="745" y="242" text-anchor="middle">只预测真实面—面关系</text>
+  <path class="supervision" d="M745 257 V278"/>
+
+  <rect class="box-purple" x="606" y="278" width="278" height="94"/>
+  <text class="label" x="745" y="303" text-anchor="middle">图内均值中心化＋L₂归一化</text>
+  <text class="formula-sm" x="745" y="329" text-anchor="middle">E=Normalize(Z-mean_graph(Z))</text>
+  <text class="tiny" x="745" y="353" text-anchor="middle">消除图内公共偏移并稳定余弦相似度</text>
+  <path class="supervision" d="M745 372 V393"/>
+
+  <rect class="box-purple" x="606" y="393" width="132" height="116"/>
+  <text class="label" x="672" y="419" text-anchor="middle">内容 logits</text>
+  <text class="formula" x="672" y="447" text-anchor="middle">EEᵀ/τ</text>
+  <text class="tiny" x="672" y="472" text-anchor="middle">τ=0.2</text>
+  <text class="tiny" x="672" y="493" text-anchor="middle">面嵌入相似度</text>
+  <rect class="box-purple" x="752" y="393" width="132" height="116"/>
+  <text class="label" x="818" y="419" text-anchor="middle">面对 logits</text>
+  <text class="small" x="818" y="446" text-anchor="middle">最短路径</text>
+  <text class="small" x="818" y="468" text-anchor="middle">面间距离</text>
+  <text class="small" x="818" y="490" text-anchor="middle">面间夹角</text>
+  <path class="supervision" d="M745 372 V382 H672 V393"/><path class="supervision" d="M745 372 V382 H818 V393"/>
+
+  <rect class="box-purple" x="606" y="532" width="278" height="83"/>
+  <text class="label" x="745" y="557" text-anchor="middle">求和并强制对称化</text>
+  <text class="formula-sm" x="745" y="583" text-anchor="middle">L_aff=Sym(EEᵀ/τ+Φ_pair)</text>
+  <text class="tiny" x="745" y="603" text-anchor="middle">L_aff(i,j)=L_aff(j,i)</text>
+  <path class="supervision" d="M672 509 V520 H745 V532"/><path class="supervision" d="M818 509 V520 H745 V532"/>
+  <path class="supervision" d="M745 615 V636"/>
+
+  <rect class="box-purple" x="606" y="636" width="278" height="117"/>
+  <text class="label" x="745" y="661" text-anchor="middle">置信度加权正关系映射</text>
+  <text class="formula-sm" x="745" y="686" text-anchor="middle">c=2σ(L_aff)-1</text>
+  <text class="formula-sm" x="745" y="708" text-anchor="middle">r⁺=max(0,c|c|^γ)</text>
+  <text class="tiny" x="745" y="730" text-anchor="middle">positive_only · γ=1</text>
+  <rect x="654" y="776" width="182" height="53" rx="7" fill="#7444a7"/>
+  <text class="white" x="745" y="798" text-anchor="middle">动态偏置 B_inst</text>
+  <text x="745" y="817" text-anchor="middle" style="font-family:Cambria,serif;font-size:10px;font-style:italic;fill:#fff">图级令牌行列为0</text>
+  <path class="supervision" d="M745 753 V776"/>
+  <text class="tiny" x="745" y="846" text-anchor="middle">dynamic_affinity：注入分支停止梯度，logits 仍接受辅助监督</text>
+
+  <!-- B_inst to column 4 bus -->
+  <path class="dynamic" d="M836 802 H915 V330 H945"/>
+
+  <!-- Column 4 dual-path late layers -->
+  <rect class="panel-orange" x="945" y="102" width="415" height="330"/>
+  <text class="subsection" x="1152" y="134" text-anchor="middle">第7层 · 共享参数的两次注意力计算</text>
+  <rect class="box" x="963" y="169" width="169" height="94"/>
+  <text class="label" x="1047" y="194" text-anchor="middle">基础注意力路径</text>
+  <text class="formula-sm" x="1047" y="220" text-anchor="middle">O_base⁷=Softmax(</text>
+  <text class="formula-sm" x="1047" y="238" text-anchor="middle">QKᵀ/√d+B_AAG)V</text>
+  <rect class="box-orange" x="1172" y="169" width="169" height="94"/>
+  <text class="label" x="1256" y="194" text-anchor="middle">偏置注意力路径</text>
+  <text class="formula-sm" x="1256" y="220" text-anchor="middle">O_bias⁷=Softmax(</text>
+  <text class="formula-sm" x="1256" y="238" text-anchor="middle">QKᵀ/√d+B_AAG+B_inst)V</text>
+  <path class="flow-thin" d="M945 220 H963"/><path class="dynamic" d="M945 330 H1150 V216 H1172"/>
+  <rect class="box-orange" x="1000" y="291" width="305" height="89"/>
+  <text class="label" x="1152" y="316" text-anchor="middle">第7层门控残差</text>
+  <text class="formula" x="1152" y="343" text-anchor="middle">O⁷=O_base⁷+g₇(O_bias⁷-O_base⁷)</text>
+  <text class="tiny" x="1152" y="365" text-anchor="middle">两路径共享同一组 Q/K/V 与注意力参数</text>
+  <path class="flow-thin" d="M1047 263 V280 H1100 V291"/><path class="dynamic" d="M1256 263 V280 H1205 V291"/>
+  <text class="tiny" x="1152" y="409" text-anchor="middle">随后执行常规残差连接与前馈网络</text>
+
+  <rect class="panel-orange" x="945" y="451" width="415" height="329"/>
+  <text class="subsection" x="1152" y="483" text-anchor="middle">第8层 · 独立门控的双路径注意力</text>
+  <rect class="box" x="963" y="518" width="169" height="94"/>
+  <text class="label" x="1047" y="543" text-anchor="middle">基础注意力路径</text>
+  <text class="formula-sm" x="1047" y="569" text-anchor="middle">O_base⁸=Softmax(</text>
+  <text class="formula-sm" x="1047" y="587" text-anchor="middle">QKᵀ/√d+B_AAG)V</text>
+  <rect class="box-orange" x="1172" y="518" width="169" height="94"/>
+  <text class="label" x="1256" y="543" text-anchor="middle">偏置注意力路径</text>
+  <text class="formula-sm" x="1256" y="569" text-anchor="middle">O_bias⁸=Softmax(</text>
+  <text class="formula-sm" x="1256" y="587" text-anchor="middle">QKᵀ/√d+B_AAG+B_inst)V</text>
+  <path class="flow" d="M1152 380 V440 H1047 V518"/>
+  <path class="dynamic" d="M915 330 V565 H1172"/>
+  <rect class="box-orange" x="1000" y="640" width="305" height="89"/>
+  <text class="label" x="1152" y="665" text-anchor="middle">第8层门控残差</text>
+  <text class="formula" x="1152" y="692" text-anchor="middle">O⁸=O_base⁸+g₈(O_bias⁸-O_base⁸)</text>
+  <text class="tiny" x="1152" y="714" text-anchor="middle">g₈ 与 g₇ 为两个独立可学习标量</text>
+  <path class="flow-thin" d="M1047 612 V629 H1100 V640"/><path class="dynamic" d="M1256 612 V629 H1205 V640"/>
+  <rect x="1038" y="747" width="228" height="57" rx="8" fill="#df7119"/>
+  <text class="white" x="1152" y="771" text-anchor="middle">零初始化＋训练进度调度</text>
+  <text x="1152" y="791" text-anchor="middle" style="font-size:9px;fill:#fff">训练开始时严格退化为基础图变换器</text>
+  <path class="dynamic" d="M1038 776 H935 V335 H1000"/>
+  <path class="dynamic" d="M1152 747 V729"/>
+  <text class="small" x="1152" y="836" text-anchor="middle">动态偏置不直接添加到特征，只改变两次注意力输出的差分</text>
+
+  <!-- column 4 to 5 -->
+  <path class="flow" d="M1305 684 H1370 V195 H1400"/>
+  <path class="supervision" d="M884 575 H915 V441 H1385 V540 H1400"/>
+
+  <!-- Column 5 outputs and learning -->
+  <rect class="panel" x="1400" y="102" width="235" height="274"/>
+  <text class="subsection" x="1517" y="134" text-anchor="middle">最终图表示</text>
+  <rect class="box" x="1418" y="164" width="199" height="67"/>
+  <text class="label" x="1517" y="190" text-anchor="middle">第8层输出</text>
+  <text class="formula" x="1517" y="216" text-anchor="middle">X⁸=[g⁸;H⁸]</text>
+  <path class="flow" d="M1517 231 V250"/>
+  <rect class="box-green" x="1418" y="250" width="199" height="74"/>
+  <text class="label" x="1517" y="276" text-anchor="middle">局部—全局融合</text>
+  <text class="formula-sm" x="1517" y="301" text-anchor="middle">zᵢ=Attention(hᵢ⁸,g⁸)</text>
+  <rect x="1443" y="340" width="149" height="49" rx="7" fill="#5b9153"/>
+  <text class="white" x="1517" y="370" text-anchor="middle">面级语义分类</text>
+  <path class="flow" d="M1517 324 V340"/>
+
+  <rect class="panel-purple" x="1400" y="402" width="235" height="245"/>
+  <text class="subsection" x="1517" y="434" text-anchor="middle">平衡亲和损失</text>
+  <rect class="box-purple" x="1418" y="463" width="199" height="57"/>
+  <text class="label" x="1517" y="488" text-anchor="middle">正样本</text>
+  <text class="tiny" x="1517" y="507" text-anchor="middle">属于同一加工实例</text>
+  <rect class="box-purple" x="1418" y="533" width="199" height="57"/>
+  <text class="label" x="1517" y="558" text-anchor="middle">困难负样本</text>
+  <text class="tiny" x="1517" y="577" text-anchor="middle">语义相同但实例不同</text>
+  <rect class="box-purple" x="1418" y="603" width="199" height="33"/>
+  <text class="small" x="1517" y="624" text-anchor="middle">简单负样本：语义与实例均不同</text>
+
+  <rect class="panel" x="1400" y="668" width="235" height="187"/>
+  <text class="subsection" x="1517" y="700" text-anchor="middle">训练与推理契约</text>
+  <rect x="1418" y="724" width="199" height="52" rx="7" fill="#7444a7"/>
+  <text x="1517" y="756" text-anchor="middle" style="font-family:Cambria,serif;font-size:14px;font-weight:700;fill:#fff">L=L_sem+λ(t)L_aff</text>
+  <text class="label" x="1517" y="802" text-anchor="middle">训练</text>
+  <text class="tiny" x="1517" y="820" text-anchor="middle">实例矩阵只用于亲和监督</text>
+  <text class="label" x="1517" y="844" text-anchor="middle">推理不需要实例标签</text>
+  <path class="supervision" d="M1517 647 V668"/>
+</svg>

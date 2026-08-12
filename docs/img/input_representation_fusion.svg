@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="900" viewBox="0 0 1680 900">
+  <defs>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#245a78"/></marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#d66e1e"/></marker>
+    <linearGradient id="cad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#dfb25b"/><stop offset="1" stop-color="#9b6723"/></linearGradient>
+  </defs>
+  <style>
+    text{font-family:"Microsoft YaHei","SimHei",sans-serif;fill:#12344a}.section{font-size:21px;font-weight:700}.subsection{font-size:16px;font-weight:700}.label{font-size:13px;font-weight:700}.body{font-size:11.5px}.small{font-size:10.5px}.tiny{font-size:9.5px}.formula{font-family:Cambria,"Times New Roman",serif;font-size:11.5px;font-style:italic}.formula-sm{font-family:Cambria,"Times New Roman",serif;font-size:10px;font-style:italic}.white{fill:#fff;font-size:12px;font-weight:700}
+    .column{stroke:#5d7484;stroke-width:1.5}.panel{fill:#fff;fill-opacity:.83;stroke:#91a8b7;stroke-width:1.35;rx:8}.panel-orange{fill:#fffaf5;stroke:#df741e;stroke-width:1.5;rx:8}.panel-green{fill:#fbfffb;stroke:#4f8b6d;stroke-width:1.4;rx:8}.box{fill:#fff;stroke:#7893a4;stroke-width:1.3;rx:6}.box-orange{fill:#fff;stroke:#dd6d19;stroke-width:1.45;rx:6}.box-green{fill:#fff;stroke:#438574;stroke-width:1.4;rx:6}.box-cyan{fill:#fff;stroke:#278ca5;stroke-width:1.4;rx:6}.box-purple{fill:#fff;stroke:#7650a4;stroke-width:1.4;rx:6}
+    .flow{fill:none;stroke:#245a78;stroke-width:2.4;marker-end:url(#arrow-blue)}.flow-thin{fill:none;stroke:#245a78;stroke-width:1.7;marker-end:url(#arrow-blue)}.dynamic{fill:none;stroke:#d66e1e;stroke-width:2.1;marker-end:url(#arrow-orange)}.bus{fill:none;stroke:#245a78;stroke-width:1.6}.icon-line{fill:none;stroke:#42677d;stroke-width:1.8}.icon-thin{fill:none;stroke:#6b8595;stroke-width:1.1}
+  </style>
+  <rect width="1680" height="900" fill="#fff"/>
+
+  <!-- five columns: 230 / 310 / 355 / 400 / 335 -->
+  <rect class="column" x="25" y="25" width="230" height="850" fill="#e8eef2"/>
+  <rect class="column" x="255" y="25" width="310" height="850" fill="#eaf4f8"/>
+  <rect class="column" x="565" y="25" width="355" height="850" fill="#fff1e6"/>
+  <rect class="column" x="920" y="25" width="400" height="850" fill="#e8f4f8"/>
+  <rect class="column" x="1320" y="25" width="335" height="850" fill="#f0eafa"/>
+  <line x1="25" y1="83" x2="1655" y2="83" stroke="#5d7484" stroke-width="1.5"/>
+  <text class="section" x="140" y="62" text-anchor="middle">几何与拓扑源</text>
+  <text class="section" x="410" y="62" text-anchor="middle">自适应参数采样</text>
+  <text class="section" x="742" y="62" text-anchor="middle">多源输入契约</text>
+  <text class="section" x="1120" y="62" text-anchor="middle">三分支编码</text>
+  <text class="section" x="1487" y="62" text-anchor="middle">融合与令牌化</text>
+
+  <!-- Column 1 sources -->
+  <rect class="panel-orange" x="38" y="100" width="204" height="247"/>
+  <rect x="50" y="91" width="88" height="27" rx="14" fill="#df7119"/><text class="white" x="94" y="110" text-anchor="middle">创新点 1A</text>
+  <text class="subsection" x="140" y="137" text-anchor="middle">精确 B-rep 参数曲面</text>
+  <g transform="translate(55 160)">
+    <path d="M8 59 L77 15 L164 53 L94 105 Z" fill="#bce2f2" stroke="#3f7895" stroke-width="1.5"/>
+    <path class="icon-thin" d="M27 47 L111 89 M51 33 L135 75 M76 17 L159 56 M36 42 L22 72 M62 26 L46 86 M89 21 L72 98 M116 32 L99 102 M143 45 L126 84"/>
+    <path d="M8 59 L77 15 L164 53" fill="none" stroke="#d66e1e" stroke-width="2" stroke-dasharray="6 4"/>
+    <circle cx="37" cy="54" r="3.5" fill="#dd6d19"/><circle cx="65" cy="39" r="3.5" fill="#dd6d19"/><circle cx="91" cy="53" r="3.5" fill="#dd6d19"/><circle cx="119" cy="46" r="3.5" fill="#dd6d19"/><circle cx="79" cy="76" r="3.5" fill="#dd6d19"/>
+  </g>
+  <text class="formula" x="140" y="294" text-anchor="middle">S(u,v)=[x(u,v),y(u,v),z(u,v)]</text>
+  <text class="small" x="140" y="319" text-anchor="middle">直接由 OCC 解析曲面求值</text>
+
+  <rect class="panel-green" x="38" y="365" width="204" height="235"/>
+  <text class="subsection" x="140" y="395" text-anchor="middle">属性邻接图 AAG</text>
+  <g transform="translate(55 420)">
+    <path class="icon-line" d="M16 43 L53 12 M16 43 L61 98 M53 12 L111 25 M53 12 L88 84 M111 25 L151 58 M111 25 L88 84 M151 58 L121 111 M151 58 L88 84 M61 98 L88 84 M61 98 L121 111 M88 84 L121 111"/>
+    <circle cx="16" cy="43" r="9" fill="#efb52d" stroke="#34566a"/><circle cx="53" cy="12" r="9" fill="#efb52d" stroke="#34566a"/><circle cx="111" cy="25" r="9" fill="#efb52d" stroke="#34566a"/><circle cx="151" cy="58" r="9" fill="#efb52d" stroke="#34566a"/><circle cx="61" cy="98" r="9" fill="#efb52d" stroke="#34566a"/><circle cx="88" cy="84" r="9" fill="#efb52d" stroke="#34566a"/><circle cx="121" cy="111" r="9" fill="#efb52d" stroke="#34566a"/>
+  </g>
+  <text class="small" x="140" y="557" text-anchor="middle">面节点＋邻接边</text>
+  <text class="small" x="140" y="579" text-anchor="middle">属性、拓扑和面对几何</text>
+
+  <rect class="panel-orange" x="38" y="618" width="204" height="237"/>
+  <rect x="50" y="609" width="88" height="27" rx="14" fill="#df7119"/><text class="white" x="94" y="628" text-anchor="middle">创新点 1B</text>
+  <text class="subsection" x="140" y="656" text-anchor="middle">完整零件面质心</text>
+  <g transform="translate(61 680)">
+    <ellipse cx="78" cy="28" rx="54" ry="20" fill="#d8e0e4" stroke="#607988" stroke-width="1.3"/><path d="M24 28 V103 M132 28 V103" stroke="#607988" stroke-width="1.3"/><ellipse cx="78" cy="103" rx="54" ry="20" fill="#aebdc5" stroke="#607988" stroke-width="1.3"/>
+    <circle cx="45" cy="55" r="4" fill="#d66e1e"/><circle cx="105" cy="42" r="4" fill="#d66e1e"/><circle cx="78" cy="94" r="4" fill="#d66e1e"/>
+    <path d="M78 105 V5 M78 105 H124 M78 105 L112 82" fill="none" stroke="#d66e1e" stroke-width="1.5"/>
+    <text class="tiny" x="82" y="14">z</text><text class="tiny" x="120" y="99">r</text>
+  </g>
+  <text class="formula" x="140" y="825" text-anchor="middle">{cᵢ=(xᵢ,yᵢ,zᵢ)}</text>
+  <text class="small" x="140" y="846" text-anchor="middle">统一零件坐标系</text>
+
+  <!-- source arrows -->
+  <path class="dynamic" d="M242 220 H275"/>
+  <path class="flow" d="M242 480 H252 V678 H585"/>
+  <path class="dynamic" d="M242 752 H252 V782 H585"/>
+
+  <!-- Column 2 adaptive sampling -->
+  <rect class="panel-orange" x="275" y="100" width="270" height="755"/>
+  <text class="subsection" x="410" y="133" text-anchor="middle">面积驱动的参数域选样</text>
+  <rect class="box-orange" x="293" y="158" width="234" height="78"/>
+  <text class="label" x="410" y="183" text-anchor="middle">OCC 计算每个面的真实面积</text>
+  <text class="formula" x="410" y="207" text-anchor="middle">Aᵢ 与 A_median</text>
+  <text class="tiny" x="410" y="226" text-anchor="middle">先统计完整零件的全部面</text>
+  <path class="dynamic" d="M410 236 V255"/>
+
+  <rect class="box-orange" x="293" y="255" width="234" height="96"/>
+  <text class="label" x="410" y="280" text-anchor="middle">面积自适应样本数</text>
+  <text class="formula-sm" x="410" y="304" text-anchor="middle">Nᵢ=RoundTo8(Clip(64(Aᵢ/A_median)^0.5,</text>
+  <text class="formula-sm" x="410" y="322" text-anchor="middle">32,96))</text>
+  <text class="tiny" x="410" y="341" text-anchor="middle">32～96／面 · 中等面约64</text>
+  <path class="dynamic" d="M410 351 V370"/>
+
+  <rect class="box-orange" x="293" y="370" width="234" height="89"/>
+  <text class="label" x="410" y="395" text-anchor="middle">候选参数网格逐级加密</text>
+  <text class="formula" x="410" y="421" text-anchor="middle">20²→32²→48²→64²→80²</text>
+  <text class="tiny" x="410" y="445" text-anchor="middle">候选数达到 Nᵢ 后停止加密</text>
+  <path class="dynamic" d="M410 459 V478"/>
+
+  <rect class="box-orange" x="293" y="478" width="234" height="112"/>
+  <text class="label" x="410" y="503" text-anchor="middle">有效候选过滤</text>
+  <text class="small" x="410" y="528" text-anchor="middle">位于裁剪后的有效曲面内部</text>
+  <text class="small" x="410" y="550" text-anchor="middle">坐标与单位法向有限</text>
+  <text class="small" x="410" y="572" text-anchor="middle">平均曲率与高斯曲率可计算</text>
+  <path class="dynamic" d="M410 590 V609"/>
+
+  <rect class="box-orange" x="293" y="609" width="234" height="95"/>
+  <text class="label" x="410" y="635" text-anchor="middle">确定性三维 FPS</text>
+  <text class="small" x="410" y="659" text-anchor="middle">质心最远点初始化</text>
+  <text class="small" x="410" y="680" text-anchor="middle">迭代选择离已选集合最远的候选</text>
+  <path class="dynamic" d="M410 704 V723"/>
+
+  <rect x="310" y="723" width="200" height="64" rx="8" fill="#df7119"/>
+  <text class="white" x="410" y="749" text-anchor="middle">选中的参数曲面样本位置</text>
+  <text x="410" y="773" text-anchor="middle" style="font-family:Cambria,serif;font-size:13px;font-style:italic;fill:#fff">{(ūᵢⱼ,v̄ᵢⱼ)}，j=1,…,Nᵢ</text>
+  <text class="small" x="410" y="820" text-anchor="middle">直接来自解析曲面，不经过网格重建</text>
+  <text class="tiny" x="410" y="842" text-anchor="middle">所有面填充至96个位置，并使用有效掩码</text>
+  <path class="dynamic" d="M510 755 H585"/>
+
+  <!-- Column 3 contracts -->
+  <rect class="panel-orange" x="585" y="100" width="315" height="551"/>
+  <text class="subsection" x="742" y="132" text-anchor="middle">选中位置的曲面属性与内蕴关系</text>
+  <rect class="box-orange" x="604" y="156" width="131" height="118"/>
+  <text class="label" x="669" y="181" text-anchor="middle">10维样本属性</text>
+  <text class="formula-sm" x="669" y="206" text-anchor="middle">qᵢⱼ=[x,y,z,</text>
+  <text class="formula-sm" x="669" y="224" text-anchor="middle">nₓ,nᵧ,n_z,ū,v̄,</text>
+  <text class="formula-sm" x="669" y="242" text-anchor="middle">HL,KL²]</text>
+  <text class="tiny" x="669" y="263" text-anchor="middle">曲率按完整零件尺度无量纲化</text>
+  <rect class="box-orange" x="750" y="156" width="131" height="118"/>
+  <text class="label" x="815" y="181" text-anchor="middle">第一基本形式</text>
+  <text class="formula-sm" x="815" y="207" text-anchor="middle">E=S_uᵀS_u</text>
+  <text class="formula-sm" x="815" y="226" text-anchor="middle">F=S_uᵀS_v</text>
+  <text class="formula-sm" x="815" y="245" text-anchor="middle">G=S_vᵀS_v</text>
+  <text class="tiny" x="815" y="263" text-anchor="middle">归一化参数域并除以 L²</text>
+  <path class="dynamic" d="M742 140 V148 H669 V156"/><path class="dynamic" d="M742 140 V148 H815 V156"/>
+
+  <rect class="box-orange" x="618" y="302" width="249" height="99"/>
+  <text class="label" x="742" y="327" text-anchor="middle">第一基本形式诱导的局部距离</text>
+  <text class="formula" x="742" y="353" text-anchor="middle">d²ᵢⱼ=Δuᵀ((Mᵢ+Mⱼ)/2)Δu</text>
+  <text class="small" x="742" y="379" text-anchor="middle">局部一阶内蕴距离近似</text>
+  <path class="dynamic" d="M669 274 V288 H742 V302"/><path class="dynamic" d="M815 274 V288 H742 V302"/>
+
+  <rect class="box-orange" x="618" y="426" width="249" height="101"/>
+  <text class="label" x="742" y="452" text-anchor="middle">每个样本 16 个内蕴近邻</text>
+  <text class="small" x="742" y="477" text-anchor="middle">按 d²ᵢⱼ 从小到大确定邻域</text>
+  <text class="small" x="742" y="501" text-anchor="middle">当前未启用截剪跨孔过滤</text>
+  <path class="dynamic" d="M742 401 V426"/>
+
+  <rect x="620" y="551" width="245" height="72" rx="8" fill="#df7119"/>
+  <text class="white" x="742" y="578" text-anchor="middle">参数曲面分支输入</text>
+  <text x="742" y="603" text-anchor="middle" style="font-family:Cambria,serif;font-size:13px;font-style:italic;fill:#fff">10维属性＋3维度量＋16近邻索引</text>
+  <path class="dynamic" d="M742 527 V551"/>
+
+  <rect class="panel-green" x="585" y="668" width="315" height="91"/>
+  <text class="label" x="742" y="695" text-anchor="middle">AAG 分支输入</text>
+  <text class="small" x="742" y="719" text-anchor="middle">面积 · 类型 · 环数 · 节点度</text>
+  <text class="tiny" x="742" y="742" text-anchor="middle">最短路径 · 多跳边 · 距离／夹角 · 边属性</text>
+
+  <rect class="panel-orange" x="585" y="776" width="315" height="79"/>
+  <text class="label" x="742" y="804" text-anchor="middle">完整零件柱坐标位置</text>
+  <text class="formula" x="742" y="832" text-anchor="middle">pᵢ^raw=[r̄ᵢ,sinθᵢ,cosθᵢ,z̄ᵢ]</text>
+
+  <!-- Column 3 to 4 -->
+  <path class="dynamic" d="M865 587 H940"/>
+  <path class="flow" d="M900 713 H940"/>
+  <path class="dynamic" d="M900 816 H940"/>
+
+  <!-- Column 4 encoders -->
+  <rect class="panel-orange" x="940" y="100" width="360" height="400"/>
+  <text class="subsection" x="1120" y="131" text-anchor="middle">参数曲面单层层次编码器</text>
+  <text class="small" x="1120" y="153" text-anchor="middle">局部样本编码 → 内蕴邻域聚合 → 粗粒度覆盖池化</text>
+  <g transform="translate(958 177)">
+    <rect width="70" height="74" rx="5" fill="#fff" stroke="#dd6d19" stroke-width="1.4"/><text class="label" x="35" y="23" text-anchor="middle">13维输入</text><text class="tiny" x="35" y="45" text-anchor="middle">10维属性</text><text class="tiny" x="35" y="62" text-anchor="middle">＋E,F,G</text>
+    <path class="dynamic" d="M70 37 H84"/>
+    <rect x="84" width="76" height="74" rx="5" fill="#fff" stroke="#dd6d19" stroke-width="1.4"/><text class="label" x="122" y="22" text-anchor="middle">局部编码</text><text class="tiny" x="122" y="43" text-anchor="middle">13→64→64</text><text class="tiny" x="122" y="61" text-anchor="middle">Linear·Norm·GELU</text>
+    <path class="dynamic" d="M160 37 H174"/>
+    <rect x="174" width="150" height="74" rx="5" fill="#fff" stroke="#dd6d19" stroke-width="1.4"/><text class="label" x="249" y="22" text-anchor="middle">16近邻边构造</text><text class="formula-sm" x="249" y="44" text-anchor="middle">[hⱼ, Δxyz, Δuv, d_intrinsic]</text><text class="tiny" x="249" y="62" text-anchor="middle">64＋3＋2＋1＝70维</text>
+  </g>
+  <path class="dynamic" d="M1120 251 V271"/>
+  <g transform="translate(958 271)">
+    <rect width="105" height="74" rx="5" fill="#fff" stroke="#dd6d19" stroke-width="1.4"/><text class="label" x="52" y="22" text-anchor="middle">边编码</text><text class="tiny" x="52" y="44" text-anchor="middle">70→128→128</text><text class="tiny" x="52" y="62" text-anchor="middle">Linear·Norm·GELU</text>
+    <path class="dynamic" d="M105 37 H120"/>
+    <rect x="120" width="93" height="74" rx="5" fill="#fff" stroke="#dd6d19" stroke-width="1.4"/><text class="label" x="166" y="22" text-anchor="middle">邻域聚合</text><text class="tiny" x="166" y="44" text-anchor="middle">16邻居最大值</text><text class="tiny" x="166" y="62" text-anchor="middle">中心＋邻域</text>
+    <path class="dynamic" d="M213 37 H228"/>
+    <rect x="228" width="96" height="74" rx="5" fill="#fff" stroke="#dd6d19" stroke-width="1.4"/><text class="label" x="276" y="22" text-anchor="middle">局部融合</text><text class="tiny" x="276" y="44" text-anchor="middle">192→128</text><text class="tiny" x="276" y="62" text-anchor="middle">逐样本上下文</text>
+  </g>
+  <path class="dynamic" d="M1120 345 V365"/>
+  <rect class="box-orange" x="975" y="365" width="187" height="82"/><text class="label" x="1068" y="390" text-anchor="middle">粗粒度覆盖池化</text><text class="small" x="1068" y="414" text-anchor="middle">复用 FPS 顺序的前24个样本</text><text class="tiny" x="1068" y="434" text-anchor="middle">掩码最大池化</text>
+  <rect x="1182" y="377" width="98" height="57" rx="7" fill="#df7119"/><text class="white" x="1231" y="411" text-anchor="middle">fᵢ^surf</text>
+  <path class="dynamic" d="M1162 406 H1182"/>
+
+  <rect class="panel-green" x="940" y="520" width="360" height="154"/>
+  <text class="subsection" x="1120" y="550" text-anchor="middle">AAG 属性编码器</text>
+  <rect class="box-green" x="958" y="574" width="213" height="72"/><text class="label" x="1064" y="599" text-anchor="middle">面积非线性编码＋离散属性嵌入</text><text class="small" x="1064" y="622" text-anchor="middle">类型 · 环数 · 节点度</text><text class="tiny" x="1064" y="640" text-anchor="middle">拼接成基础面表示</text>
+  <rect x="1185" y="584" width="97" height="52" rx="7" fill="#3c8173"/><text class="white" x="1233" y="616" text-anchor="middle">fᵢ^AAG</text>
+  <path class="flow" d="M1171 610 H1185"/>
+
+  <rect class="panel-orange" x="940" y="694" width="360" height="161"/>
+  <text class="subsection" x="1120" y="724" text-anchor="middle">柱坐标位置编码器</text>
+  <rect class="box-cyan" x="978" y="753" width="152" height="67"/><text class="label" x="1054" y="779" text-anchor="middle">位置 MLP</text><text class="small" x="1054" y="803" text-anchor="middle">4维→模型隐藏维</text>
+  <rect x="1172" y="760" width="98" height="53" rx="7" fill="#3591a6"/><text class="white" x="1221" y="792" text-anchor="middle">pᵢ</text>
+  <path class="dynamic" d="M1130 786 H1172"/>
+
+  <!-- Column 4 outputs to 5 -->
+  <path class="dynamic" d="M1280 405 H1340"/>
+  <path class="flow" d="M1282 610 H1310 V465 H1340"/>
+  <path class="dynamic" d="M1270 786 H1310 V562 H1340"/>
+
+  <!-- Column 5 fusion -->
+  <rect class="panel-orange" x="1340" y="100" width="295" height="548"/>
+  <text class="subsection" x="1487" y="132" text-anchor="middle">以 AAG 表示为基础的门控融合</text>
+  <rect class="box-orange" x="1357" y="162" width="260" height="100"/>
+  <text class="label" x="1487" y="187" text-anchor="middle">曲面分支逐通道门控</text>
+  <text class="formula-sm" x="1487" y="212" text-anchor="middle">gᵢ^surf=tanh(G_surf([fᵢ^AAG;fᵢ^surf]))</text>
+  <text class="formula-sm" x="1487" y="237" text-anchor="middle">gᵢ^surf⊙fᵢ^surf</text>
+  <rect class="box-orange" x="1357" y="282" width="260" height="100"/>
+  <text class="label" x="1487" y="307" text-anchor="middle">位置分支逐通道门控</text>
+  <text class="formula-sm" x="1487" y="332" text-anchor="middle">gᵢ^pos=tanh(G_pos([fᵢ^AAG;pᵢ]))</text>
+  <text class="formula-sm" x="1487" y="357" text-anchor="middle">gᵢ^pos⊙pᵢ</text>
+  <rect class="box-purple" x="1357" y="412" width="260" height="113"/>
+  <text class="label" x="1487" y="438" text-anchor="middle">两路门控残差融合</text>
+  <text class="formula-sm" x="1487" y="465" text-anchor="middle">hᵢ⁰=fᵢ^AAG+gᵢ^surf⊙fᵢ^surf</text>
+  <text class="formula-sm" x="1487" y="486" text-anchor="middle">+gᵢ^pos⊙pᵢ</text>
+  <text class="tiny" x="1487" y="510" text-anchor="middle">门控末层零初始化，起始时保持基础AAG表示</text>
+  <path class="dynamic" d="M1487 262 V282"/><path class="dynamic" d="M1487 382 V412"/>
+  <rect x="1383" y="551" width="208" height="68" rx="8" fill="#3179a0"/>
+  <text class="white" x="1487" y="578" text-anchor="middle">面级初始嵌入</text>
+  <text x="1487" y="603" text-anchor="middle" style="font-family:Cambria,serif;font-size:15px;font-style:italic;fill:#fff">H⁰={hᵢ⁰}</text>
+  <path class="flow" d="M1487 525 V551"/>
+
+  <rect class="panel" x="1340" y="668" width="295" height="187"/>
+  <text class="subsection" x="1487" y="698" text-anchor="middle">独立令牌生成与拼接</text>
+  <rect class="box" x="1360" y="727" width="119" height="69"/><text class="label" x="1419" y="752" text-anchor="middle">可学习图级令牌</text><text class="formula" x="1419" y="779" text-anchor="middle">g⁰∈Rᵈ</text>
+  <rect class="box-purple" x="1495" y="727" width="120" height="69"/><text class="label" x="1555" y="752" text-anchor="middle">图序列拼接</text><text class="formula" x="1555" y="779" text-anchor="middle">X⁰=[g⁰;H⁰]</text>
+  <path class="flow" d="M1479 761 H1495"/>
+  <path class="flow" d="M1487 619 V650 H1555 V727"/>
+  <text class="small" x="1487" y="830" text-anchor="middle">g⁰ 不由门控融合产生</text>
+</svg>

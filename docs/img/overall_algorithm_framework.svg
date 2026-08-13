@@ -156,49 +156,40 @@
   <rect x="665" y="714" width="214" height="54" rx="9" fill="#245a78"/>
   <text x="772" y="748" text-anchor="middle" style="font-family:Cambria,serif;font-size:18px;font-style:italic;fill:#ffffff">X⁰=[g⁰;H⁰]</text>
 
-  <!-- 6. Graph transformer backbone -->
-  <rect data-role="major-box" x="957" y="118" width="376" height="280" rx="12" fill="#fbfffb" stroke="#5c9253" stroke-width="2"/>
-  <text class="title" x="1145" y="158" text-anchor="middle">图变换器主干</text>
-  <text class="body" x="1145" y="191" text-anchor="middle">在 AAG 结构约束下学习语义与拓扑上下文</text>
+  <!-- 6. Relationship-aware graph transformer -->
+  <rect data-role="major-box" x="957" y="118" width="376" height="642" rx="12" fill="#ffffff" stroke="#5c9253" stroke-width="2"/>
+  <text class="title" x="1145" y="155" text-anchor="middle">关系感知图变换器</text>
+  <text class="small" x="1145" y="180" text-anchor="middle">先预测实例关系，再增强后两层注意力</text>
 
-  <rect x="988" y="231" width="314" height="74" rx="10" fill="#5b9153"/>
-  <text class="white" x="1145" y="260" text-anchor="middle" font-size="16">图注意力编码 × 8</text>
-  <text x="1145" y="288" text-anchor="middle" style="font-size:13px;fill:#ffffff">固定图结构偏置贯穿主干</text>
-  <g transform="translate(1020 331)">
-    <circle cx="0" cy="16" r="8" fill="#5b9153"/>
-    <line x1="8" y1="16" x2="50" y2="16" stroke="#5b9153" stroke-width="4"/>
-    <circle cx="58" cy="16" r="8" fill="#5b9153"/>
-    <line x1="66" y1="16" x2="108" y2="16" stroke="#5b9153" stroke-width="4"/>
-    <circle cx="116" cy="16" r="8" fill="#5b9153"/>
-    <line x1="124" y1="16" x2="166" y2="16" stroke="#5b9153" stroke-width="4"/>
-    <circle cx="174" cy="16" r="8" fill="#5b9153"/>
-    <line x1="182" y1="16" x2="224" y2="16" stroke="#5b9153" stroke-width="4"/>
-    <circle cx="232" cy="16" r="8" fill="#5b9153"/>
-  </g>
+  <!-- Stage 1: early/base encoding -->
+  <rect data-role="reasoning-stage" x="982" y="204" width="326" height="142" rx="11" fill="#fbfffb" stroke="#5c9253" stroke-width="1.8"/>
+  <rect x="1001" y="220" width="288" height="40" rx="8" fill="#5b9153"/>
+  <text class="white" x="1145" y="246" text-anchor="middle" font-size="16">前层基础编码</text>
+  <text class="body" x="1145" y="289" text-anchor="middle">X⁰ ＋ 固定结构偏置 B_AAG</text>
+  <text class="small" x="1145" y="315" text-anchor="middle">学习语义与拓扑上下文</text>
+  <rect x="1060" y="325" width="170" height="38" rx="8" fill="#3d8171"/>
+  <text x="1145" y="350" text-anchor="middle" style="font-family:Cambria,serif;font-size:16px;font-style:italic;fill:#ffffff">中间面特征 H_mid</text>
 
-  <!-- 7. IAAB relationship-aware injection -->
-  <rect data-role="major-box" x="957" y="452" width="376" height="308" rx="12" fill="#fcf9ff" stroke="#7650a4" stroke-width="2"/>
-  <rect x="979" y="439" width="118" height="31" rx="15" fill="#7444a7"/>
-  <text class="white" x="1038" y="460" text-anchor="middle" font-size="13">创新点 2</text>
-  <text class="title" x="1145" y="500" text-anchor="middle">IAAB 动态实例关系推理</text>
-  <text class="body" x="1145" y="535" text-anchor="middle">由中间面特征预测面—面亲和关系</text>
+  <!-- Stage 2: IAAB instance relationship prediction -->
+  <path class="flow" d="M1145 363 V391"/>
+  <rect data-role="reasoning-stage" x="982" y="391" width="326" height="151" rx="11" fill="#fcf9ff" stroke="#7650a4" stroke-width="1.8"/>
+  <rect x="999" y="378" width="112" height="30" rx="15" fill="#7444a7"/>
+  <text class="white" x="1055" y="399" text-anchor="middle" font-size="13">创新点 2</text>
+  <text class="title" x="1145" y="431" text-anchor="middle">IAAB 实例关系预测</text>
+  <text class="body" x="1145" y="462" text-anchor="middle">由 H_mid 预测面—面亲和关系</text>
+  <text class="small" x="1145" y="488" text-anchor="middle">关系预测位于中间层，不是最终任务头</text>
+  <rect x="1052" y="503" width="186" height="42" rx="8" fill="#7444a7"/>
+  <text x="1145" y="530" text-anchor="middle" style="font-family:Cambria,serif;font-size:16px;font-style:italic;fill:#ffffff">动态实例偏置 B_inst</text>
 
-  <circle cx="1035" cy="616" r="47" fill="#ffffff" stroke="#7650a4" stroke-width="2"/>
-  <circle cx="1035" cy="616" r="8" fill="#7444a7"/>
-  <circle cx="1007" cy="591" r="7" fill="#d59b2d"/>
-  <circle cx="1064" cy="589" r="7" fill="#d59b2d"/>
-  <circle cx="1068" cy="642" r="7" fill="#d59b2d"/>
-  <circle cx="1004" cy="645" r="7" fill="#d59b2d"/>
-  <line x1="1035" y1="616" x2="1007" y2="591" stroke="#7444a7" stroke-width="2"/>
-  <line x1="1035" y1="616" x2="1064" y2="589" stroke="#7444a7" stroke-width="2"/>
-  <line x1="1035" y1="616" x2="1068" y2="642" stroke="#7444a7" stroke-width="2"/>
-  <line x1="1035" y1="616" x2="1004" y2="645" stroke="#7444a7" stroke-width="2"/>
+  <!-- Stage 3: relation-biased final layers -->
+  <path class="dynamic" d="M1145 545 V574"/>
+  <rect data-role="reasoning-stage" x="982" y="574" width="326" height="154" rx="11" fill="#fffaf5" stroke="#df741e" stroke-width="1.8"/>
+  <text class="title" x="1145" y="608" text-anchor="middle">后两层偏置增强</text>
+  <rect x="1027" y="625" width="236" height="43" rx="8" fill="#df7119"/>
+  <text x="1145" y="653" text-anchor="middle" style="font-family:Cambria,serif;font-size:17px;font-style:italic;fill:#ffffff">B_AAG + B_inst</text>
+  <text class="body" x="1145" y="694" text-anchor="middle">关系感知注意力计算</text>
+  <text class="formula" x="1145" y="718" text-anchor="middle">最终表示 H⁸、g⁸</text>
 
-  <path class="dynamic" d="M1082 616 H1148"/>
-  <rect x="1156" y="577" width="146" height="78" rx="10" fill="#df7119"/>
-  <text class="white" x="1229" y="606" text-anchor="middle" font-size="15">门控残差注入</text>
-  <text x="1229" y="634" text-anchor="middle" style="font-size:13px;fill:#ffffff">稳定影响后层推理</text>
-  <text class="body" x="1145" y="701" text-anchor="middle">动态关系只改变后层注意力，不替代主干表示</text>
   <text class="note" x="1145" y="824" text-anchor="middle" fill="#7045a2">IAAB 与后层注入细节见图三</text>
 
   <!-- 8. Semantic prediction -->
@@ -232,11 +223,10 @@
   <path class="dynamic" d="M588 266 H610 V270 H632"/>
   <path class="dynamic" d="M588 605 H610 V328 H632"/>
   <path class="flow" d="M772 420 V472"/>
-  <path class="flow" d="M912 741 H930 V258 H957"/>
-  <path class="flow" d="M1145 398 V452"/>
-  <path class="flow" d="M1333 606 H1345 V294 H1377"/>
+  <path class="flow" d="M912 741 H940 V275 H982"/>
+  <path class="flow" d="M1308 701 H1345 V294 H1377"/>
   <path class="flow" d="M1505 470 V520"/>
-  <path class="supervision" d="M1333 680 H1365 V640 H1377"/>
+  <path class="supervision" d="M1308 466 H1365 V640 H1377"/>
 
   <!-- Compact reading guide -->
   <rect x="47" y="834" width="1264" height="25" rx="12" fill="#ffffff" fill-opacity="0.72" stroke="#a9bbc6" stroke-width="1"/>

@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "pc_dynamic_no_loss", "affinity_only", "pc_affinity_only", "instance", "pc_instance", "oracle", "pc_oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_instance", "full")]
+    [ValidateSet("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "pc_dynamic_no_loss", "affinity_only", "pc_affinity_only", "instance", "pc_instance", "oracle", "pc_oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_affinity_only", "spe_instance", "full")]
     [string]$Mode = "baseline",
     [switch]$All,
     [switch]$AutoPrepare,
@@ -112,7 +112,7 @@ else {
 }
 
 if ($All) {
-    $Modes = @("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "pc_dynamic_no_loss", "affinity_only", "pc_affinity_only", "instance", "pc_instance", "oracle", "pc_oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_instance", "full")
+    $Modes = @("baseline", "topo_aag", "uv_aag", "pc_aag", "cyl_aag", "uv_pc_aag", "dynamic_no_loss", "pc_dynamic_no_loss", "affinity_only", "pc_affinity_only", "instance", "pc_instance", "oracle", "pc_oracle", "cyl", "cyl_affinity", "point", "spe_pcaag", "spe_affinity_only", "spe_instance", "full")
 }
 else {
     $Modes = @($Mode)

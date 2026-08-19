@@ -49,6 +49,7 @@ EXPERIMENT_ALIASES = (
     "cyl_affinity",
     "point",
     "spe_pcaag",
+    "spe_affinity_only",
     "spe_instance",
     "full",
 )
@@ -101,6 +102,9 @@ _EXPERIMENT_SWITCHES = {
     ),
     "point": ExperimentSwitches("baseline", True, True, False, 1.0),
     "spe_pcaag": ExperimentSwitches("baseline", False, True, True, 1.0),
+    "spe_affinity_only": ExperimentSwitches(
+        "dynamic_affinity", False, True, True, 0.0, "late_gated"
+    ),
     "spe_instance": ExperimentSwitches(
         "dynamic_affinity", False, True, True, 1.0, "late_gated"
     ),

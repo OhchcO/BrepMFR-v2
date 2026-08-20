@@ -199,7 +199,7 @@ for ($Index = 0; $Index -lt $Experiments.Count; $Index++) {
         Get-ChildItem `
             -LiteralPath $ResultRoot `
             -Recurse `
-            -Filter "best-*.ckpt" `
+            -Filter "best-mIoU-*.ckpt" `
             -File `
             | ForEach-Object {
                 $ExistingCheckpointPaths[$_.FullName] = $true
@@ -244,7 +244,7 @@ for ($Index = 0; $Index -lt $Experiments.Count; $Index++) {
         $Checkpoint = Get-ChildItem `
             -LiteralPath $ResultRoot `
             -Recurse `
-            -Filter "best-*.ckpt" `
+            -Filter "best-mIoU-*.ckpt" `
             -File `
             | Where-Object {
                 -not $ExistingCheckpointPaths.ContainsKey($_.FullName)
@@ -253,7 +253,7 @@ for ($Index = 0; $Index -lt $Experiments.Count; $Index++) {
             | Select-Object -First 1 -ExpandProperty FullName
     }
     if (-not $Checkpoint) {
-        throw "No fresh best checkpoint found: $($Experiment.Description)"
+        throw "No fresh best-mIoU checkpoint found: $($Experiment.Description)"
     }
 
     Write-Host "Testing checkpoint: $Checkpoint"

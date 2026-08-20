@@ -608,12 +608,49 @@ def _build_trainer(args, callbacks, logger):
     return pl.Trainer(**trainer_options)
 
 
-def _append_best_checkpoint(log_path: Path, best_model_path: str) -> None:
-    message = "best_checkpoint={0}".format(best_model_path or "not_saved")
-    print(message)
+def _build_checkpoint_callbacks(run_path: Path):
+    best_miou = ModelCheckpoint(
+        monitor="mean_iou",
+        mode="max",
+        dirpath=str(run_path),
+        filename="best-mIoU-{epoch:03d}-{mean_iou:.6f}",
+        save_top_k=1,
+        save_last=True,
+        auto_insert_metric_name=False,
+    )
+    best_macro_f1 = ModelCheckpoint(
+        monitor="macro_f1",
+        mode="max",
+        dirpath=str(run_path),
+        filename="best-Macro-F1-{epoch:03d}-{macro_f1:.6f}",
+        save_top_k=1,
+        save_last=False,
+        auto_insert_metric_name=False,
+    )
+    return best_miou, best_macro_f1
+
+
+def _append_checkpoint_paths(
+    log_path: Path,
+    best_miou,
+    best_macro_f1,
+) -> None:
+    messages = [
+        "best_miou_checkpoint={0}".format(
+            best_miou.best_model_path or "not_saved"
+        ),
+        "best_macro_f1_checkpoint={0}".format(
+            best_macro_f1.best_model_path or "not_saved"
+        ),
+        "last_checkpoint={0}".format(
+            best_miou.last_model_path or "not_saved"
+        ),
+    ]
+    for message in messages:
+        print(message)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as stream:
-        stream.write(message + "\n")
+        stream.write("\n".join(messages) + "\n")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -642,14 +679,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
     )
 
-    checkpoint_callback = ModelCheckpoint(
-        monitor="eval_loss",
-        mode="min",
-        dirpath=str(run_path),
-        filename="best-{epoch:03d}-{eval_loss:.6f}",
-        save_top_k=1,
-        save_last=True,
-        auto_insert_metric_name=False,
+    best_miou_checkpoint, best_macro_f1_checkpoint = (
+        _build_checkpoint_callbacks(run_path)
     )
     text_metrics_callback = TextMetricsLogger(
         log_path=run_path / "log.txt",
@@ -675,17 +706,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             num_workers=args.num_workers,
         )
         trainer = _build_trainer(
-            args, [checkpoint_callback, text_metrics_callback], logger
+            args,
+            [
+                best_miou_checkpoint,
+                best_macro_f1_checkpoint,
+                text_metrics_callback,
+            ],
+            logger,
         )
         print(
-            "Logs: {0}\nCheckpoint pattern: "
-            "best-<epoch>-<eval_loss>.ckpt (monitor=eval_loss, save_top_k=1)".format(
-                run_path
-            )
+            "Logs: {0}\nCheckpoint patterns: "
+            "best-mIoU-<epoch>-<mean_iou>.ckpt; "
+            "best-Macro-F1-<epoch>-<macro_f1>.ckpt; last.ckpt".format(run_path)
         )
         trainer.fit(model, train_loader, val_loader)
-        _append_best_checkpoint(
-            run_path / "log.txt", checkpoint_callback.best_model_path
+        _append_checkpoint_paths(
+            run_path / "log.txt",
+            best_miou_checkpoint,
+            best_macro_f1_checkpoint,
         )
         return 0
 
@@ -697,7 +735,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     model = BrepSeg.load_from_checkpoint(str(args.checkpoint))
     trainer = _build_trainer(
-        args, [checkpoint_callback, text_metrics_callback], logger
+        args,
+        [
+            best_miou_checkpoint,
+            best_macro_f1_checkpoint,
+            text_metrics_callback,
+        ],
+        logger,
     )
     trainer.test(
         model,

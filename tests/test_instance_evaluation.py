@@ -12,6 +12,7 @@ from tools.test_mfrinstseg import (
     evaluate_instance_graph,
     pairwise_counts,
     pairwise_metrics,
+    semantic_metrics_from_confusion,
     summarize_instance_results,
 )
 
@@ -20,6 +21,23 @@ def _model_with_instance_bias_scale(scale):
     relation_bias = SimpleNamespace(bias_scale=scale)
     encoder = SimpleNamespace(instance_relation_bias=relation_bias)
     return SimpleNamespace(brep_encoder=encoder), relation_bias
+
+
+def test_semantic_metrics_include_overall_and_mean_class_accuracy():
+    metrics = semantic_metrics_from_confusion(
+        np.array(
+            [
+                [1, 1, 0],
+                [0, 2, 0],
+                [0, 0, 0],
+            ]
+        )
+    )
+
+    assert metrics["per_face_accuracy"] == pytest.approx(0.75)
+    assert metrics["mean_class_accuracy"] == pytest.approx(0.75)
+    assert metrics["mean_iou"] == pytest.approx((0.5 + 2.0 / 3.0) / 2.0)
+    assert metrics["macro_f1"] == pytest.approx((2.0 / 3.0 + 0.8) / 2.0)
 
 
 def test_instance_bias_scale_override_none_preserves_checkpoint_value():

@@ -974,6 +974,7 @@ def test_main_orders_seed_preparation_components_then_trainer(
 
     class FakeCheckpoint:
         best_model_path = ""
+        last_model_path = ""
 
         def __init__(self, **kwargs):
             events.append("checkpoint")
@@ -1038,6 +1039,67 @@ def test_main_orders_seed_preparation_components_then_trainer(
     assert all(options["bin_root"] == tmp_path for options in dataset_options)
 
 
+def test_checkpoint_callbacks_save_metric_specific_best_and_single_last(
+    segmentation, monkeypatch, tmp_path
+):
+    configurations = []
+
+    class FakeCheckpoint:
+        def __init__(self, **kwargs):
+            configurations.append(kwargs)
+
+    monkeypatch.setattr(segmentation, "ModelCheckpoint", FakeCheckpoint)
+
+    callbacks = segmentation._build_checkpoint_callbacks(tmp_path)
+
+    assert len(callbacks) == 2
+    assert configurations == [
+        {
+            "monitor": "mean_iou",
+            "mode": "max",
+            "dirpath": str(tmp_path),
+            "filename": "best-mIoU-{epoch:03d}-{mean_iou:.6f}",
+            "save_top_k": 1,
+            "save_last": True,
+            "auto_insert_metric_name": False,
+        },
+        {
+            "monitor": "macro_f1",
+            "mode": "max",
+            "dirpath": str(tmp_path),
+            "filename": "best-Macro-F1-{epoch:03d}-{macro_f1:.6f}",
+            "save_top_k": 1,
+            "save_last": False,
+            "auto_insert_metric_name": False,
+        },
+    ]
+
+
+def test_checkpoint_log_records_primary_supplementary_and_last_paths(
+    segmentation, tmp_path
+):
+    log_path = tmp_path / "log.txt"
+    miou_checkpoint = SimpleNamespace(
+        best_model_path="best-mIoU.ckpt",
+        last_model_path="last.ckpt",
+    )
+    macro_f1_checkpoint = SimpleNamespace(
+        best_model_path="best-Macro-F1.ckpt",
+    )
+
+    segmentation._append_checkpoint_paths(
+        log_path,
+        miou_checkpoint,
+        macro_f1_checkpoint,
+    )
+
+    assert log_path.read_text(encoding="utf-8").splitlines() == [
+        "best_miou_checkpoint=best-mIoU.ckpt",
+        "best_macro_f1_checkpoint=best-Macro-F1.ckpt",
+        "last_checkpoint=last.ckpt",
+    ]
+
+
 def test_test_dataset_requirements_come_from_checkpoint_hparams(test_mfrinstseg):
     hparams = {
         "use_face_uv": False,
@@ -1091,6 +1153,7 @@ def test_test_results_record_configuration_provenance(
         "elapsed_seconds": 0.25,
         "test_loss": 0.5,
         "per_face_accuracy": 1.0,
+        "mean_class_accuracy": 1.0,
         "mean_iou": 1.0,
         "macro_f1": 1.0,
         "per_class": [],
@@ -1143,6 +1206,7 @@ def test_test_results_record_configuration_provenance(
         "effective_instance_bias_scale",
         "instance_bias_scale_overridden",
         "prepared_dataset_path",
+        "mean_class_accuracy",
     ):
         assert "{}={}".format(key, result[key]) in log
 

@@ -221,6 +221,24 @@ def metrics_from_confusion(confusion):
     return support, class_accuracy, class_iou, class_f1
 
 
+def semantic_metrics_from_confusion(confusion):
+    confusion = np.asarray(confusion)
+    support, class_accuracy, class_iou, class_f1 = metrics_from_confusion(
+        confusion
+    )
+    total = float(confusion.sum())
+    return {
+        "support": support,
+        "class_accuracy": class_accuracy,
+        "class_iou": class_iou,
+        "class_f1": class_f1,
+        "per_face_accuracy": float(np.diag(confusion).sum()) / max(total, 1.0),
+        "mean_class_accuracy": float(np.nanmean(class_accuracy)),
+        "mean_iou": float(np.nanmean(class_iou)),
+        "macro_f1": float(np.nanmean(class_f1)),
+    }
+
+
 def _validate_square_matrix(matrix, name):
     matrix = np.asarray(matrix)
     if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
@@ -653,6 +671,9 @@ def write_results(output_dir, result):
         "elapsed_seconds={:.3f}".format(result["elapsed_seconds"]),
         "test_loss={:.8f}".format(result["test_loss"]),
         "per_face_accuracy={:.8f}".format(result["per_face_accuracy"]),
+        "mean_class_accuracy={:.8f}".format(
+            result["mean_class_accuracy"]
+        ),
         "mean_iou={:.8f}".format(result["mean_iou"]),
         "macro_f1={:.8f}".format(result["macro_f1"]),
     ]
@@ -965,10 +986,11 @@ def main():
 
     elapsed_seconds = time.perf_counter() - started_at
     confusion_np = confusion.numpy()
-    support, class_accuracy, class_iou, class_f1 = metrics_from_confusion(
-        confusion_np
-    )
-    correct = float(np.diag(confusion_np).sum())
+    semantic_metrics = semantic_metrics_from_confusion(confusion_np)
+    support = semantic_metrics["support"]
+    class_accuracy = semantic_metrics["class_accuracy"]
+    class_iou = semantic_metrics["class_iou"]
+    class_f1 = semantic_metrics["class_f1"]
     per_class = []
     for class_id in range(args.num_classes):
         per_class.append(
@@ -1032,9 +1054,10 @@ def main():
         "faces": face_count,
         "elapsed_seconds": elapsed_seconds,
         "test_loss": loss_sum / max(face_count, 1),
-        "per_face_accuracy": correct / max(face_count, 1),
-        "mean_iou": float(np.nanmean(class_iou)),
-        "macro_f1": float(np.nanmean(class_f1)),
+        "per_face_accuracy": semantic_metrics["per_face_accuracy"],
+        "mean_class_accuracy": semantic_metrics["mean_class_accuracy"],
+        "mean_iou": semantic_metrics["mean_iou"],
+        "macro_f1": semantic_metrics["macro_f1"],
         "per_class": per_class,
         "confusion_matrix": confusion_np.astype(int).tolist(),
     }
@@ -1053,6 +1076,7 @@ def main():
     print("Test completed: {}".format(args.split))
     print("Samples: {} Faces: {}".format(result["samples"], result["faces"]))
     print("Accuracy: {:.4%}".format(result["per_face_accuracy"]))
+    print("mAcc: {:.4%}".format(result["mean_class_accuracy"]))
     print("mIoU: {:.4%}".format(result["mean_iou"]))
     print("Macro-F1: {:.4%}".format(result["macro_f1"]))
     if result["instance_evaluation"] is not None:

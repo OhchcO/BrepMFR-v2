@@ -515,6 +515,7 @@ class BrepSeg(pl.LightningModule):
         per_face_comp = (preds_np == labels_np).astype(np.float32)
         self.log("per_face_accuracy", np.mean(per_face_comp))
 
+        class_accuracies = []
         class_ious = []
         class_f1s = []
         for class_index in range(self.num_classes):
@@ -523,6 +524,9 @@ class BrepSeg(pl.LightningModule):
             true_positive = np.logical_and(predicted, expected).sum()
             false_positive = np.logical_and(predicted, ~expected).sum()
             false_negative = np.logical_and(~predicted, expected).sum()
+            support = true_positive + false_negative
+            if support > 0:
+                class_accuracies.append(true_positive / float(support))
             union = true_positive + false_positive + false_negative
             if union > 0:
                 class_iou = true_positive / float(union)
@@ -535,6 +539,11 @@ class BrepSeg(pl.LightningModule):
             if f1_denominator > 0:
                 class_f1s.append(2 * true_positive / float(f1_denominator))
 
+        if class_accuracies:
+            self.log(
+                "mean_class_accuracy",
+                float(np.mean(class_accuracies)),
+            )
         if class_ious:
             self.log("mean_iou", float(np.mean(class_ious)))
         if class_f1s:

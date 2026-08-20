@@ -104,6 +104,7 @@ class TextMetricsLogger(Callback):
         metric_names = [
             "eval_loss",
             "per_face_accuracy",
+            "mean_class_accuracy",
             "mean_iou",
             "macro_f1",
         ]

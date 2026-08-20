@@ -118,6 +118,25 @@ def test_text_training_log_records_instance_bias_progress(tmp_path):
     ).read_text(encoding="utf-8")
 
 
+def test_text_validation_log_records_mean_class_accuracy(tmp_path):
+    logger = TextMetricsLogger(tmp_path / "log.txt", configuration={})
+
+    class Trainer:
+        current_epoch = 2
+        global_step = 5
+        sanity_checking = False
+        callback_metrics = {
+            "mean_class_accuracy": torch.tensor(0.75),
+        }
+        logged_metrics = {}
+
+    logger.on_validation_epoch_end(Trainer(), pl_module=None)
+
+    assert "mean_class_accuracy=0.75000000" in (
+        tmp_path / "log.txt"
+    ).read_text(encoding="utf-8")
+
+
 def test_training_step_logs_gate_applied_at_current_progress():
     relation_bias = InstanceRelationBias(
         embedding_dim=2,
@@ -176,3 +195,20 @@ def test_training_step_logs_gate_applied_at_current_progress():
     )
 
     assert logged["train_instance_bias_gate"].item() == pytest.approx(0.125)
+
+
+def test_validation_logs_mean_class_accuracy_without_absent_classes():
+    logged = {}
+
+    class ValidationHarness:
+        num_classes = 3
+        pred = [0, 1, 1, 1]
+        label = [0, 0, 1, 1]
+
+        def log(self, name, value, **kwargs):
+            logged[name] = value
+
+    BrepSeg.validation_epoch_end(ValidationHarness(), val_step_outputs=[])
+
+    assert logged["per_face_accuracy"] == pytest.approx(0.75)
+    assert logged["mean_class_accuracy"] == pytest.approx(0.75)

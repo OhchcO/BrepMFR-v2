@@ -485,7 +485,10 @@ def evaluate_instance_graph(
         predicted_semantic,
         threshold=threshold,
         background_class_id=background_class_id,
-        adjacency=spatial_pos == 1,
+        # collator.pad_spatial_pos_unsqueeze reserves zero for padding by
+        # adding one to every real graph distance.  Direct neighbours are
+        # therefore encoded as two in an evaluation batch.
+        adjacency=spatial_pos == 2,
     )
     cluster_result = clustering_metrics(
         predicted_clusters,

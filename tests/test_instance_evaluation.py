@@ -232,7 +232,7 @@ def test_adjusted_rand_index_penalizes_merged_instances():
     assert adjusted_rand_index(truth, predicted) == 0.0
 
 
-def test_instance_graph_result_contains_feature_face_groups():
+def test_instance_graph_uses_collated_direct_neighbor_distance():
     logits = np.array(
         [
             [0.0, 4.0, -4.0],
@@ -249,9 +249,9 @@ def test_instance_graph_result_contains_feature_face_groups():
     )
     spatial_pos = np.array(
         [
-            [0, 1, 2],
-            [1, 0, 1],
-            [2, 1, 0],
+            [1, 2, 3],
+            [2, 1, 2],
+            [3, 2, 1],
         ]
     )
 

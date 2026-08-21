@@ -75,4 +75,3 @@ def load_inference_batch(
     for key, value in batch.items():
         moved[key] = value.to(device) if hasattr(value, "to") else value
     return moved
-

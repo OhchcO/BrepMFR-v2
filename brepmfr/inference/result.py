@@ -135,4 +135,3 @@ def write_json_atomic(path: Path, document: Mapping[str, object]) -> None:
     finally:
         if temporary_path.exists():
             temporary_path.unlink()
-

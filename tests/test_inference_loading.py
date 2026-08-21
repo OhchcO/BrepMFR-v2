@@ -99,4 +99,3 @@ def test_select_device_handles_auto_cpu_and_unavailable_cuda(monkeypatch):
         select_device("cuda")
     with pytest.raises(ValueError, match="Unsupported device"):
         select_device("tpu")
-

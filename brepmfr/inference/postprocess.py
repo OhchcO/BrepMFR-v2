@@ -240,4 +240,3 @@ def postprocess_predictions(
         affinity_probabilities=affinity_probabilities,
         cluster_ids=cluster_ids,
     )
-

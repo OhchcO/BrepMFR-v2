@@ -147,4 +147,3 @@ def test_atomic_json_write_removes_temporary_file_after_replace_error(
     with pytest.raises(OSError, match="replace failed"):
         write_json_atomic(path, {"message": "完整"})
     assert not path.with_suffix(".json.tmp").exists()
-

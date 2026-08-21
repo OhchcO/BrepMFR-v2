@@ -14,4 +14,3 @@ __all__ = (
     "InferenceRequest",
     "run_step_inference",
 )
-

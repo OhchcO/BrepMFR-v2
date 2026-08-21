@@ -3,7 +3,6 @@ import json
 import os
 from pathlib import Path
 import platform
-import re
 
 import numpy as np
 import pytest
@@ -232,8 +231,14 @@ def test_step_inference_matches_prepared_bin_and_committed_golden(
     if update_golden:
         assert golden == record
     assert golden["checkpoint_sha256"] == record["checkpoint_sha256"]
-    assert re.fullmatch(r"[0-9a-f]{64}", golden["semantic_probability_sha256"])
-    assert re.fullmatch(r"[0-9a-f]{64}", golden["affinity_probability_sha256"])
+    assert (
+        golden["semantic_probability_sha256"]
+        == record["semantic_probability_sha256"]
+    )
+    assert (
+        golden["affinity_probability_sha256"]
+        == record["affinity_probability_sha256"]
+    )
     assert_prediction_records_close(actual.document["faces"], golden["faces"])
     assert_prediction_records_close(
         actual.document["instances"], golden["instances"]
@@ -244,4 +249,3 @@ def test_step_inference_matches_prepared_bin_and_committed_golden(
             assert actual_metric == expected
         else:
             assert actual_metric == pytest.approx(expected, abs=1e-8)
-

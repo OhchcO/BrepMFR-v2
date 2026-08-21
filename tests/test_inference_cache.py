@@ -231,3 +231,27 @@ def test_implementation_identity_is_portable_but_ordered(tmp_path):
         *common_args,
     )
     assert cache_fingerprint(reversed_identity) != cache_fingerprint(left_identity)
+
+
+def test_cache_identity_normalizes_nested_sequences_for_json_round_trip(tmp_path):
+    step = tmp_path / "part.step"
+    implementation = tmp_path / "converter.py"
+    step.write_bytes(b"STEP")
+    implementation.write_bytes(b"converter")
+    identity = build_cache_identity(
+        step,
+        [implementation],
+        42,
+        {"candidate_grids": (20, 32, 48)},
+        {"pointcloud": True},
+    )
+    metadata_path = tmp_path / "input.bin.meta.json"
+
+    write_cache_metadata_atomic(
+        metadata_path,
+        identity,
+        cache_fingerprint(identity),
+    )
+
+    assert identity["point_sampling"]["candidate_grids"] == [20, 32, 48]
+    assert json.loads(metadata_path.read_text(encoding="utf-8"))["identity"] == identity

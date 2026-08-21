@@ -45,6 +45,12 @@ def build_cache_identity(
     geometry_fields: Mapping[str, bool],
 ) -> Dict[str, object]:
     """Describe every content or setting that affects an inference BIN."""
+    point_sampling_json = json.loads(
+        json.dumps(dict(point_sampling), ensure_ascii=False)
+    )
+    geometry_fields_json = json.loads(
+        json.dumps(dict(geometry_fields), ensure_ascii=False)
+    )
     implementations = [
         {
             "name": Path(path).name,
@@ -57,8 +63,8 @@ def build_cache_identity(
         "step_sha256": sha256_file(Path(step_path)),
         "implementations": implementations,
         "seed": int(seed),
-        "point_sampling": dict(point_sampling),
-        "geometry_fields": dict(geometry_fields),
+        "point_sampling": point_sampling_json,
+        "geometry_fields": geometry_fields_json,
     }
 
 
@@ -167,4 +173,3 @@ def write_cache_metadata_atomic(
     finally:
         if temporary_path.exists():
             temporary_path.unlink()
-

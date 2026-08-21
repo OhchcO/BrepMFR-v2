@@ -20,6 +20,16 @@ from brepmfr.inference.pipeline import (
     InferenceRequest,
     run_step_inference,
 )
+from brepmfr.inference.result import build_error_document, write_json_atomic
+
+
+class _CLIArgumentError(ValueError):
+    """Argument parsing or validation failed."""
+
+
+class _ArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        raise _CLIArgumentError(message)
 
 
 def _affinity_threshold(raw: str) -> float:
@@ -33,7 +43,7 @@ def _affinity_threshold(raw: str) -> float:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = _ArgumentParser(description=__doc__)
     parser.add_argument("--step", required=True, type=Path, help="input STEP file")
     parser.add_argument(
         "--checkpoint", required=True, type=Path, help="BrepMFR .ckpt file"
@@ -68,10 +78,63 @@ def _validate_paths(parser: argparse.ArgumentParser, arguments) -> None:
         parser.error("--output-dir is not a directory: {0}".format(output_dir))
 
 
+def _option_value(argv: Sequence[str], option: str) -> Optional[str]:
+    value = None
+    for index, item in enumerate(argv):
+        if item == option and index + 1 < len(argv):
+            candidate = argv[index + 1]
+            if not candidate.startswith("--"):
+                value = candidate
+        elif item.startswith(option + "="):
+            value = item.split("=", 1)[1]
+    return value
+
+
+def _write_argument_error(
+    argv: Sequence[str], error: BaseException
+) -> Optional[Path]:
+    output_value = _option_value(argv, "--output-dir")
+    if not output_value:
+        return None
+
+    try:
+        output_dir = Path(output_value).resolve()
+        if output_dir.exists() and not output_dir.is_dir():
+            return None
+        output_dir.mkdir(parents=True, exist_ok=True)
+        step_value = _option_value(argv, "--step")
+        step_path = (
+            Path(step_value).resolve()
+            if step_value
+            else Path.cwd() / "__missing_step_argument__.step"
+        )
+        result_path = output_dir / "result.json"
+        document = build_error_document(
+            "arguments", ValueError(str(error)), step_path
+        )
+        write_json_atomic(result_path, document)
+        return result_path
+    except (OSError, ValueError) as write_error:
+        print(
+            "Could not write argument error result: {0}".format(write_error),
+            file=sys.stderr,
+        )
+        return None
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
     parser = _parser()
-    arguments = parser.parse_args(argv)
-    _validate_paths(parser, arguments)
+    try:
+        arguments = parser.parse_args(raw_argv)
+        _validate_paths(parser, arguments)
+    except _CLIArgumentError as error:
+        parser.print_usage(sys.stderr)
+        print("{0}: error: {1}".format(parser.prog, error), file=sys.stderr)
+        result_path = _write_argument_error(raw_argv, error)
+        if result_path is not None:
+            print("Error result: {0}".format(result_path), file=sys.stderr)
+        raise SystemExit(2)
     request = InferenceRequest(
         step_path=arguments.step,
         checkpoint_path=arguments.checkpoint,
@@ -102,4 +165,3 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

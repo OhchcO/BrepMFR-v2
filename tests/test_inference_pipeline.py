@@ -498,36 +498,47 @@ def test_cli_reports_pipeline_error_and_returns_one(
 
 
 @pytest.mark.parametrize(
-    "argv",
+    "case",
     [
-        ["--step", "missing.step", "--checkpoint", "missing.ckpt", "--output-dir", "out"],
-        ["--step", __file__, "--checkpoint", __file__, "--output-dir", "out"],
-        [
-            "--step",
-            __file__,
-            "--checkpoint",
-            __file__,
-            "--output-dir",
-            "out",
-            "--affinity-threshold",
-            "2",
-        ],
-        [
-            "--step",
-            __file__,
-            "--checkpoint",
-            __file__,
-            "--output-dir",
-            "out",
-            "--device",
-            "tpu",
-        ],
+        "missing-file",
+        "wrong-suffix",
+        "threshold",
+        "device",
+        "missing-step-argument",
     ],
 )
-def test_cli_rejects_invalid_arguments(argv):
+def test_cli_rejects_invalid_arguments_and_writes_error_json(tmp_path, case):
+    step = tmp_path / "part.step"
+    checkpoint = tmp_path / "model.ckpt"
+    output = tmp_path / "argument-error-output"
+    step.write_bytes(b"STEP")
+    checkpoint.write_bytes(b"CHECKPOINT")
+    argv = [
+        "--step",
+        str(step),
+        "--checkpoint",
+        str(checkpoint),
+        "--output-dir",
+        str(output),
+    ]
+    if case == "missing-file":
+        argv[1] = str(tmp_path / "missing.step")
+    elif case == "wrong-suffix":
+        argv[1] = __file__
+    elif case == "threshold":
+        argv.extend(["--affinity-threshold", "2"])
+    elif case == "device":
+        argv.extend(["--device", "tpu"])
+    elif case == "missing-step-argument":
+        argv = argv[2:]
+
     with pytest.raises(SystemExit) as caught:
         cli.main(argv)
+
     assert caught.value.code == 2
+    document = json.loads((output / "result.json").read_text(encoding="utf-8"))
+    assert document["status"] == "error"
+    assert document["stage"] == "arguments"
 
 
 def test_cli_help_builds_without_loading_occ():

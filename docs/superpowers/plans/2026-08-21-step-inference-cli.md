@@ -71,6 +71,7 @@
 
 - Produces: `FEATURE_NAMES: Tuple[str, ...]` with exactly 25 MFRInstSeg names.
 - Produces: `GeometryRequirements(use_face_uv: bool, require_face_pointcloud: bool, require_parametric_surface: bool, require_cylindrical_pos: bool)`.
+- Produces: `configuration_value(configuration: object, name: str, default: object) -> object` for mapping and attribute-backed checkpoint configuration.
 - Produces: `geometry_requirements(configuration: object) -> GeometryRequirements`.
 - Produces: `cluster_instances(affinity: np.ndarray, semantic: np.ndarray, threshold: float = 0.5, background_class_id: int = 24, adjacency: Optional[np.ndarray] = None) -> np.ndarray`.
 - Preserves: importing `cluster_instances` and `geometry_requirements` from `tools.test_mfrinstseg` continues to work through module-level imports.
@@ -160,13 +161,14 @@ At the top of `tools/test_mfrinstseg.py`, import:
 
 ```python
 from brepmfr.inference.postprocess import (
+    configuration_value,
     GeometryRequirements,
     cluster_instances,
     geometry_requirements,
 )
 ```
 
-Delete only the local `GeometryRequirements`, `_configuration_value`, `geometry_requirements`, and `cluster_instances` definitions. Do not change `requires_instance_for_test`, `supports_instance_evaluation`, evaluator metrics, output fields, or CLI arguments.
+Delete only the local `GeometryRequirements`, `_configuration_value`, `geometry_requirements`, and `cluster_instances` definitions. Update `_model_configuration_value` to call imported `configuration_value(getattr(model, "hparams", {}), name, default)`. Do not change `requires_instance_for_test`, `supports_instance_evaluation`, evaluator metrics, output fields, or CLI arguments.
 
 - [ ] **Step 5: Run focused regression tests**
 

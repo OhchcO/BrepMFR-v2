@@ -402,7 +402,6 @@ def build_preparation_manifest(
         name: list(_validate_sample_ids(selected_ids[name], allow_empty=True))
         for name in SPLIT_NAMES
     }
-    all_selected = {sid for ids in normalized.values() for sid in ids}
     return {
         "format_version": FORMAT_VERSION,
         "converter_format_version": CONVERTER_FORMAT_VERSION,
@@ -421,7 +420,6 @@ def build_preparation_manifest(
                 },
             }
             for sample_id, sample in sorted(samples.items())
-            if sample_id in all_selected
         },
         "converter_sources": {
             "extractor": _external_file_fingerprint(config.extractor_file),
@@ -512,6 +510,28 @@ def _bin_cache_fingerprint(manifest: Mapping[str, object]) -> dict:
     }
 
 
+def _compatible_legacy_bin_cache_fingerprint(
+    existing: object, expected: Mapping[str, object]
+) -> bool:
+    """Accept an old selected-source fingerprint only as a verified subset."""
+    if not isinstance(existing, Mapping) or set(existing) != set(expected):
+        return False
+    for key, expected_value in expected.items():
+        if key != "source_files" and existing[key] != expected_value:
+            return False
+    existing_sources = existing.get("source_files")
+    expected_sources = expected.get("source_files")
+    if not isinstance(existing_sources, Mapping) or not existing_sources:
+        return False
+    if not isinstance(expected_sources, Mapping):
+        return False
+    return all(
+        sample_id in expected_sources
+        and expected_sources[sample_id] == source_fingerprint
+        for sample_id, source_fingerprint in existing_sources.items()
+    )
+
+
 def _active_bin_root(config: PreparationConfig) -> Path:
     return Path(config.shared_bin_cache_root or config.prepared_root)
 
@@ -528,11 +548,20 @@ def _ensure_shared_cache_manifest(
     }
     if manifest_path.exists():
         existing = _read_manifest(manifest_path)
-        if existing != expected:
-            raise PreparationMismatchError(
-                "Shared BIN cache fingerprint differs; choose a new shared cache path"
+        if existing == expected:
+            return
+        compatible_legacy = (
+            existing.get("bin_cache_format_version") == BIN_CACHE_FORMAT_VERSION
+            and _compatible_legacy_bin_cache_fingerprint(
+                existing.get("fingerprint"), expected["fingerprint"]
             )
-        return
+        )
+        if compatible_legacy:
+            _atomic_write_json(manifest_path, expected)
+            return
+        raise PreparationMismatchError(
+            "Shared BIN cache fingerprint differs; choose a new shared cache path"
+        )
     _atomic_write_json(manifest_path, expected)
 
 

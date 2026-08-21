@@ -647,6 +647,104 @@ def test_shared_bin_identity_excludes_percentage_and_selected_ids(tmp_path):
     )
 
 
+def test_shared_bin_identity_tracks_every_raw_source(tmp_path):
+    config = make_preparation_config(tmp_path, sample_percent=0.01)
+    samples = discover_raw_samples(config.raw_root)
+    splits = resolve_model_splits(
+        config.raw_root, tuple(samples), config.split_ratios, config.seed
+    )
+    selected = select_split_subsets(
+        config.raw_root, splits, config.sample_percent, config.seed
+    )
+
+    manifest = build_preparation_manifest(config, selected, samples=samples)
+
+    assert set(manifest["source_files"]) == set(samples)
+
+
+def test_shared_cache_upgrades_compatible_legacy_source_subset(tmp_path):
+    config = make_preparation_config(tmp_path, sample_percent=0.10)
+    samples = discover_raw_samples(config.raw_root)
+    splits = resolve_model_splits(
+        config.raw_root, tuple(samples), config.split_ratios, config.seed
+    )
+    selected = select_split_subsets(
+        config.raw_root, splits, config.sample_percent, config.seed
+    )
+    request = build_preparation_manifest(config, selected, samples=samples)
+    selected_ids = {
+        sample_id for split_ids in selected.values() for sample_id in split_ids
+    }
+    legacy_request = json.loads(json.dumps(request))
+    legacy_request["source_files"] = {
+        sample_id: source
+        for sample_id, source in legacy_request["source_files"].items()
+        if sample_id in selected_ids
+    }
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    manifest_path = shared / "bin_cache_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "bin_cache_format_version": prepare_dataset.BIN_CACHE_FORMAT_VERSION,
+                "fingerprint": prepare_dataset._bin_cache_fingerprint(
+                    legacy_request
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    prepare_dataset._ensure_shared_cache_manifest(shared, request)
+
+    assert json.loads(manifest_path.read_text(encoding="utf-8")) == {
+        "bin_cache_format_version": prepare_dataset.BIN_CACHE_FORMAT_VERSION,
+        "fingerprint": prepare_dataset._bin_cache_fingerprint(request),
+    }
+
+
+def test_shared_cache_rejects_legacy_source_hash_mismatch(tmp_path):
+    config = make_preparation_config(tmp_path, sample_percent=0.10)
+    samples = discover_raw_samples(config.raw_root)
+    splits = resolve_model_splits(
+        config.raw_root, tuple(samples), config.split_ratios, config.seed
+    )
+    selected = select_split_subsets(
+        config.raw_root, splits, config.sample_percent, config.seed
+    )
+    request = build_preparation_manifest(config, selected, samples=samples)
+    selected_ids = {
+        sample_id for split_ids in selected.values() for sample_id in split_ids
+    }
+    legacy_request = json.loads(json.dumps(request))
+    legacy_request["source_files"] = {
+        sample_id: source
+        for sample_id, source in legacy_request["source_files"].items()
+        if sample_id in selected_ids
+    }
+    first_source = next(iter(legacy_request["source_files"].values()))
+    first_source["step"]["sha256"] = "0" * 64
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "bin_cache_manifest.json").write_text(
+        json.dumps(
+            {
+                "bin_cache_format_version": prepare_dataset.BIN_CACHE_FORMAT_VERSION,
+                "fingerprint": prepare_dataset._bin_cache_fingerprint(
+                    legacy_request
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        PreparationMismatchError, match="Shared BIN cache fingerprint"
+    ):
+        prepare_dataset._ensure_shared_cache_manifest(shared, request)
+
+
 def test_shared_cache_fingerprint_mismatch_fails_closed(tmp_path):
     config = make_preparation_config(tmp_path, sample_percent=0.10)
     samples = discover_raw_samples(config.raw_root)

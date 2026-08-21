@@ -141,6 +141,34 @@ def test_old_bin_loads_when_geometry_is_disabled(old_bin_dataset):
     assert item.data_id == "legacy_part_001"
 
 
+def test_unlabeled_semantic_sentinel_requires_explicit_opt_in(old_bin_dataset):
+    path = old_bin_dataset / "bin" / "legacy_part_001.bin"
+
+    def make_unlabeled(graph):
+        graph.ndata["f"] = torch.full((2,), -1, dtype=torch.int32)
+
+    _rewrite_bin(path, make_unlabeled)
+
+    with pytest.raises(ValueError, match="configured class range"):
+        CADSynth(old_bin_dataset, "train")[0]
+
+    item = CADSynth(old_bin_dataset, "train", allow_unlabeled=True)[0]
+    assert item.label_feature.tolist() == [-1, -1]
+
+
+def test_unlabeled_opt_in_rejects_mixed_semantic_values(old_bin_dataset):
+    path = old_bin_dataset / "bin" / "legacy_part_001.bin"
+
+    def mix_labels(graph):
+        graph.ndata["f"] = torch.tensor([-1, 1], dtype=torch.int32)
+
+    _rewrite_bin(path, mix_labels)
+    dataset = CADSynth(old_bin_dataset, "train", allow_unlabeled=True)
+
+    with pytest.raises(ValueError, match="only semantic sentinel -1"):
+        dataset[0]
+
+
 def test_dataset_reads_manifests_and_bins_from_separate_roots(tmp_path):
     manifest_root = tmp_path / "one_pct"
     bin_root = tmp_path / "shared"

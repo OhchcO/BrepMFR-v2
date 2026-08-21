@@ -46,6 +46,7 @@ class CADSynth(Dataset):
         require_cylindrical_pos=False,
         seed=DEFAULT_SEED,
         bin_root=None,
+        allow_unlabeled=False,
     ):
         assert split in ("train", "val", "test")
         if random_rotate and require_cylindrical_pos:
@@ -64,6 +65,7 @@ class CADSynth(Dataset):
         self.require_face_pointcloud = require_face_pointcloud
         self.require_parametric_surface = require_parametric_surface
         self.require_cylindrical_pos = require_cylindrical_pos
+        self.allow_unlabeled = allow_unlabeled
         self.seed = int(seed)
         self.file_paths = []
         self._get_filenames(path, filelist=split+".txt", bin_root=bin_root)
@@ -503,8 +505,14 @@ class CADSynth(Dataset):
 
         pyg_graph.data_id = pathlib.Path(file_path).stem
 
-        if(torch.max(pyg_graph.label_feature) > 24 or torch.max(pyg_graph.label_feature) < 0):
-            print(pyg_graph.data_id)
+        labels = pyg_graph.label_feature
+        if self.allow_unlabeled:
+            if not bool((labels == -1).all()):
+                raise ValueError(
+                    "Unlabeled inference BIN must use only semantic sentinel -1"
+                )
+        elif bool(((labels < 0) | (labels >= self.num_class)).any()):
+            raise ValueError("Semantic labels are outside the configured class range")
 
         return pyg_graph
 

@@ -264,6 +264,37 @@ def test_pipeline_explicit_seed_overrides_checkpoint_seed(tmp_path, monkeypatch)
     assert captured["seed"] == 7
 
 
+def test_pipeline_returns_absolute_result_path_for_new_relative_output(
+    tmp_path, monkeypatch
+):
+    request, _, _, _ = make_request_and_patch_runtime(tmp_path, monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    request = InferenceRequest(
+        request.step_path,
+        request.checkpoint_path,
+        Path("new-relative-output"),
+        device="cpu",
+    )
+
+    def cache_hit(**kwargs):
+        return CacheDecision(
+            True,
+            "fp",
+            kwargs["bin_path"],
+            kwargs["metadata_path"],
+            "hit",
+        )
+
+    monkeypatch.setattr(pipeline, "inspect_cache", cache_hit)
+
+    outcome = pipeline.run_step_inference(request)
+
+    assert outcome.result_path.is_absolute()
+    assert outcome.result_path == (
+        tmp_path / "new-relative-output" / "result.json"
+    ).resolve()
+
+
 @pytest.mark.parametrize(
     ("boundary", "expected_stage"),
     [
@@ -503,4 +534,3 @@ def test_cli_help_builds_without_loading_occ():
     with pytest.raises(SystemExit) as caught:
         cli.main(["--help"])
     assert caught.value.code == 0
-

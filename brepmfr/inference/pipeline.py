@@ -136,7 +136,10 @@ def run_step_inference(request: InferenceRequest) -> InferenceOutcome:
     result_path = None
     started = time.perf_counter()
     try:
-        output_dir = Path(request.output_dir).resolve()
+        output_dir = Path(request.output_dir)
+        if not output_dir.is_absolute():
+            output_dir = Path.cwd() / output_dir
+        output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
         result_path = output_dir / "result.json"
         step_path, checkpoint_path, output_dir, threshold = _validate_request(
@@ -305,4 +308,3 @@ def run_step_inference(request: InferenceRequest) -> InferenceOutcome:
                     "serialization", result_path
                 ) from serialization_error
         raise InferencePipelineError(failure_stage, result_path) from error
-

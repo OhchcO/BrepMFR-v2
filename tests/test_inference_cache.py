@@ -47,7 +47,7 @@ def test_sha256_file_hashes_file_content(tmp_path):
 def test_cache_hits_only_when_identity_and_bin_validation_match(tmp_path):
     _, _, bin_path, metadata_path, identity = _cache_inputs(tmp_path)
     fingerprint = cache_fingerprint(identity)
-    write_cache_metadata_atomic(metadata_path, identity, fingerprint)
+    write_cache_metadata_atomic(metadata_path, identity, fingerprint, bin_path)
     validated = []
 
     decision = inspect_cache(
@@ -67,7 +67,9 @@ def test_cache_hits_only_when_identity_and_bin_validation_match(tmp_path):
         "schema_version": INFERENCE_BIN_CONTRACT_VERSION,
         "fingerprint": fingerprint,
         "identity": identity,
+        "bin_sha256": sha256_file(bin_path),
     }
+    assert INFERENCE_BIN_CONTRACT_VERSION == 2
 
 
 @pytest.mark.parametrize(
@@ -85,7 +87,7 @@ def test_cache_miss_reasons_are_stable(
 ):
     _, _, bin_path, metadata_path, identity = _cache_inputs(tmp_path)
     fingerprint = cache_fingerprint(identity)
-    write_cache_metadata_atomic(metadata_path, identity, fingerprint)
+    write_cache_metadata_atomic(metadata_path, identity, fingerprint, bin_path)
     if remove == "bin":
         bin_path.unlink()
     elif remove == "metadata":
@@ -96,7 +98,7 @@ def test_cache_miss_reasons_are_stable(
         changed = dict(identity)
         changed["seed"] = 7
         write_cache_metadata_atomic(
-            metadata_path, changed, cache_fingerprint(changed)
+            metadata_path, changed, cache_fingerprint(changed), bin_path
         )
 
     decision = inspect_cache(
@@ -115,7 +117,7 @@ def test_cache_miss_reasons_are_stable(
 def test_cache_validator_failure_becomes_invalid_bin_miss(tmp_path):
     _, _, bin_path, metadata_path, identity = _cache_inputs(tmp_path)
     write_cache_metadata_atomic(
-        metadata_path, identity, cache_fingerprint(identity)
+        metadata_path, identity, cache_fingerprint(identity), bin_path
     )
 
     def reject(_path):
@@ -125,6 +127,29 @@ def test_cache_validator_failure_becomes_invalid_bin_miss(tmp_path):
 
     assert decision.hit is False
     assert decision.reason == "invalid-bin"
+
+
+def test_cache_rejects_bin_from_a_different_publication_generation(tmp_path):
+    _, _, bin_path, metadata_path, identity = _cache_inputs(tmp_path)
+    write_cache_metadata_atomic(
+        metadata_path,
+        identity,
+        cache_fingerprint(identity),
+        bin_path,
+    )
+    bin_path.write_bytes(b"replacement-bin-after-sidecar-failure")
+    validated = []
+
+    decision = inspect_cache(
+        bin_path,
+        metadata_path,
+        identity,
+        lambda path: validated.append(path),
+    )
+
+    assert decision.hit is False
+    assert decision.reason == "invalid-bin"
+    assert validated == []
 
 
 def test_cache_identity_changes_with_every_conversion_input(tmp_path):
@@ -246,11 +271,14 @@ def test_cache_identity_normalizes_nested_sequences_for_json_round_trip(tmp_path
         {"pointcloud": True},
     )
     metadata_path = tmp_path / "input.bin.meta.json"
+    bin_path = tmp_path / "input.bin"
+    bin_path.write_bytes(b"valid-bin")
 
     write_cache_metadata_atomic(
         metadata_path,
         identity,
         cache_fingerprint(identity),
+        bin_path,
     )
 
     assert identity["point_sampling"]["candidate_grids"] == [20, 32, 48]

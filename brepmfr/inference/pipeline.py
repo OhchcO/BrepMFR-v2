@@ -207,6 +207,7 @@ def run_step_inference(request: InferenceRequest) -> InferenceOutcome:
                 decision.metadata_path,
                 identity,
                 decision.fingerprint,
+                decision.bin_path,
             )
             conversion_duration = time.perf_counter() - conversion_started
 

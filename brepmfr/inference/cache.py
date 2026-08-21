@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Dict, Mapping, Sequence
 
 
-INFERENCE_BIN_CONTRACT_VERSION = 1
+INFERENCE_BIN_CONTRACT_VERSION = 2
 _HASH_CHUNK_SIZE = 1024 * 1024
 
 
@@ -125,6 +125,7 @@ def inspect_cache(
         "schema_version",
         "fingerprint",
         "identity",
+        "bin_sha256",
     }:
         return _decision(
             False, fingerprint, bin_path, metadata_path, "invalid-metadata"
@@ -139,6 +140,12 @@ def inspect_cache(
         return _decision(
             False, fingerprint, bin_path, metadata_path, "identity-mismatch"
         )
+    try:
+        current_bin_sha256 = sha256_file(bin_path)
+    except OSError:
+        return _decision(False, fingerprint, bin_path, metadata_path, "invalid-bin")
+    if document["bin_sha256"] != current_bin_sha256:
+        return _decision(False, fingerprint, bin_path, metadata_path, "invalid-bin")
 
     try:
         validate_bin_file(bin_path)
@@ -151,6 +158,7 @@ def write_cache_metadata_atomic(
     path: Path,
     identity: Mapping[str, object],
     fingerprint: str,
+    bin_path: Path,
 ) -> None:
     """Write and read back a cache sidecar before atomically publishing it."""
     path = Path(path)
@@ -159,6 +167,7 @@ def write_cache_metadata_atomic(
         "schema_version": INFERENCE_BIN_CONTRACT_VERSION,
         "fingerprint": fingerprint,
         "identity": dict(identity),
+        "bin_sha256": sha256_file(Path(bin_path)),
     }
     try:
         with temporary_path.open("w", encoding="utf-8", newline="\n") as handle:

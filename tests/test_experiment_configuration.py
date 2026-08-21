@@ -301,6 +301,7 @@ $attribute.ValidValues | ConvertTo-Json -Compress
         "cyl_affinity",
         "point",
         "spe_pcaag",
+        "spe_affinity_only",
         "spe_instance",
         "full",
     ]
@@ -614,7 +615,7 @@ exit 0
     )
     quote = lambda value: str(value).replace("'", "''")
     command = (
-        "& '{launcher}' -Mode baseline -AutoPrepare $false "
+        "& '{launcher}' -Mode baseline -NoAutoPrepare "
         "-DatasetPath '{dataset}' -PythonExe '{python}'"
     ).format(
         launcher=quote(launcher),
@@ -729,7 +730,7 @@ exit 0
     )
     quote = lambda value: str(value).replace("'", "''")
     command = (
-        "& '{launcher}' -Mode oracle -AutoPrepare $false "
+        "& '{launcher}' -Mode oracle -NoAutoPrepare "
         "-DatasetPath '{dataset}' -PythonExe '{python}' "
         "-InstanceRelationMapping positive_only"
     ).format(
@@ -804,7 +805,7 @@ exit 0
     )
     quote = lambda value: str(value).replace("'", "''")
     command = (
-        "& '{launcher}' -Mode baseline -AutoPrepare $false "
+        "& '{launcher}' -Mode baseline -NoAutoPrepare "
         "-DatasetPath '{dataset}' -PythonExe '{python}' "
         "-SamplePercent {sample_percent}"
     ).format(
@@ -984,10 +985,16 @@ def test_main_orders_seed_preparation_components_then_trainer(
         "seed_everything",
         lambda seed: events.append(("seed", seed)),
     )
+
+    def fake_prepare_training_data(args):
+        events.append("prepare")
+        args.bin_root = tmp_path
+        return tmp_path
+
     monkeypatch.setattr(
         segmentation,
         "prepare_training_data",
-        lambda args: events.append("prepare") or tmp_path,
+        fake_prepare_training_data,
     )
     monkeypatch.setattr(
         segmentation,

@@ -597,7 +597,15 @@ def test_conversion_is_one_shot_and_records_successful_manifests(tmp_path, monke
     config = make_preparation_config(tmp_path, sample_percent=1.0)
     calls = []
 
-    def convert_selected_samples(sample_ids_by_split, paths, extractor_file, schema_file, options, overwrite):
+    def convert_selected_samples(
+        sample_ids_by_split,
+        paths,
+        extractor_file,
+        schema_file,
+        options,
+        overwrite,
+        num_workers=None,
+    ):
         calls.append((sample_ids_by_split, paths, options, overwrite))
         for sample_ids in sample_ids_by_split.values():
             for sample_id in sample_ids:
@@ -665,7 +673,9 @@ def test_shared_cache_routes_bins_away_from_percentage_root(tmp_path, monkeypatc
         **{**base.__dict__, "shared_bin_cache_root": shared}
     )
 
-    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+    def convert_selected_samples(
+        sample_ids_by_split, paths, *unused, num_workers=None
+    ):
         assert paths.output_root == config.prepared_root
         assert paths.bin_cache_root == shared
         for sample_ids in sample_ids_by_split.values():
@@ -727,7 +737,9 @@ def test_compatible_donor_bins_are_hard_linked_into_shared_cache(tmp_path, monke
         }
     )
 
-    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+    def convert_selected_samples(
+        sample_ids_by_split, paths, *unused, num_workers=None
+    ):
         for ids in sample_ids_by_split.values():
             for sample_id in ids:
                 assert paths.bin_file(sample_id).is_file()
@@ -750,7 +762,15 @@ def test_compatible_donor_bins_are_hard_linked_into_shared_cache(tmp_path, monke
 def test_converter_receives_published_options_and_automatic_path_contract(tmp_path, monkeypatch):
     config = make_preparation_config(tmp_path)
 
-    def convert_selected_samples(sample_ids_by_split, paths, extractor_file, schema_file, options, overwrite):
+    def convert_selected_samples(
+        sample_ids_by_split,
+        paths,
+        extractor_file,
+        schema_file,
+        options,
+        overwrite,
+        num_workers=None,
+    ):
         assert isinstance(options, FakeConversionOptions)
         assert options == FakeConversionOptions(
             seed=config.seed,
@@ -789,7 +809,9 @@ def test_rebuild_recovers_malformed_or_legacy_manifest_without_recursive_deletio
     sentinel.write_text("preserve", encoding="utf-8")
     (rebuilt.prepared_root / "preparation_manifest.json").write_text(broken_manifest, encoding="utf-8")
 
-    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+    def convert_selected_samples(
+        sample_ids_by_split, paths, *unused, num_workers=None
+    ):
         for sample_ids in sample_ids_by_split.values():
             for sample_id in sample_ids:
                 write_valid_contract_bin(paths.bin_file(sample_id))
@@ -806,7 +828,9 @@ def test_rebuild_recovers_malformed_or_legacy_manifest_without_recursive_deletio
 def test_missing_converter_output_is_persisted_as_structured_failure(tmp_path, monkeypatch):
     config = make_preparation_config(tmp_path)
 
-    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+    def convert_selected_samples(
+        sample_ids_by_split, paths, *unused, num_workers=None
+    ):
         first = True
         for sample_ids in sample_ids_by_split.values():
             for sample_id in sample_ids:
@@ -833,7 +857,7 @@ def test_conversion_failures_stop_preparation_and_are_persisted(tmp_path, monkey
         prepare_dataset,
         "_load_converter",
         lambda: fake_converter(
-            lambda *args: {
+            lambda *args, num_workers=None: {
                 "successful_ids": {"train": [], "val": [], "test": []},
                 "failed_ids": [{"sample_id": "sample_000", "message": "bad STEP"}],
             }
@@ -869,7 +893,13 @@ def test_train_conversion_failure_is_replaced_without_changing_subset_size(
     calls = []
 
     def convert_selected_samples(
-        sample_ids_by_split, paths, extractor_file, schema_file, options, overwrite
+        sample_ids_by_split,
+        paths,
+        extractor_file,
+        schema_file,
+        options,
+        overwrite,
+        num_workers=None,
     ):
         batch = {
             name: tuple(sample_ids_by_split.get(name, ()))
@@ -963,7 +993,9 @@ def test_failed_replacement_is_audited_before_trying_another_candidate(
     initial_failure = selected["train"][-1]
     calls = []
 
-    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+    def convert_selected_samples(
+        sample_ids_by_split, paths, *unused, num_workers=None
+    ):
         batch = {
             name: tuple(sample_ids_by_split.get(name, ()))
             for name in ("train", "val", "test")
@@ -1069,7 +1101,9 @@ def test_nonreplaceable_conversion_failures_remain_fatal(
         split_name = "train"
         failed_id = "not_in_the_selected_subset"
 
-    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+    def convert_selected_samples(
+        sample_ids_by_split, paths, *unused, num_workers=None
+    ):
         successful = {
             name: tuple(
                 sample_id
@@ -1117,7 +1151,9 @@ def test_replacement_candidate_exhaustion_remains_fatal(tmp_path, monkeypatch):
     _, selected = _replacement_test_selection(config)
     failed_id = selected["train"][-1]
 
-    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+    def convert_selected_samples(
+        sample_ids_by_split, paths, *unused, num_workers=None
+    ):
         successful = {
             name: tuple(
                 sample_id
@@ -1202,7 +1238,9 @@ def test_matching_failed_cache_converts_only_one_balanced_replacement(
     )
     calls = []
 
-    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+    def convert_selected_samples(
+        sample_ids_by_split, paths, *unused, num_workers=None
+    ):
         batch = {
             name: tuple(sample_ids_by_split.get(name, ()))
             for name in ("train", "val", "test")
@@ -1258,7 +1296,9 @@ def test_unstructured_replacement_converter_error_is_fatal_without_retry(
     failed_id = selected["train"][-1]
     calls = []
 
-    def convert_selected_samples(sample_ids_by_split, paths, *unused):
+    def convert_selected_samples(
+        sample_ids_by_split, paths, *unused, num_workers=None
+    ):
         batch = {
             name: tuple(sample_ids_by_split.get(name, ()))
             for name in ("train", "val", "test")

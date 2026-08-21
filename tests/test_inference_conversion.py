@@ -1,6 +1,8 @@
 import numpy as np
 import dgl
+import pytest
 import torch
+from dgl.data.utils import save_graphs
 
 from brepmfr.inference import conversion as inference_conversion
 from brepmfr.inference.postprocess import GeometryRequirements
@@ -107,6 +109,10 @@ def test_validate_inference_bin_maps_requirements(monkeypatch, tmp_path):
     calls = []
     point_sampling = PointSamplingConfig()
     requirements = GeometryRequirements(False, True, True, True)
+    bin_path = tmp_path / "input.bin"
+    graph = dgl.graph(([], []), num_nodes=1)
+    graph.ndata["f"] = torch.tensor([-1], dtype=torch.int32)
+    save_graphs(str(bin_path), [graph], {})
     monkeypatch.setattr(
         inference_conversion,
         "validate_bin",
@@ -116,20 +122,44 @@ def test_validate_inference_bin_maps_requirements(monkeypatch, tmp_path):
     )
 
     inference_conversion.validate_inference_bin(
-        tmp_path / "input.bin",
+        bin_path,
         requirements,
         point_sampling,
         expected_nodes=7,
     )
 
     path, expected_nodes, bin_requirements, actual_sampling = calls[0]
-    assert path == tmp_path / "input.bin"
+    assert path == bin_path
     assert expected_nodes == 7
     assert bin_requirements.require_instance is False
     assert bin_requirements.require_pointcloud is True
     assert bin_requirements.require_parametric_surface is True
     assert bin_requirements.require_cylindrical is True
     assert actual_sampling is point_sampling
+
+
+@pytest.mark.parametrize(
+    ("labels", "metadata", "message"),
+    [
+        ([-1, 1], {}, "sentinel -1"),
+        ([-1, -1], {"instance": torch.eye(2)}, "instance"),
+    ],
+)
+def test_validate_inference_bin_rejects_ground_truth_contract(
+    tmp_path, monkeypatch, labels, metadata, message
+):
+    bin_path = tmp_path / "input.bin"
+    graph = dgl.graph(([], []), num_nodes=2)
+    graph.ndata["f"] = torch.tensor(labels, dtype=torch.int32)
+    save_graphs(str(bin_path), [graph], metadata)
+    monkeypatch.setattr(inference_conversion, "validate_bin", lambda *args, **kwargs: None)
+
+    with pytest.raises(ValueError, match=message):
+        inference_conversion.validate_inference_bin(
+            bin_path,
+            GeometryRequirements(False, False, False, False),
+            PointSamplingConfig(),
+        )
 
 
 def test_conversion_builds_unlabeled_bin_without_instance_truth(

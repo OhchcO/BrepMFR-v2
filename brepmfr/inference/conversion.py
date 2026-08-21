@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Tuple
 
-from dgl.data.utils import save_graphs
+from dgl.data.utils import load_graphs, save_graphs
 
 from brepmfr.inference.postprocess import GeometryRequirements
 from tools.geometry_features import PointSamplingConfig, extract_geometry_features
@@ -70,6 +70,12 @@ def validate_inference_bin(
         ),
         point_sampling=point_sampling,
     )
+    graphs, metadata = load_graphs(str(Path(path)))
+    labels = graphs[0].ndata["f"]
+    if not bool((labels == -1).all()):
+        raise ValueError("Inference BIN must use only semantic sentinel -1")
+    if "instance" in metadata:
+        raise ValueError("Inference BIN must not contain instance ground truth")
 
 
 def convert_step_to_inference_bin(
@@ -139,4 +145,3 @@ def convert_step_to_inference_bin(
     finally:
         if temporary_path.exists():
             temporary_path.unlink()
-

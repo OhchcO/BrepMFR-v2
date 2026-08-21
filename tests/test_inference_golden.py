@@ -37,6 +37,49 @@ CHECKPOINT = Path(
 GOLDEN_PATH = (
     Path(__file__).resolve().parent / "golden" / "20221121_154647_0.json"
 )
+_RUNTIME_KEYS = (
+    "platform",
+    "machine",
+    "python",
+    "torch",
+    "pytorch_lightning",
+    "device",
+)
+
+
+def _device_environment(device):
+    if device.type != "cuda":
+        return {
+            "type": device.type,
+            "name": None,
+            "capability": None,
+            "cuda": None,
+            "cudnn": None,
+        }
+    return {
+        "type": device.type,
+        "name": torch.cuda.get_device_name(device),
+        "capability": list(torch.cuda.get_device_capability(device)),
+        "cuda": torch.version.cuda,
+        "cudnn": torch.backends.cudnn.version(),
+    }
+
+
+def _runtime_matches(golden, record):
+    return all(golden.get(key) == record.get(key) for key in _RUNTIME_KEYS)
+
+
+def _assert_probability_hashes(golden, record):
+    if not _runtime_matches(golden, record):
+        return
+    assert (
+        golden["semantic_probability_sha256"]
+        == record["semantic_probability_sha256"]
+    )
+    assert (
+        golden["affinity_probability_sha256"]
+        == record["affinity_probability_sha256"]
+    )
 
 
 def _labeled_reference_batch(bin_path, loaded, device):
@@ -120,6 +163,30 @@ def _posthoc_metrics(reference_semantic, affinity_logits, spatial_pos, label):
             evaluation["clustering"]["ground_truth_instance_count"]
         ),
     }
+
+
+def test_probability_hashes_are_strict_only_for_matching_runtime():
+    golden = {
+        "python": "3.8.19",
+        "torch": "1.13.1+cu116",
+        "pytorch_lightning": "1.9.5",
+        "device": {"type": "cuda", "name": "test-gpu"},
+        "semantic_probability_sha256": "semantic-golden",
+        "affinity_probability_sha256": "affinity-golden",
+    }
+    different_runtime = dict(golden)
+    different_runtime["device"] = {"type": "cpu", "name": None}
+    different_runtime["semantic_probability_sha256"] = "semantic-cpu"
+    different_runtime["affinity_probability_sha256"] = "affinity-cpu"
+
+    _assert_probability_hashes(golden, different_runtime)
+    assert _runtime_matches(golden, different_runtime) is False
+
+    matching_runtime = dict(golden)
+    assert _runtime_matches(golden, matching_runtime) is True
+    matching_runtime["semantic_probability_sha256"] = "changed"
+    with pytest.raises(AssertionError):
+        _assert_probability_hashes(golden, matching_runtime)
 
 
 def test_step_inference_matches_prepared_bin_and_committed_golden(
@@ -206,9 +273,12 @@ def test_step_inference_matches_prepared_bin_and_committed_golden(
         "face_count": int(reference_semantic.shape[0]),
         "checkpoint_filename": CHECKPOINT.name,
         "checkpoint_sha256": sha256_file(CHECKPOINT),
+        "platform": platform.platform(),
+        "machine": platform.machine(),
         "python": platform.python_version(),
         "torch": torch.__version__,
         "pytorch_lightning": pytorch_lightning.__version__,
+        "device": _device_environment(device),
         "semantic_probability_sha256": hashlib.sha256(
             np.ascontiguousarray(reference_semantic, dtype=np.float32).tobytes()
         ).hexdigest(),
@@ -231,17 +301,13 @@ def test_step_inference_matches_prepared_bin_and_committed_golden(
     if update_golden:
         assert golden == record
     assert golden["checkpoint_sha256"] == record["checkpoint_sha256"]
-    assert (
-        golden["semantic_probability_sha256"]
-        == record["semantic_probability_sha256"]
-    )
-    assert (
-        golden["affinity_probability_sha256"]
-        == record["affinity_probability_sha256"]
-    )
-    assert_prediction_records_close(actual.document["faces"], golden["faces"])
+    _assert_probability_hashes(golden, record)
+    record_atol = 1e-5 if _runtime_matches(golden, record) else 1e-3
     assert_prediction_records_close(
-        actual.document["instances"], golden["instances"]
+        actual.document["faces"], golden["faces"], atol=record_atol
+    )
+    assert_prediction_records_close(
+        actual.document["instances"], golden["instances"], atol=record_atol
     )
     for key, expected in golden["posthoc_metrics"].items():
         actual_metric = posthoc_metrics[key]

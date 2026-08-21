@@ -4,9 +4,21 @@
   "face_count": 41,
   "checkpoint_filename": "best-mIoU-187-0.939778.ckpt",
   "checkpoint_sha256": "87c909bddcd01ba5cfae98a8621b83bd6d1f8e364f6e1558f5dfc2c9343b92b4",
+  "platform": "Windows-10-10.0.26100-SP0",
+  "machine": "AMD64",
   "python": "3.8.19",
   "torch": "1.13.1+cu116",
   "pytorch_lightning": "1.9.5",
+  "device": {
+    "type": "cuda",
+    "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "capability": [
+      8,
+      9
+    ],
+    "cuda": "11.6",
+    "cudnn": 8302
+  },
   "semantic_probability_sha256": "7047cc360d9258f30d4b46f6494ab7ae0e296267f5a865ea69c7dbb8f4dea979",
   "affinity_probability_sha256": "6870a663d47b58af752fcf9ac697687960ad3ca08a7abd76e065e7d10f933447",
   "faces": [

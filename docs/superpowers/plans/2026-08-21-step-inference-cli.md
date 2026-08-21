@@ -322,13 +322,13 @@ git commit -m "feat: support unlabeled inference graphs"
 
 **Interfaces:**
 
-- Produces: `INFERENCE_BIN_CONTRACT_VERSION = 1`.
+- Produces: `INFERENCE_BIN_CONTRACT_VERSION = 2`.
 - Produces: `CacheDecision(hit: bool, fingerprint: str, bin_path: Path, metadata_path: Path, reason: str)`.
 - Produces: `sha256_file(path: Path) -> str`.
 - Produces: `build_cache_identity(step_path: Path, implementation_paths: Sequence[Path], seed: int, point_sampling: Mapping[str, object], geometry_fields: Mapping[str, bool]) -> Dict[str, object]`.
 - Produces: `cache_fingerprint(identity: Mapping[str, object]) -> str` using canonical UTF-8 JSON with `sort_keys=True` and compact separators.
 - Produces: `inspect_cache(bin_path: Path, metadata_path: Path, identity: Mapping[str, object], validate_bin_file: Callable[[Path], None], force_rebuild: bool = False) -> CacheDecision`.
-- Produces: `write_cache_metadata_atomic(path: Path, identity: Mapping[str, object], fingerprint: str) -> None`.
+- Produces: `write_cache_metadata_atomic(path: Path, identity: Mapping[str, object], fingerprint: str, bin_path: Path) -> None`.
 
 - [ ] **Step 1: Write failing cache tests**
 
@@ -349,7 +349,7 @@ def test_cache_hits_only_when_identity_and_bin_validation_match(tmp_path):
         {"pointcloud": True, "parametric_surface": True, "cylindrical": True},
     )
     fingerprint = cache_fingerprint(identity)
-    write_cache_metadata_atomic(metadata_path, identity, fingerprint)
+    write_cache_metadata_atomic(metadata_path, identity, fingerprint, bin_path)
     decision = inspect_cache(bin_path, metadata_path, identity, lambda path: None)
     assert decision.hit is True
     assert decision.fingerprint == fingerprint
@@ -374,10 +374,11 @@ document = {
     "schema_version": INFERENCE_BIN_CONTRACT_VERSION,
     "fingerprint": fingerprint,
     "identity": dict(identity),
+    "bin_sha256": sha256_file(bin_path),
 }
 ```
 
-Hash files in 1 MiB chunks. Resolve paths before reading, but store each implementation as its ordered basename plus content SHA-256 rather than an absolute source path so moving the repository does not invalidate identical bytes. `inspect_cache` returns a miss with a stable reason (`forced`, `missing-bin`, `missing-metadata`, `invalid-metadata`, `identity-mismatch`, or `invalid-bin`) rather than throwing for ordinary cache invalidation. It calls the supplied validator only after the sidecar fingerprint matches.
+Hash files in 1 MiB chunks. Resolve paths before reading, but store each implementation as its ordered basename plus content SHA-256 rather than an absolute source path so moving the repository does not invalidate identical bytes. `inspect_cache` returns a miss with a stable reason (`forced`, `missing-bin`, `missing-metadata`, `invalid-metadata`, `identity-mismatch`, or `invalid-bin`) rather than throwing for ordinary cache invalidation. It verifies the current BIN content hash and calls the supplied validator only after the sidecar fingerprint matches, so a BIN from a different sidecar generation cannot be accepted.
 
 - [ ] **Step 4: Implement atomic sidecar writing and read-back**
 
@@ -797,7 +798,7 @@ Implement `_load_checkpoint` by reading the checkpoint mapping with `torch.load(
 
 In `run_step_inference`, create the output directory first, set a `stage` variable before every boundary, and record `time.perf_counter()` timings. Enforce `experiment_mode in ("dynamic", "dynamic_affinity")`, choose checkpoint seed unless the request overrides it, build the cache identity, and call `inspect_cache` with a validator closure using current requirements.
 
-On a miss, call `convert_step_to_inference_bin`, validate the completed target again through the same validator closure, then call `write_cache_metadata_atomic(metadata_path, identity, decision.fingerprint)`. On a hit, skip conversion and metadata writing. Hash the checkpoint for result provenance but do not place it in BIN identity.
+On a miss, call `convert_step_to_inference_bin`, validate the completed target again through the same validator closure, then call `write_cache_metadata_atomic(metadata_path, identity, decision.fingerprint, decision.bin_path)`. On a hit, skip conversion and metadata writing. Hash the checkpoint for result provenance but do not place it in BIN identity.
 
 - [ ] **Step 5: Implement model inference and result assembly**
 

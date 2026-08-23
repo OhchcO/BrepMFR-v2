@@ -395,7 +395,7 @@ def _face_loop_counts(extraction: Mapping[str, object], node_count: int, topolog
 
 def build_graph(
     extraction: dict,
-    labels: LabelData,
+    labels: Optional[LabelData],
     schema: dict,
     topology_utils: object,
 ):
@@ -408,7 +408,7 @@ def build_graph(
         node_count = int(graph_data["num_nodes"])
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("Extraction graph is malformed") from error
-    if node_count != len(labels.semantic):
+    if labels is not None and node_count != len(labels.semantic):
         raise ValueError(
             "Extractor has {0} faces but label has {1}".format(
                 node_count, len(labels.semantic)
@@ -481,7 +481,12 @@ def build_graph(
         _face_loop_counts(extraction, node_count, topology_utils)
     ).to(torch.int32)
     graph.ndata["a"] = graph.in_degrees().to(torch.int32)
-    graph.ndata["f"] = torch.from_numpy(labels.semantic).to(torch.int32)
+    semantic = (
+        labels.semantic
+        if labels is not None
+        else np.full(node_count, -1, dtype=np.int32)
+    )
+    graph.ndata["f"] = torch.from_numpy(semantic).to(torch.int32)
     graph.edata["x"] = torch.from_numpy(edge_grid).to(torch.float32)
     graph.edata["t"] = torch.from_numpy(edge_codes).to(torch.int32)
     graph.edata["l"] = torch.from_numpy(edge_attributes[:, length_index]).to(torch.float32)

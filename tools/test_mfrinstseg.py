@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
@@ -21,42 +20,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from data.dataset import CADSynth
+from brepmfr.inference.postprocess import (
+    GeometryRequirements,
+    cluster_instances,
+    configuration_value,
+    geometry_requirements,
+)
 from models.brepseg_model import BrepSeg
-
-
-@dataclass(frozen=True)
-class GeometryRequirements:
-    """Strict BIN fields selected by checkpoint-saved model switches."""
-
-    use_face_uv: bool
-    require_face_pointcloud: bool
-    require_parametric_surface: bool
-    require_cylindrical_pos: bool
-
-
-def _configuration_value(configuration, name, default):
-    if isinstance(configuration, Mapping):
-        return configuration.get(name, default)
-    return getattr(configuration, name, default)
-
-
-def geometry_requirements(hparams):
-    """Translate checkpoint hyperparameters into strict dataset requirements."""
-    return GeometryRequirements(
-        use_face_uv=bool(_configuration_value(hparams, "use_face_uv", True)),
-        require_face_pointcloud=bool(
-            _configuration_value(hparams, "use_face_pointcloud", False)
-        ),
-        require_parametric_surface=(
-            _configuration_value(
-                hparams, "face_geometry_encoder", "mini_point"
-            )
-            == "param_surface"
-        ),
-        require_cylindrical_pos=bool(
-            _configuration_value(hparams, "use_cylindrical_pos", False)
-        ),
-    )
 
 
 def requires_instance_for_test(experiment_mode):
@@ -79,7 +49,7 @@ def seed_everything(seed):
 def _model_configuration_value(model, name, default):
     if hasattr(model, name):
         return getattr(model, name)
-    return _configuration_value(getattr(model, "hparams", {}), name, default)
+    return configuration_value(getattr(model, "hparams", {}), name, default)
 
 
 def apply_instance_bias_scale_override(model, override):
@@ -296,65 +266,6 @@ def pairwise_metrics(counts):
             else 0.0
         ),
     }
-
-
-def cluster_instances(
-    affinity,
-    semantic,
-    threshold=0.5,
-    background_class_id=24,
-    adjacency=None,
-):
-    """Cluster same-semantic faces with deterministic union-find."""
-    affinity = _validate_square_matrix(affinity, "affinity")
-    semantic = np.asarray(semantic)
-    node_count = affinity.shape[0]
-    if semantic.shape != (node_count,):
-        raise ValueError("semantic must have one entry per face")
-    if adjacency is None:
-        adjacency = np.ones_like(affinity, dtype=bool)
-        np.fill_diagonal(adjacency, False)
-    else:
-        adjacency = _validate_square_matrix(adjacency, "adjacency")
-        if adjacency.shape != affinity.shape:
-            raise ValueError("adjacency and affinity must have equal shape")
-        adjacency = np.asarray(adjacency, dtype=bool)
-
-    parent = np.arange(node_count, dtype=np.int64)
-
-    def find(node):
-        while parent[node] != node:
-            parent[node] = parent[parent[node]]
-            node = int(parent[node])
-        return node
-
-    def union(left, right):
-        left_root = find(left)
-        right_root = find(right)
-        if left_root != right_root:
-            parent[max(left_root, right_root)] = min(left_root, right_root)
-
-    active = semantic != background_class_id
-    eligible = (
-        (affinity >= threshold)
-        & (adjacency | adjacency.T)
-        & active[:, None]
-        & active[None, :]
-        & (semantic[:, None] == semantic[None, :])
-    )
-    for left, right in zip(*np.where(np.triu(eligible, k=1))):
-        union(int(left), int(right))
-
-    clusters = np.full(node_count, -1, dtype=np.int64)
-    root_to_cluster = {}
-    for node in range(node_count):
-        if not active[node]:
-            continue
-        root = find(node)
-        if root not in root_to_cluster:
-            root_to_cluster[root] = len(root_to_cluster)
-        clusters[node] = root_to_cluster[root]
-    return clusters
 
 
 def _cluster_affinity(clusters):

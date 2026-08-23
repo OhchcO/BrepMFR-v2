@@ -44,3 +44,26 @@ The best checkpoints based on the smallest validation loss are saved in the resu
 python segmentation.py test --dataset_path /path/to/dataset --checkpoint ./results/BrepMFR/best.ckpt --batch_size 64
 ```
 
+## STEP inference
+
+Run an affinity-capable checkpoint directly on one unlabeled STEP model:
+
+```powershell
+python tools/infer_step.py `
+  --step D:\path\part.step `
+  --checkpoint D:\path\model.ckpt `
+  --output-dir D:\path\recognition-output `
+  --device auto
+```
+
+The output directory contains `input.bin`, `input.bin.meta.json`, and the
+canonical `result.json`. The BIN is reused only when the STEP bytes,
+conversion implementation, sampling seed/configuration, and checkpoint-derived
+geometry requirements still match and the cached BIN passes validation. Use
+`--force-rebuild` to bypass a valid cache.
+
+The inference path never reads MFRInstSeg label JSON files. In `result.json`,
+`face_index` is the zero-based OCC/AAG graph-node order produced from the STEP
+file; it is not an NX face-array index or Face Tag. NX/UG visualization can
+consume the JSON later, but is not part of this Python inference pipeline.
+

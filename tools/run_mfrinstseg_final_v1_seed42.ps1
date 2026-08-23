@@ -6,7 +6,7 @@ param(
     [string]$ResultBasePath = "D:\Code\BrepMFR\results\final_v1",
     [string]$PythonExe = "F:\ProgramData\anaconda3\envs\aagmspenv\python.exe",
     [int]$BatchSize = 16,
-    [int]$MaxEpochs = 100,
+    [int]$MaxEpochs = 200,
     [int]$NumWorkers = 0,
     [switch]$RebuildSubset,
     [switch]$PrepareOnly,

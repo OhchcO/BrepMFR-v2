@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect x="0" y="0" width="1600" height="900" fill="#FFFFFF"/>
+
+  <rect x="585" y="28" width="430" height="70" rx="8" ry="8" fill="#183B56" stroke="#183B56" stroke-width="2"/>
+  <text x="800" y="72" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="28" font-weight="600" fill="#FFFFFF">航空机匣制造特征分类体系</text>
+
+  <line x1="800" y1="98" x2="800" y2="138" stroke="#5B708A" stroke-width="3"/>
+  <line x1="122" y1="138" x2="1478" y2="138" stroke="#5B708A" stroke-width="3"/>
+  <line x1="122" y1="138" x2="122" y2="176" stroke="#5B708A" stroke-width="3"/>
+  <line x1="348" y1="138" x2="348" y2="176" stroke="#5B708A" stroke-width="3"/>
+  <line x1="574" y1="138" x2="574" y2="176" stroke="#5B708A" stroke-width="3"/>
+  <line x1="800" y1="138" x2="800" y2="176" stroke="#5B708A" stroke-width="3"/>
+  <line x1="1026" y1="138" x2="1026" y2="176" stroke="#5B708A" stroke-width="3"/>
+  <line x1="1252" y1="138" x2="1252" y2="176" stroke="#5B708A" stroke-width="3"/>
+  <line x1="1478" y1="138" x2="1478" y2="176" stroke="#5B708A" stroke-width="3"/>
+
+  <!-- 基体 / 背景面 -->
+  <rect x="14" y="176" width="216" height="650" rx="8" ry="8" fill="#F8FAFC" stroke="#8193A6" stroke-width="2"/>
+  <rect x="14" y="176" width="216" height="70" rx="8" ry="8" fill="#E8F1F7" stroke="#8193A6" stroke-width="2"/>
+  <rect x="14" y="238" width="216" height="8" fill="#E8F1F7"/>
+  <text x="122" y="211" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="21" font-weight="600" fill="#183B56">基体 / 背景面</text>
+  <text x="122" y="235" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="16" fill="#D46A1F">000</text>
+  <rect x="30" y="278" width="184" height="300" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.5"/>
+  <text x="122" y="405" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="21" font-weight="600" fill="#23384D">非目标制造</text>
+  <text x="122" y="437" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="21" font-weight="600" fill="#23384D">特征面</text>
+  <text x="122" y="478" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="16" fill="#D46A1F">000</text>
+
+  <!-- 孔类特征 -->
+  <rect x="240" y="176" width="216" height="650" rx="8" ry="8" fill="#F8FAFC" stroke="#8193A6" stroke-width="2"/>
+  <rect x="240" y="176" width="216" height="70" rx="8" ry="8" fill="#E8F1F7" stroke="#8193A6" stroke-width="2"/>
+  <rect x="240" y="238" width="216" height="8" fill="#E8F1F7"/>
+  <text x="348" y="211" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="21" font-weight="600" fill="#183B56">孔类特征</text>
+  <text x="348" y="235" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="16" fill="#D46A1F">10</text>
+
+  <rect x="250" y="260" width="94" height="96" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="297" y="294" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#23384D">简单通孔</text>
+  <text x="297" y="329" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">101</text>
+  <rect x="352" y="260" width="94" height="96" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="399" y="294" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#23384D">简单盲孔</text>
+  <text x="399" y="329" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">102</text>
+
+  <rect x="250" y="369" width="94" height="96" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="297" y="398" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">柱形沉孔</text>
+  <text x="297" y="420" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">（通孔）</text>
+  <text x="297" y="448" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">103</text>
+  <rect x="352" y="369" width="94" height="96" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="399" y="398" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">柱形沉孔</text>
+  <text x="399" y="420" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">（盲孔）</text>
+  <text x="399" y="448" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">104</text>
+
+  <rect x="250" y="478" width="94" height="96" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="297" y="507" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">锥形沉头孔</text>
+  <text x="297" y="529" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">（通孔）</text>
+  <text x="297" y="557" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">105</text>
+  <rect x="352" y="478" width="94" height="96" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="399" y="507" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">锥形沉头孔</text>
+  <text x="399" y="529" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">（盲孔）</text>
+  <text x="399" y="557" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">106</text>
+
+  <rect x="250" y="587" width="94" height="96" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="297" y="616" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">螺纹孔</text>
+  <text x="297" y="638" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">（通孔）</text>
+  <text x="297" y="666" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">107</text>
+  <rect x="352" y="587" width="94" height="96" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="399" y="616" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">螺纹孔</text>
+  <text x="399" y="638" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">（盲孔）</text>
+  <text x="399" y="666" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">108</text>
+
+  <rect x="250" y="696" width="94" height="96" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="297" y="725" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">组合孔</text>
+  <text x="297" y="747" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">（通孔）</text>
+  <text x="297" y="775" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">109</text>
+  <rect x="352" y="696" width="94" height="96" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="399" y="725" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">组合孔</text>
+  <text x="399" y="747" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="14" fill="#23384D">（盲孔）</text>
+  <text x="399" y="775" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">110</text>
+
+  <!-- 凸台特征 -->
+  <rect x="466" y="176" width="216" height="650" rx="8" ry="8" fill="#F8FAFC" stroke="#8193A6" stroke-width="2"/>
+  <rect x="466" y="176" width="216" height="70" rx="8" ry="8" fill="#E8F1F7" stroke="#8193A6" stroke-width="2"/>
+  <rect x="466" y="238" width="216" height="8" fill="#E8F1F7"/>
+  <text x="574" y="211" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="21" font-weight="600" fill="#183B56">凸台特征</text>
+  <text x="574" y="235" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="16" fill="#D46A1F">20</text>
+  <rect x="482" y="272" width="184" height="105" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="574" y="318" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="18" fill="#23384D">圆形凸台</text><text x="574" y="350" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">201</text>
+  <rect x="482" y="395" width="184" height="105" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="574" y="441" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="18" fill="#23384D">矩形凸台</text><text x="574" y="473" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">202</text>
+  <rect x="482" y="518" width="184" height="105" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="574" y="564" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="18" fill="#23384D">异形凸台</text><text x="574" y="596" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">203</text>
+  <rect x="482" y="641" width="184" height="105" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="574" y="687" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="18" fill="#23384D">环形凸台</text><text x="574" y="719" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">204</text>
+
+  <!-- 型腔特征 -->
+  <rect x="692" y="176" width="216" height="650" rx="8" ry="8" fill="#F8FAFC" stroke="#8193A6" stroke-width="2"/>
+  <rect x="692" y="176" width="216" height="70" rx="8" ry="8" fill="#E8F1F7" stroke="#8193A6" stroke-width="2"/>
+  <rect x="692" y="238" width="216" height="8" fill="#E8F1F7"/>
+  <text x="800" y="211" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="21" font-weight="600" fill="#183B56">型腔特征</text>
+  <text x="800" y="235" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="16" fill="#D46A1F">30</text>
+  <rect x="702" y="270" width="94" height="145" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="749" y="326" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#23384D">矩形通腔</text><text x="749" y="370" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">301</text>
+  <rect x="804" y="270" width="94" height="145" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="851" y="326" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#23384D">矩形盲腔</text><text x="851" y="370" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">302</text>
+  <rect x="702" y="431" width="94" height="145" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="749" y="487" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#23384D">三角通腔</text><text x="749" y="531" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">303</text>
+  <rect x="804" y="431" width="94" height="145" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="851" y="487" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#23384D">三角盲腔</text><text x="851" y="531" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">304</text>
+  <rect x="702" y="592" width="94" height="145" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="749" y="648" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#23384D">异形通腔</text><text x="749" y="692" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">305</text>
+  <rect x="804" y="592" width="94" height="145" rx="5" ry="5" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="851" y="648" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#23384D">异形盲腔</text><text x="851" y="692" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">306</text>
+
+  <!-- 槽类特征 -->
+  <rect x="918" y="176" width="216" height="650" rx="8" ry="8" fill="#F8FAFC" stroke="#8193A6" stroke-width="2"/>
+  <rect x="918" y="176" width="216" height="70" rx="8" ry="8" fill="#E8F1F7" stroke="#8193A6" stroke-width="2"/>
+  <rect x="918" y="238" width="216" height="8" fill="#E8F1F7"/>
+  <text x="1026" y="211" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="21" font-weight="600" fill="#183B56">槽类特征</text>
+  <text x="1026" y="235" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="16" fill="#D46A1F">40</text>
+  <rect x="934" y="272" width="184" height="105" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="1026" y="318" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="18" fill="#23384D">圆弧 / 圆形槽</text><text x="1026" y="350" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">401</text>
+  <rect x="934" y="395" width="184" height="105" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="1026" y="441" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="18" fill="#23384D">矩形槽</text><text x="1026" y="473" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">402</text>
+  <rect x="934" y="518" width="184" height="105" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="1026" y="564" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="18" fill="#23384D">异形槽</text><text x="1026" y="596" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">403</text>
+  <rect x="934" y="641" width="184" height="105" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="1026" y="687" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="18" fill="#23384D">环形槽</text><text x="1026" y="719" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">404</text>
+
+  <!-- 单面功能特征 -->
+  <rect x="1144" y="176" width="216" height="650" rx="8" ry="8" fill="#F8FAFC" stroke="#8193A6" stroke-width="2"/>
+  <rect x="1144" y="176" width="216" height="70" rx="8" ry="8" fill="#E8F1F7" stroke="#8193A6" stroke-width="2"/>
+  <rect x="1144" y="238" width="216" height="8" fill="#E8F1F7"/>
+  <text x="1252" y="211" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="21" font-weight="600" fill="#183B56">单面功能特征</text>
+  <text x="1252" y="235" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="16" fill="#D46A1F">50</text>
+  <rect x="1160" y="285" width="184" height="135" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="1252" y="343" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="18" fill="#23384D">车削回转面</text><text x="1252" y="384" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">501</text>
+  <rect x="1160" y="455" width="184" height="135" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="1252" y="513" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="18" fill="#23384D">径向安装面</text><text x="1252" y="554" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">502</text>
+  <rect x="1160" y="625" width="184" height="135" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="1252" y="683" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="18" fill="#23384D">轴向安装面</text><text x="1252" y="724" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#D46A1F">503</text>
+
+  <!-- 过渡特征 -->
+  <rect x="1370" y="176" width="216" height="650" rx="8" ry="8" fill="#F8FAFC" stroke="#8193A6" stroke-width="2"/>
+  <rect x="1370" y="176" width="216" height="70" rx="8" ry="8" fill="#E8F1F7" stroke="#8193A6" stroke-width="2"/>
+  <rect x="1370" y="238" width="216" height="8" fill="#E8F1F7"/>
+  <text x="1478" y="211" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="21" font-weight="600" fill="#183B56">过渡特征</text>
+  <text x="1478" y="235" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="16" fill="#D46A1F">60</text>
+  <rect x="1386" y="310" width="184" height="185" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="1478" y="392" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="22" fill="#23384D">圆角</text><text x="1478" y="440" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="16" fill="#D46A1F">601</text>
+  <rect x="1386" y="535" width="184" height="185" rx="6" ry="6" fill="#FFFFFF" stroke="#D5DEE7" stroke-width="1.3"/>
+  <text x="1478" y="617" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="22" fill="#23384D">倒角</text><text x="1478" y="665" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="16" fill="#D46A1F">602</text>
+
+  <line x1="24" y1="858" x2="1576" y2="858" stroke="#D5DEE7" stroke-width="1"/>
+  <text x="800" y="883" text-anchor="middle" font-family="Microsoft YaHei,SimHei,Arial,sans-serif" font-size="15" fill="#5B708A">一级类别 7 类 · 二级语义类别 30 类（含基体 / 背景面）</text>
+</svg>

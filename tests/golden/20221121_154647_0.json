@@ -1,6 +1,9 @@
 {
   "schema_version": "1.0",
   "sample_id": "20221121_154647_0",
+  "source_split": "test",
+  "step_filename": "20221121_154647_0.step",
+  "step_sha256": "00bc5acd0f49b1f11e113eebba656fce9003029d53b82b12ed586976d13e2bbd",
   "face_count": 41,
   "checkpoint_filename": "best-mIoU-187-0.939778.ckpt",
   "checkpoint_sha256": "87c909bddcd01ba5cfae98a8621b83bd6d1f8e364f6e1558f5dfc2c9343b92b4",

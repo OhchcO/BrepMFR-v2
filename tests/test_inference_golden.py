@@ -22,21 +22,30 @@ from tools.mfrinstseg_to_bin import load_label
 from tools.test_mfrinstseg import evaluate_instance_graph
 
 
-RAW_STEP = Path(r"D:\Code\Datasets\MFRInstSeg\steps\20221121_154647_0.step")
-RAW_LABEL = Path(r"D:\Code\Datasets\MFRInstSeg\labels\20221121_154647_0.json")
-PREPARED_BIN = Path(
-    r"D:\Code\Datasets\MFRInstSeg_BrepMFR_ParamSurface_v4_shared_seed42"
-    r"\bin\20221121_154647_0.bin"
+TEST_ROOT = Path(__file__).resolve().parent
+GOLDEN_PATH = TEST_ROOT / "golden" / "20221121_154647_0.json"
+COMMITTED_STEP = (
+    TEST_ROOT / "assets" / "step_inference" / "20221121_154647_0.step"
 )
-CHECKPOINT = Path(
-    r"D:\Code\BrepMFR\results\paper_core_experiments"
-    r"\MFRInstSeg_1pct_spe_instance_positive_param_surface_intrinsic_"
-    r"untrimmed_gated_seed42\0821\092832"
-    r"\best-mIoU-187-0.939778.ckpt"
+EXPECTED_STEP_SHA256 = (
+    "00bc5acd0f49b1f11e113eebba656fce9003029d53b82b12ed586976d13e2bbd"
 )
-GOLDEN_PATH = (
-    Path(__file__).resolve().parent / "golden" / "20221121_154647_0.json"
-)
+
+
+def _optional_external_path(variable):
+    value = os.environ.get(variable)
+    return Path(value).expanduser().resolve() if value else None
+
+
+RAW_STEP = COMMITTED_STEP
+RAW_LABEL = _optional_external_path("BREPMFR_GOLDEN_LABEL")
+PREPARED_BIN = _optional_external_path("BREPMFR_GOLDEN_PREPARED_BIN")
+CHECKPOINT = _optional_external_path("BREPMFR_GOLDEN_CHECKPOINT")
+_EXTERNAL_GOLDEN_ASSETS = {
+    "BREPMFR_GOLDEN_LABEL": RAW_LABEL,
+    "BREPMFR_GOLDEN_PREPARED_BIN": PREPARED_BIN,
+    "BREPMFR_GOLDEN_CHECKPOINT": CHECKPOINT,
+}
 _RUNTIME_KEYS = (
     "platform",
     "machine",
@@ -45,6 +54,16 @@ _RUNTIME_KEYS = (
     "pytorch_lightning",
     "device",
 )
+
+
+def test_committed_golden_step_is_portable_and_content_addressed():
+    golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
+
+    assert COMMITTED_STEP.is_file(), "committed golden STEP asset is missing"
+    assert golden["source_split"] == "test"
+    assert golden["step_filename"] == COMMITTED_STEP.name
+    assert golden["step_sha256"] == EXPECTED_STEP_SHA256
+    assert sha256_file(COMMITTED_STEP) == EXPECTED_STEP_SHA256
 
 
 def _device_environment(device):
@@ -193,13 +212,14 @@ def test_step_inference_matches_prepared_bin_and_committed_golden(
     tmp_path, monkeypatch
 ):
     missing = [
-        path
-        for path in (RAW_STEP, PREPARED_BIN, CHECKPOINT)
-        if not path.is_file()
+        variable
+        for variable, path in _EXTERNAL_GOLDEN_ASSETS.items()
+        if path is None or not path.is_file()
     ]
     if missing:
-        pytest.skip("external golden assets are unavailable: {0}".format(missing))
-    assert RAW_LABEL.is_file(), "posthoc label asset is missing"
+        pytest.skip(
+            "set existing paths for external golden assets: {0}".format(missing)
+        )
     update_golden = os.environ.get("UPDATE_STEP_INFERENCE_GOLDEN") == "1"
     if not update_golden:
         assert GOLDEN_PATH.is_file(), "committed STEP inference golden is missing"
@@ -270,6 +290,9 @@ def test_step_inference_matches_prepared_bin_and_committed_golden(
     record = {
         "schema_version": "1.0",
         "sample_id": "20221121_154647_0",
+        "source_split": "test",
+        "step_filename": RAW_STEP.name,
+        "step_sha256": sha256_file(RAW_STEP),
         "face_count": int(reference_semantic.shape[0]),
         "checkpoint_filename": CHECKPOINT.name,
         "checkpoint_sha256": sha256_file(CHECKPOINT),

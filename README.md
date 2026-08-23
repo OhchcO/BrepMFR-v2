@@ -67,3 +67,21 @@ The inference path never reads MFRInstSeg label JSON files. In `result.json`,
 file; it is not an NX face-array index or Face Tag. NX/UG visualization can
 consume the JSON later, but is not part of this Python inference pipeline.
 
+### Golden STEP regression
+
+The repository includes the small `20221121_154647_0.step` test-split model
+and its content-addressed expected result. The ordinary test suite always
+checks that the committed STEP bytes match the golden SHA-256. To run the
+full numerical comparison against the final checkpoint, provide the three
+large external assets explicitly:
+
+```powershell
+$env:BREPMFR_GOLDEN_LABEL = 'D:\path\20221121_154647_0.json'
+$env:BREPMFR_GOLDEN_PREPARED_BIN = 'D:\path\20221121_154647_0.bin'
+$env:BREPMFR_GOLDEN_CHECKPOINT = 'D:\path\best-model.ckpt'
+python -m pytest tests/test_inference_golden.py -q
+```
+
+Without these variables, only the external numerical comparison is skipped;
+the committed STEP integrity check still runs.
+

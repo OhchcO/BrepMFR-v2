@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <iostream>
+#include <string>
 
 namespace brepmfr
 {
@@ -31,8 +32,16 @@ void Expect(bool condition, const std::string& message)
 }
 }
 
-int main()
+int main(int argc, char* argv[])
 {
+    if (argc == 4 && std::string(argv[1]) == "--process-fixture")
+    {
+        const int exit_code = std::stoi(argv[2]);
+        std::cout << argv[3] << '\n';
+        std::cerr << argv[3] << '\n';
+        return exit_code;
+    }
+
     int failures = 0;
     for (const auto& registered : brepmfr::nx2212::test::Registry())
     {

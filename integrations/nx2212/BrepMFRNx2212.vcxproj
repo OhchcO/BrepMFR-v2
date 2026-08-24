@@ -61,6 +61,7 @@
   <ItemGroup>
     <ClCompile Include="src\plugin_config.cpp" />
     <ClCompile Include="src\inference_command.cpp" />
+    <ClCompile Include="src\inference_process.cpp" />
     <ClCompile Include="src\output_paths.cpp" />
     <ClCompile Include="src\plugin_entry.cpp" />
     <ClCompile Include="src\plugin_runtime.cpp" />
@@ -69,6 +70,7 @@
     <ClInclude Include="include\plugin_config.hpp" />
     <ClInclude Include="include\plugin_exports.hpp" />
     <ClInclude Include="include\inference_command.hpp" />
+    <ClInclude Include="include\inference_process.hpp" />
     <ClInclude Include="include\output_paths.hpp" />
     <ClInclude Include="include\plugin_runtime.hpp" />
     <ClInclude Include="third_party\nlohmann\json.hpp" />

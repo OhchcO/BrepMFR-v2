@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "status": "error",
+  "stage": "conversion",
+  "error": {
+    "type": "ValueError",
+    "message": "shape mismatch"
+  },
+  "input": {
+    "step_path": "__STEP_PATH__"
+  }
+}

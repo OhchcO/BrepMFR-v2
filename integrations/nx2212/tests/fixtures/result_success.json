@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "status": "success",
+  "input": {
+    "step_path": "__STEP_PATH__",
+    "step_sha256": "abc",
+    "face_count": 2
+  },
+  "cache": {
+    "bin_path": "D:/output/input.bin",
+    "metadata_path": "D:/output/input.bin.meta.json",
+    "hit": true,
+    "fingerprint": "fp"
+  },
+  "model": {
+    "checkpoint_path": "D:/model.ckpt",
+    "checkpoint_sha256": "def",
+    "checkpoint_epoch": 187,
+    "experiment_mode": "dynamic_affinity",
+    "device": "cuda",
+    "num_classes": 25,
+    "affinity_threshold": 0.5
+  },
+  "faces": [
+    {
+      "face_index": 0,
+      "class_id": 24,
+      "feature_name": "stock",
+      "confidence": 0.99,
+      "instance_id": null
+    },
+    {
+      "face_index": 1,
+      "class_id": 12,
+      "feature_name": "blind_hole",
+      "confidence": 0.95,
+      "instance_id": 0
+    }
+  ],
+  "instances": [
+    {
+      "instance_id": 0,
+      "class_id": 12,
+      "feature_name": "blind_hole",
+      "face_indices": [1],
+      "confidence": 0.95
+    }
+  ],
+  "timings_seconds": {
+    "checkpoint_load": 1.0,
+    "conversion": 2.0,
+    "inference": 3.0,
+    "total": 6.0
+  },
+  "warnings": []
+}

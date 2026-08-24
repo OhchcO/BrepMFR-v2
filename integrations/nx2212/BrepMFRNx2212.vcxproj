@@ -65,6 +65,7 @@
     <ClCompile Include="src\output_paths.cpp" />
     <ClCompile Include="src\plugin_entry.cpp" />
     <ClCompile Include="src\plugin_runtime.cpp" />
+    <ClCompile Include="src\result_reader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\plugin_config.hpp" />
@@ -73,6 +74,7 @@
     <ClInclude Include="include\inference_process.hpp" />
     <ClInclude Include="include\output_paths.hpp" />
     <ClInclude Include="include\plugin_runtime.hpp" />
+    <ClInclude Include="include\result_reader.hpp" />
     <ClInclude Include="third_party\nlohmann\json.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

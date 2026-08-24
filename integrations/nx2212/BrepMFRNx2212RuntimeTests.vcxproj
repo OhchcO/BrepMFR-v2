@@ -53,12 +53,18 @@
     <ClCompile Include="src\inference_process.cpp" />
     <ClCompile Include="src\output_paths.cpp" />
     <ClCompile Include="src\plugin_runtime.cpp" />
+    <ClCompile Include="src\result_reader.cpp" />
     <ClCompile Include="tests\plugin_config_test.cpp" />
     <ClCompile Include="tests\inference_command_test.cpp" />
     <ClCompile Include="tests\inference_process_test.cpp" />
     <ClCompile Include="tests\plugin_runtime_test.cpp" />
+    <ClCompile Include="tests\result_reader_test.cpp" />
     <ClCompile Include="tests\output_paths_test.cpp" />
     <ClCompile Include="tests\test_main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="tests\fixtures\result_error.json" />
+    <None Include="tests\fixtures\result_success.json" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\plugin_config.hpp" />
@@ -66,6 +72,7 @@
     <ClInclude Include="include\inference_process.hpp" />
     <ClInclude Include="include\output_paths.hpp" />
     <ClInclude Include="include\plugin_runtime.hpp" />
+    <ClInclude Include="include\result_reader.hpp" />
     <ClInclude Include="third_party\nlohmann\json.hpp" />
     <ClInclude Include="tests\test_support.hpp" />
   </ItemGroup>

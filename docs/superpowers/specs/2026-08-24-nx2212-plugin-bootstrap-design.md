@@ -89,10 +89,15 @@ integrations/
 └── nx2212/
     ├── BrepMFRNx2212.sln
     ├── BrepMFRNx2212.vcxproj
+    ├── BrepMFRNx2212RuntimeTests.vcxproj
     ├── include/
-    │   └── plugin_exports.hpp
+    │   ├── plugin_exports.hpp
+    │   └── plugin_runtime.hpp
     ├── src/
-    │   └── plugin_entry.cpp
+    │   ├── plugin_entry.cpp
+    │   └── plugin_runtime.cpp
+    ├── tests/
+    │   └── plugin_runtime_test.cpp
     └── README.md
 ```
 
@@ -134,6 +139,12 @@ BrepMFR NX2212 plug-in loaded successfully.
 入口捕获标准异常和未知异常，失败时尝试显示错误消息，不允许异常越过 DLL 边界。
 第一阶段不初始化全局状态、不创建线程、不访问 Python，也不读写用户模型。
 
+为了自动验证上述行为，加载确认逻辑位于不依赖 NX API 的
+`RunLoadConfirmation(LoadNotifier&) noexcept` 中。`LoadNotifier` 只抽象“显示信息”
+和“显示错误”两个动作；NX 入口提供真实 NXOpen 实现，原生 C++ 测试提供记录实现。
+测试直接执行同一个生产运行时函数，覆盖成功、标准异常和未知异常，不通过搜索源码
+文本推断行为。
+
 ## 错误处理
 
 - 无法取得 NX UI 时，入口安全返回，并通过 `retcod` 表示失败。
@@ -148,8 +159,9 @@ BrepMFR NX2212 plug-in loaded successfully.
 1. 用 MSBuild、`Release|x64` 和 v142 完整重建工程。
 2. 确认 DLL、LIB 和 EXP 生成。
 3. 检查 DLL 导出表包含 `ufusr` 和 `ufusr_ask_unload`。
-4. 运行仓库 Python 测试，确认新工程没有影响现有 CLI 和训练代码。
-5. 运行 `git diff --check`，确认没有格式错误。
+4. 构建并运行 `BrepMFRNx2212RuntimeTests.exe`，验证成功消息和两类异常路径。
+5. 运行仓库 Python 测试，确认新工程没有影响现有 CLI 和训练代码。
+6. 运行 `git diff --check`，确认没有格式错误。
 
 ### NX2212 手动验收
 

@@ -12,6 +12,10 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 NX_ROOT = REPOSITORY_ROOT / "integrations" / "nx2212"
 PROJECT_PATH = NX_ROOT / "BrepMFRNx2212.vcxproj"
 DLL_PATH = NX_ROOT / "build" / "Release" / "BrepMFRNx2212.dll"
+RUNTIME_TEST_PROJECT_PATH = NX_ROOT / "BrepMFRNx2212RuntimeTests.vcxproj"
+RUNTIME_TEST_EXE_PATH = (
+    NX_ROOT / "build" / "Tests" / "BrepMFRNx2212RuntimeTests.exe"
+)
 MSBUILD = {"m": "http://schemas.microsoft.com/developer/msbuild/2003"}
 
 
@@ -115,6 +119,10 @@ def test_nx2212_project_declares_compatible_portable_contract():
     assert "$(ugii_base_dir)\\ugopen" in normalized
     assert "libnxopencpp.lib" in normalized
     assert "libnxopenuicpp.lib" in normalized
+    assert "comdlg32.lib" in normalized
+    assert "comctl32.lib" in normalized
+    assert "src\\nx_plugin_host.cpp" in normalized
+    assert "src\\progress_window.cpp" in normalized
     assert "libufun.lib" not in normalized
     assert "nx 10.0" not in normalized
     assert "f:\\program files\\siemens" not in normalized
@@ -152,3 +160,35 @@ def test_nx2212_plugin_builds_and_exports_user_functions():
     ).stdout
     assert re.search(r"\bufusr\b", exports)
     assert re.search(r"\bufusr_ask_unload\b", exports)
+
+
+def test_nx2212_native_runtime_tests_build_and_pass():
+    msbuild, _ = _windows_build_tools()
+    completed = subprocess.run(
+        [
+            str(msbuild),
+            str(RUNTIME_TEST_PROJECT_PATH),
+            "/t:Rebuild",
+            "/p:Configuration=Release",
+            "/p:Platform=x64",
+            "/m",
+            "/verbosity:minimal",
+        ],
+        cwd=str(REPOSITORY_ROOT),
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert RUNTIME_TEST_EXE_PATH.is_file()
+
+    executed = subprocess.run(
+        [str(RUNTIME_TEST_EXE_PATH)],
+        cwd=str(REPOSITORY_ROOT),
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        text=True,
+    )
+    assert executed.returncode == 0, executed.stdout + executed.stderr

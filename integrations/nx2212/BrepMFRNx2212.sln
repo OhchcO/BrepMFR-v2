@@ -1,0 +1,15 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.28701.123
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BrepMFRNx2212", "BrepMFRNx2212.vcxproj", "{732364C3-3E02-4D46-8D58-D90CF71767F4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{732364C3-3E02-4D46-8D58-D90CF71767F4}.Release|x64.ActiveCfg = Release|x64
+		{732364C3-3E02-4D46-8D58-D90CF71767F4}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+EndGlobal

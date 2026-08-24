@@ -226,7 +226,7 @@ BREPMFR_NX_EXPORT int ufusr_ask_unload();
 ```cpp
 #include "plugin_exports.hpp"
 
-#include <uf_defs.h>
+#include <uf_ugopenint.h>
 
 BREPMFR_NX_EXPORT void ufusr(char* param, int* retcod, int param_len)
 {
@@ -645,7 +645,7 @@ Expected: MSBuild 和测试程序的 exit code 都为 `0`。
 
 #include <NXOpen/NXMessageBox.hxx>
 #include <NXOpen/UI.hxx>
-#include <uf_defs.h>
+#include <uf_ugopenint.h>
 
 #include <stdexcept>
 

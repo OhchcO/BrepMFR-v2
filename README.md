@@ -85,3 +85,15 @@ python -m pytest tests/test_inference_golden.py -q
 Without these variables, only the external numerical comparison is skipped;
 the committed STEP integrity check still runs.
 
+### NX 2212 integration
+
+The optional NX2212 C++ plug-in lets NX select a STEP file, launch the Python
+CLI as an isolated process, show an indeterminate progress window, and display
+the validated `result.json`. Python remains responsible for STEP conversion,
+BIN caching, model inference, and postprocessing. See the
+[NX2212 build, configuration, and operation guide](integrations/nx2212/README.md).
+
+The current integration reports OCC/AAG `face_index` values in the NX Listing
+Window. It does not treat them as NX Face Tags and does not highlight faces
+until a reliable OCC-to-NX face mapping is available.
+

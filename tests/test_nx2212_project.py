@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import re
@@ -12,6 +13,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 NX_ROOT = REPOSITORY_ROOT / "integrations" / "nx2212"
 PROJECT_PATH = NX_ROOT / "BrepMFRNx2212.vcxproj"
 DLL_PATH = NX_ROOT / "build" / "Release" / "BrepMFRNx2212.dll"
+OUTPUT_CONFIG_EXAMPLE_PATH = (
+    NX_ROOT / "build" / "Release" / "BrepMFRNx2212.config.example.json"
+)
 RUNTIME_TEST_PROJECT_PATH = NX_ROOT / "BrepMFRNx2212RuntimeTests.vcxproj"
 RUNTIME_TEST_EXE_PATH = (
     NX_ROOT / "build" / "Tests" / "BrepMFRNx2212RuntimeTests.exe"
@@ -149,6 +153,16 @@ def test_nx2212_plugin_builds_and_exports_user_functions():
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert DLL_PATH.is_file()
     assert DLL_PATH.stat().st_size > 0
+    assert OUTPUT_CONFIG_EXAMPLE_PATH.is_file()
+    assert json.loads(OUTPUT_CONFIG_EXAMPLE_PATH.read_text(encoding="utf-8")) == {
+        "schema_version": "1.0",
+        "python_executable": "C:/path/to/python.exe",
+        "inference_script": "C:/path/to/BrepMFR/tools/infer_step.py",
+        "checkpoint": "C:/path/to/best-model.ckpt",
+        "output_root": "C:/path/to/recognition-output",
+        "device": "auto",
+        "affinity_threshold": 0.5,
+    }
 
     exports = subprocess.run(
         [str(dumpbin), "/exports", str(DLL_PATH)],

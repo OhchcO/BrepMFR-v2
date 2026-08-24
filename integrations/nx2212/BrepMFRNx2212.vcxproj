@@ -57,7 +57,14 @@
       <AdditionalLibraryDirectories>$(UGII_BASE_DIR)\UGOPEN;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>libnxopencpp.lib;libnxopenuicpp.lib;comdlg32.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>copy /Y "$(ProjectDir)BrepMFRNx2212.config.example.json" "$(TargetDir)BrepMFRNx2212.config.example.json"</Command>
+      <Message>Copying the NX inference configuration example</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
+  <ItemGroup>
+    <None Include="BrepMFRNx2212.config.example.json" />
+  </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\plugin_config.cpp" />
     <ClCompile Include="src\inference_command.cpp" />

@@ -25,10 +25,16 @@ constexpr char kUnknownErrorMessage[] =
 std::string AddDiagnosticPaths(
     const std::string& message,
     const std::filesystem::path& config_path,
-    const std::optional<OutputPaths>& output)
+    const std::optional<OutputPaths>& output,
+    const std::optional<unsigned long>& process_exit_code)
 {
     std::ostringstream stream;
     stream << message;
+    if (process_exit_code &&
+        message.find("Python exit code") == std::string::npos)
+    {
+        stream << "\nPython exit code: " << *process_exit_code;
+    }
     if (output)
     {
         stream << "\nResult: " << output->result_path.generic_u8string()
@@ -46,6 +52,7 @@ int RunInferenceWorkflow(PluginHost& host) noexcept
 {
     std::filesystem::path config_path;
     std::optional<OutputPaths> output;
+    std::optional<unsigned long> process_exit_code;
     try
     {
         config_path = host.ModuleDirectory() /
@@ -62,8 +69,9 @@ int RunInferenceWorkflow(PluginHost& host) noexcept
         std::filesystem::remove(output->result_path);
         const auto arguments =
             BuildInferenceArguments(config, *selected_step, *output);
-        const unsigned long exit_code = host.RunProcess(
+        process_exit_code = host.RunProcess(
             config.python_executable, arguments, output->log_path);
+        const unsigned long exit_code = *process_exit_code;
         const auto result =
             ReadInferenceResult(output->result_path, *selected_step);
 
@@ -101,12 +109,12 @@ int RunInferenceWorkflow(PluginHost& host) noexcept
     catch (const std::exception& exception)
     {
         host.ShowError(AddDiagnosticPaths(
-            exception.what(), config_path, output));
+            exception.what(), config_path, output, process_exit_code));
     }
     catch (...)
     {
         host.ShowError(AddDiagnosticPaths(
-            kUnknownErrorMessage, config_path, output));
+            kUnknownErrorMessage, config_path, output, process_exit_code));
     }
     return kFailure;
 }

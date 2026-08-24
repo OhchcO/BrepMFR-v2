@@ -44,7 +44,8 @@
       <ConformanceMode>false</ConformanceMode>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir)include;$(UGII_BASE_DIR)\UGOPEN;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)third_party;$(UGII_BASE_DIR)\UGOPEN;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <AdditionalOptions>/d1scalableinclude- %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -58,12 +59,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\plugin_config.cpp" />
     <ClCompile Include="src\plugin_entry.cpp" />
     <ClCompile Include="src\plugin_runtime.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\plugin_config.hpp" />
     <ClInclude Include="include\plugin_exports.hpp" />
     <ClInclude Include="include\plugin_runtime.hpp" />
+    <ClInclude Include="third_party\nlohmann\json.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

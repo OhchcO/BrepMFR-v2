@@ -40,18 +40,25 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>false</ConformanceMode>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)third_party;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\plugin_config.cpp" />
     <ClCompile Include="src\plugin_runtime.cpp" />
+    <ClCompile Include="tests\plugin_config_test.cpp" />
     <ClCompile Include="tests\plugin_runtime_test.cpp" />
+    <ClCompile Include="tests\test_main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\plugin_config.hpp" />
     <ClInclude Include="include\plugin_runtime.hpp" />
+    <ClInclude Include="third_party\nlohmann\json.hpp" />
+    <ClInclude Include="tests\test_support.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

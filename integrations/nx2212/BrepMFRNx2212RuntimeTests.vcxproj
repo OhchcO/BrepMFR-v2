@@ -42,6 +42,7 @@
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)third_party;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -54,11 +55,13 @@
     <ClCompile Include="src\output_paths.cpp" />
     <ClCompile Include="src\plugin_runtime.cpp" />
     <ClCompile Include="src\result_reader.cpp" />
+    <ClCompile Include="src\result_formatter.cpp" />
     <ClCompile Include="tests\plugin_config_test.cpp" />
     <ClCompile Include="tests\inference_command_test.cpp" />
     <ClCompile Include="tests\inference_process_test.cpp" />
     <ClCompile Include="tests\plugin_runtime_test.cpp" />
     <ClCompile Include="tests\result_reader_test.cpp" />
+    <ClCompile Include="tests\result_formatter_test.cpp" />
     <ClCompile Include="tests\output_paths_test.cpp" />
     <ClCompile Include="tests\test_main.cpp" />
   </ItemGroup>
@@ -73,6 +76,7 @@
     <ClInclude Include="include\output_paths.hpp" />
     <ClInclude Include="include\plugin_runtime.hpp" />
     <ClInclude Include="include\result_reader.hpp" />
+    <ClInclude Include="include\result_formatter.hpp" />
     <ClInclude Include="third_party\nlohmann\json.hpp" />
     <ClInclude Include="tests\test_support.hpp" />
   </ItemGroup>

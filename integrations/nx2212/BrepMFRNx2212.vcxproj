@@ -59,9 +59,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\plugin_entry.cpp" />
+    <ClCompile Include="src\plugin_runtime.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\plugin_exports.hpp" />
+    <ClInclude Include="include\plugin_runtime.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

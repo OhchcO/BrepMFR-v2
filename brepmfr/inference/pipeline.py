@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 import math
 from pathlib import Path
 import time
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 import numpy as np
 import torch
@@ -130,7 +130,10 @@ def _numpy_tensor(value: torch.Tensor, name: str) -> np.ndarray:
     return value.detach().cpu().numpy()
 
 
-def run_step_inference(request: InferenceRequest) -> InferenceOutcome:
+def run_step_inference(
+    request: InferenceRequest,
+    progress: Optional[Callable[[str], None]] = None,
+) -> InferenceOutcome:
     """Run checkpoint-driven STEP conversion and feature recognition."""
     stage = "arguments"
     result_path = None
@@ -147,6 +150,8 @@ def run_step_inference(request: InferenceRequest) -> InferenceOutcome:
         )
 
         stage = "checkpoint"
+        if progress is not None:
+            progress(stage)
         checkpoint_started = time.perf_counter()
         loaded = _load_checkpoint(checkpoint_path)
         if loaded.experiment_mode not in ("dynamic", "dynamic_affinity"):
@@ -162,6 +167,8 @@ def run_step_inference(request: InferenceRequest) -> InferenceOutcome:
         )
 
         stage = "cache"
+        if progress is not None:
+            progress(stage)
         bin_path = output_dir / "input.bin"
         metadata_path = output_dir / "input.bin.meta.json"
         identity = build_cache_identity(
@@ -194,6 +201,8 @@ def run_step_inference(request: InferenceRequest) -> InferenceOutcome:
         conversion_duration = 0.0
         if not decision.hit:
             stage = "conversion"
+            if progress is not None:
+                progress(stage)
             conversion_started = time.perf_counter()
             convert_step_to_inference_bin(
                 step_path,
@@ -212,6 +221,8 @@ def run_step_inference(request: InferenceRequest) -> InferenceOutcome:
             conversion_duration = time.perf_counter() - conversion_started
 
         stage = "loading"
+        if progress is not None:
+            progress(stage)
         batch = load_inference_batch(
             decision.bin_path,
             loaded.requirements,
@@ -225,6 +236,8 @@ def run_step_inference(request: InferenceRequest) -> InferenceOutcome:
         face_count = int((~padding_mask[0].to(torch.bool)).sum().item())
 
         stage = "inference"
+        if progress is not None:
+            progress(stage)
         inference_started = time.perf_counter()
         model = loaded.model.to(device)
         model.eval()
@@ -251,6 +264,8 @@ def run_step_inference(request: InferenceRequest) -> InferenceOutcome:
         inference_duration = time.perf_counter() - inference_started
 
         stage = "postprocess"
+        if progress is not None:
+            progress(stage)
         processed = postprocess_predictions(
             semantic_probabilities,
             affinity_logits,
@@ -286,6 +301,8 @@ def run_step_inference(request: InferenceRequest) -> InferenceOutcome:
         )
 
         stage = "serialization"
+        if progress is not None:
+            progress(stage)
         write_json_atomic(result_path, document)
         return InferenceOutcome(
             document=document,

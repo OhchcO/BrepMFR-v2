@@ -6,6 +6,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -122,20 +123,22 @@ public:
         return selected_step;
     }
 
-    unsigned long RunProcess(
+    brepmfr::nx2212::ProcessExecution RunProcess(
         const std::filesystem::path& executable,
         const std::vector<std::wstring>& arguments,
-        const std::filesystem::path& log_path) override
+        const std::filesystem::path& log_path,
+        const brepmfr::nx2212::ProcessLaunchOptions& options) override
     {
         ++process_calls;
         process_executable = executable;
         process_arguments = arguments;
         process_log_path = log_path;
+        process_options = options;
         if (process_behavior)
         {
-            return process_behavior(executable, arguments, log_path);
+            return process_behavior(executable, arguments, log_path, options);
         }
-        return process_exit_code;
+        return process_execution;
     }
 
     void ShowSuccess(const brepmfr::nx2212::DisplayText& display) override
@@ -152,11 +155,13 @@ public:
 
     std::filesystem::path module_directory_;
     std::optional<std::filesystem::path> selected_step;
-    unsigned long process_exit_code = 0;
-    std::function<unsigned long(
+    brepmfr::nx2212::ProcessExecution process_execution{
+        0, std::chrono::milliseconds(7500)};
+    std::function<brepmfr::nx2212::ProcessExecution(
         const std::filesystem::path&,
         const std::vector<std::wstring>&,
-        const std::filesystem::path&)> process_behavior;
+        const std::filesystem::path&,
+        const brepmfr::nx2212::ProcessLaunchOptions&)> process_behavior;
     int select_calls = 0;
     int process_calls = 0;
     int success_calls = 0;
@@ -164,6 +169,7 @@ public:
     std::filesystem::path process_executable;
     std::vector<std::wstring> process_arguments;
     std::filesystem::path process_log_path;
+    brepmfr::nx2212::ProcessLaunchOptions process_options;
     brepmfr::nx2212::DisplayText success_display;
     std::string error_message;
 };
@@ -205,6 +211,7 @@ BREPMFR_TEST(InferenceWorkflowRunsPythonAndDisplaysFreshSuccess)
         "stale result must be removed");
 
     const std::vector<std::wstring> expected_arguments = {
+        L"-u",
         module.script.wstring(),
         L"--step",
         selected_step.wstring(),
@@ -218,7 +225,8 @@ BREPMFR_TEST(InferenceWorkflowRunsPythonAndDisplaysFreshSuccess)
         L"0.5"};
     host.process_behavior = [&](const std::filesystem::path& executable,
                                 const std::vector<std::wstring>& arguments,
-                                const std::filesystem::path& log_path) {
+                                const std::filesystem::path& log_path,
+                                const ProcessLaunchOptions&) {
         ExpectEqual(executable, module.python, "Python executable mismatch");
         ExpectEqual(arguments, expected_arguments, "Python arguments mismatch");
         ExpectEqual(log_path, output.log_path, "log path mismatch");
@@ -231,7 +239,7 @@ BREPMFR_TEST(InferenceWorkflowRunsPythonAndDisplaysFreshSuccess)
         temporary.WriteUtf8(
             output.result_path.lexically_relative(temporary.Path()),
             SuccessDocument(selected_step).dump(2));
-        return 0UL;
+        return ProcessExecution{0, std::chrono::milliseconds(7500)};
     };
 
     const int workflow_result = RunInferenceWorkflow(host);
@@ -240,9 +248,27 @@ BREPMFR_TEST(InferenceWorkflowRunsPythonAndDisplaysFreshSuccess)
     ExpectEqual(host.process_calls, 1, "Python process call count mismatch");
     ExpectEqual(host.success_calls, 1, "success display call count mismatch");
     ExpectEqual(host.error_calls, 0, "successful workflow displayed an error");
+    ExpectEqual(
+        host.process_options.working_directory,
+        module.script.parent_path().parent_path(),
+        "workflow did not derive the Python project working directory");
+    ExpectEqual(
+        host.process_options.display_input_path,
+        selected_step,
+        "workflow did not pass the selected STEP to the progress UI");
+    Expect(
+        host.process_options.isolate_python_environment,
+        "workflow did not request Python environment isolation");
     Expect(
         host.success_display.summary_utf8.find("面数量：2") != std::string::npos,
         "success display did not contain parsed result");
+    bool found_process_timing = false;
+    for (const auto& line : host.success_display.listing_lines_utf8)
+    {
+        found_process_timing = found_process_timing ||
+            line == "Process total: 7.5 s; pipeline: 6.0 s";
+    }
+    Expect(found_process_timing, "success display omitted process duration");
 }
 
 BREPMFR_TEST(InferenceWorkflowReportsAllPostLaunchFailureBoundaries)
@@ -299,7 +325,8 @@ BREPMFR_TEST(InferenceWorkflowReportsAllPostLaunchFailureBoundaries)
         const auto output = BuildOutputPaths(module.output_root, selected_step);
         host.process_behavior = [&](const std::filesystem::path&,
                                     const std::vector<std::wstring>&,
-                                    const std::filesystem::path&) -> unsigned long {
+                                    const std::filesystem::path&,
+                                    const ProcessLaunchOptions&) -> ProcessExecution {
             const auto relative =
                 output.result_path.lexically_relative(temporary.Path());
             switch (test_case.outcome)
@@ -307,20 +334,20 @@ BREPMFR_TEST(InferenceWorkflowReportsAllPostLaunchFailureBoundaries)
             case Outcome::NonzeroError:
                 temporary.WriteUtf8(
                     relative, ErrorDocument(selected_step).dump(2));
-                return 7;
+                return {7, std::chrono::milliseconds(100)};
             case Outcome::ZeroError:
                 temporary.WriteUtf8(
                     relative, ErrorDocument(selected_step).dump(2));
-                return 0;
+                return {0, std::chrono::milliseconds(100)};
             case Outcome::NonzeroSuccess:
                 temporary.WriteUtf8(
                     relative, SuccessDocument(selected_step).dump(2));
-                return 7;
+                return {7, std::chrono::milliseconds(100)};
             case Outcome::MissingJson:
-                return 0;
+                return {0, std::chrono::milliseconds(100)};
             case Outcome::MalformedJson:
                 temporary.WriteUtf8(relative, "{broken json");
-                return 0;
+                return {0, std::chrono::milliseconds(100)};
             case Outcome::StandardException:
                 throw std::runtime_error("synthetic process failure");
             case Outcome::UnknownException:

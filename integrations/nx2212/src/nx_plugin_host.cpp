@@ -146,16 +146,17 @@ std::optional<std::filesystem::path> NxPluginHost::SelectStepFile()
     return path;
 }
 
-unsigned long NxPluginHost::RunProcess(
+ProcessExecution NxPluginHost::RunProcess(
     const std::filesystem::path& executable,
     const std::vector<std::wstring>& arguments,
-    const std::filesystem::path& log_path)
+    const std::filesystem::path& log_path,
+    const ProcessLaunchOptions& options)
 {
     void* owner = GetForegroundWindow();
     NxUiAccessLock lock(NXOpen::UI::GetUI());
-    ProgressWindow progress(owner);
+    ProgressWindow progress(owner, options.display_input_path);
     return RunHiddenProcess(
-        executable, arguments, log_path, progress).exit_code;
+        executable, arguments, log_path, options, progress);
 }
 
 void NxPluginHost::ShowSuccess(const DisplayText& display)

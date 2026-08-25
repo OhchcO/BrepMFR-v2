@@ -73,6 +73,7 @@
     <ClCompile Include="src\output_paths.cpp" />
     <ClCompile Include="src\plugin_entry.cpp" />
     <ClCompile Include="src\plugin_runtime.cpp" />
+    <ClCompile Include="src\progress_layout.cpp" />
     <ClCompile Include="src\progress_window.cpp" />
     <ClCompile Include="src\result_reader.cpp" />
     <ClCompile Include="src\result_formatter.cpp" />
@@ -85,6 +86,7 @@
     <ClInclude Include="include\nx_plugin_host.hpp" />
     <ClInclude Include="include\output_paths.hpp" />
     <ClInclude Include="include\plugin_runtime.hpp" />
+    <ClInclude Include="include\progress_layout.hpp" />
     <ClInclude Include="include\progress_window.hpp" />
     <ClInclude Include="include\result_reader.hpp" />
     <ClInclude Include="include\result_formatter.hpp" />

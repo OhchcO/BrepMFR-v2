@@ -67,6 +67,7 @@ std::vector<std::wstring> BuildInferenceArguments(
     const auto threshold_text = threshold_stream.str();
 
     return {
+        L"-u",
         config.inference_script.wstring(),
         L"--step",
         step_path.wstring(),

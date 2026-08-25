@@ -56,6 +56,7 @@ BREPMFR_TEST(inference_arguments_follow_the_existing_python_cli_contract)
         config, L"C:\\Parts\\part.step", output);
 
     const std::vector<std::wstring> expected{
+        L"-u",
         L"C:\\Repo Path\\tools\\infer_step.py",
         L"--step",
         L"C:\\Parts\\part.step",
@@ -73,6 +74,7 @@ BREPMFR_TEST(inference_arguments_follow_the_existing_python_cli_contract)
         BuildWindowsCommandLine(config.python_executable, arguments),
         std::wstring(
             L"C:\\Python\\python.exe "
+            L"-u "
             L"\"C:\\Repo Path\\tools\\infer_step.py\" "
             L"--step C:\\Parts\\part.step "
             L"--checkpoint C:\\Models\\best.ckpt "

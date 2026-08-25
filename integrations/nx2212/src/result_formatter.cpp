@@ -35,9 +35,12 @@ std::string FormatInstance(const InstanceResult& instance)
 
 DisplayText FormatSuccessDisplay(
     const SuccessResult& result,
-    const std::filesystem::path& result_path)
+    const std::filesystem::path& result_path,
+    std::chrono::milliseconds process_elapsed)
 {
     DisplayText display;
+    const double process_seconds =
+        static_cast<double>(process_elapsed.count()) / 1000.0;
     std::ostringstream summary;
     summary.imbue(std::locale::classic());
     summary << u8"识别完成\n"
@@ -46,14 +49,22 @@ DisplayText FormatSuccessDisplay(
             << u8"BIN 缓存：" << (result.cache_hit ? u8"命中" : u8"未命中")
             << '\n'
             << u8"用时：" << std::fixed << std::setprecision(1)
-            << result.total_seconds << u8" 秒";
+            << result.total_seconds << u8" 秒" << '\n'
+            << u8"Python 进程总用时：" << process_seconds << u8" 秒";
     display.summary_utf8 = summary.str();
+
+    std::ostringstream timing_line;
+    timing_line.imbue(std::locale::classic());
+    timing_line << "Process total: " << std::fixed << std::setprecision(1)
+                << process_seconds << " s; pipeline: "
+                << result.total_seconds << " s";
 
     display.listing_lines_utf8 = {
         "BrepMFR recognition result",
         "STEP: " + result.step_path.generic_u8string(),
         "Result: " + result_path.generic_u8string(),
         "Face numbering: OCC/AAG face_index (not NX Face Tag)",
+        timing_line.str(),
         ""};
 
     auto instances = result.instances;

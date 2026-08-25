@@ -102,9 +102,10 @@ checkpoint 必须以 `.ckpt` 结尾。`device` 只能是 `auto`、`cpu` 或 `cud
 2. 使用 `File -> Execute -> NX Open`，快捷键通常为 `Ctrl+U`。
 3. 选择 `build/Release/BrepMFRNx2212.dll`。
 4. 在 Unicode 文件对话框中选择现有 `.step` 或 `.stp` 文件；取消选择不会报错。
-5. Python 启动后会显示不确定进度条和已用时间。首版不提供强制取消，避免损坏
-   正在写入的转换缓存。
-6. 成功后，信息框显示面数量、特征实例数、BIN 缓存是否命中和总用时；NX
+5. Python 启动后会显示当前 STEP、真实处理阶段、不确定进度条和已用时间。首版
+   不提供强制取消，避免损坏正在写入的转换缓存。
+6. 成功后，信息框显示面数量、特征实例数、BIN 缓存是否命中、Python 进程总用时
+   和流水线用时；NX
    Listing Window 显示每个实例及其 OCC/AAG 面编号。
 
 同一个 STEP 路径会使用稳定的独立输出目录：
@@ -121,6 +122,11 @@ output_root/<STEP stem>-<path hash>/
 内容、转换指纹、采样参数和 checkpoint 几何需求仍匹配，就会复用 BIN，并显示
 缓存命中。每次运行前只删除旧 `result.json`，不会删除有效的 BIN 缓存。
 
+插件用配置中的 Python 环境启动独立子进程，并显式使用仓库根目录作为工作目录。
+启动时会清除 NX 注入的 `UGII_*`、`UGS_*`、`PYTHONHOME` 和 `PYTHONPATH`，从
+`PATH` 中移除 NX 安装目录，再把 Conda 环境自身的目录放到最前面。这可以避免
+NX 自带 DLL 或 Python 设置污染 OCC/深度学习依赖；不会把 Python 嵌入 NX 进程。
+
 ## 故障排查
 
 - 报错包含 `BrepMFRNx2212.config.json`：检查真实配置是否与 DLL 同目录，以及
@@ -130,6 +136,9 @@ output_root/<STEP stem>-<path hash>/
   `result.json` 路径，再在 PowerShell 中直接运行同一 CLI 命令。
 - CUDA 环境异常：先把 `device` 改为 `cpu` 验证流程，或修复 CUDA/PyTorch
   环境后继续使用 `auto`/`cuda`。
+- NX 首次 STEP→BIN 明显慢于相同终端命令：查看 `run.log` 中最后出现的
+  `BREPMFR_PROGRESS:<stage>`，并比较成功摘要里的“Python 进程总用时”和 JSON
+  里的流水线用时。前者额外包含 Python 冷启动和模块导入。
 - 重复识别未命中缓存：查看 `input.bin.meta.json`；STEP 内容、转换实现、采样
   配置或 checkpoint 几何需求任一改变都应触发重建。
 - 面编号不能在 NX 中直接定位：这是当前明确边界。Listing Window 已统一标注

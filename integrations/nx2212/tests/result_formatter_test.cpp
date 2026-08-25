@@ -2,6 +2,7 @@
 
 #include "test_support.hpp"
 
+#include <chrono>
 #include <filesystem>
 #include <string>
 
@@ -26,7 +27,9 @@ BREPMFR_TEST(FormatSuccessDisplayEmitsSummaryAndOccFaceWarning)
     using namespace brepmfr::nx2212::test;
 
     const auto display = FormatSuccessDisplay(
-        SampleSuccess(), "D:/output/result.json");
+        SampleSuccess(),
+        "D:/output/result.json",
+        std::chrono::milliseconds(7500));
     Expect(
         display.summary_utf8.find("面数量：2") != std::string::npos,
         "summary omitted face count");
@@ -53,6 +56,10 @@ BREPMFR_TEST(FormatSuccessDisplayEmitsSummaryAndOccFaceWarning)
         all_lines.find("Face numbering: OCC/AAG face_index (not NX Face Tag)") !=
             std::string::npos,
         "listing omitted OCC face numbering warning");
+    Expect(
+        all_lines.find("Process total: 7.5 s; pipeline: 6.0 s") !=
+            std::string::npos,
+        "listing omitted actual process and pipeline durations");
     Expect(
         all_lines.find(
             "[0] blind_hole: OCC faces [1], confidence 0.9500") !=

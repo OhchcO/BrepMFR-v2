@@ -53,6 +53,7 @@ int RunInferenceWorkflow(PluginHost& host) noexcept
     std::filesystem::path config_path;
     std::optional<OutputPaths> output;
     std::optional<unsigned long> process_exit_code;
+    std::optional<ProcessExecution> process_execution;
     try
     {
         config_path = host.ModuleDirectory() /
@@ -69,8 +70,17 @@ int RunInferenceWorkflow(PluginHost& host) noexcept
         std::filesystem::remove(output->result_path);
         const auto arguments =
             BuildInferenceArguments(config, *selected_step, *output);
-        process_exit_code = host.RunProcess(
-            config.python_executable, arguments, output->log_path);
+        ProcessLaunchOptions launch_options;
+        launch_options.working_directory =
+            config.inference_script.parent_path().parent_path();
+        launch_options.display_input_path = *selected_step;
+        launch_options.isolate_python_environment = true;
+        process_execution = host.RunProcess(
+            config.python_executable,
+            arguments,
+            output->log_path,
+            launch_options);
+        process_exit_code = process_execution->exit_code;
         const unsigned long exit_code = *process_exit_code;
         const auto result =
             ReadInferenceResult(output->result_path, *selected_step);
@@ -85,7 +95,9 @@ int RunInferenceWorkflow(PluginHost& host) noexcept
                     " but result.json has status=success.");
             }
             host.ShowSuccess(FormatSuccessDisplay(
-                std::get<SuccessResult>(result), output->result_path));
+                std::get<SuccessResult>(result),
+                output->result_path,
+                process_execution->elapsed));
             return kSuccess;
         }
 

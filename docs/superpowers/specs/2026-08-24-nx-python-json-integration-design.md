@@ -139,13 +139,22 @@ cmd.exe、PowerShell 或 shell。参数顺序固定为：
 Python 启动成功后显示一个小型 Windows 原生进度窗口，包含：
 
 - “正在识别，请稍候……”；
+- 当前 STEP 路径；
+- Python CLI 报告的真实阶段；
 - marquee 风格的不确定进度条；
 - 每秒更新的已用时间。
 
-当前 CLI 没有阶段百分比协议，因此不能显示虚假的完成比例。插件在等待子进程
-时使用 MsgWaitForMultipleObjects 或等价消息泵持续处理窗口消息，使进度条和
-计时正常刷新。识别期间锁定 NX 编辑入口，使用 RAII 保证任意成功或异常路径
+CLI 使用立即刷新的 `BREPMFR_PROGRESS:<stage>` 日志协议报告启动、模块导入、
+checkpoint、缓存检查、STEP→BIN、BIN 加载、推理、后处理和 JSON 写入阶段。
+该协议只表达阶段，不伪造完成百分比。插件等待子进程时持续处理窗口消息，使
+进度条、阶段文本和计时正常刷新。窗口按 NX 所在显示器的 DPI 计算客户区和外框，
+保证全部控件可见。识别期间锁定 NX 编辑入口，使用 RAII 保证任意成功或异常路径
 都关闭进度窗口并恢复 NX UI。
+
+Python 子进程使用 `-u`，显式仓库工作目录和隔离环境块启动。环境块移除 NX 的
+`UGII_*`/`UGS_*`、`PYTHONHOME`、`PYTHONPATH` 和 NX 安装目录 PATH 项，并优先
+使用配置 Python 环境的根目录、`Library/bin`、`DLLs` 和 `Scripts`。这样避免
+NX 进程环境改变 STEP 转换依赖的 DLL 解析，同时保持 Python 为独立进程。
 
 首版不提供取消按钮。关闭按钮禁用，避免强制终止 Python 时留下临时转换文件
 或不完整状态。后续若需要取消，必须先为 Python CLI 设计显式取消协议和缓存

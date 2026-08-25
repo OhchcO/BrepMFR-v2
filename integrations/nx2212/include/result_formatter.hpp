@@ -2,6 +2,7 @@
 
 #include "result_reader.hpp"
 
+#include <chrono>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -18,7 +19,8 @@ struct DisplayText
 
 DisplayText FormatSuccessDisplay(
     const SuccessResult& result,
-    const std::filesystem::path& result_path);
+    const std::filesystem::path& result_path,
+    std::chrono::milliseconds process_elapsed = std::chrono::milliseconds{0});
 
 std::string FormatErrorDisplay(
     const ErrorResult& error,

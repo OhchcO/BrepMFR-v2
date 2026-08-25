@@ -15,14 +15,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from brepmfr.inference.pipeline import (
-    InferencePipelineError,
-    InferenceRequest,
-    run_step_inference,
-)
-from brepmfr.inference.result import build_error_document, write_json_atomic
-
-
 class _CLIArgumentError(ValueError):
     """Argument parsing or validation failed."""
 
@@ -93,6 +85,11 @@ def _option_value(argv: Sequence[str], option: str) -> Optional[str]:
 def _write_argument_error(
     argv: Sequence[str], error: BaseException
 ) -> Optional[Path]:
+    from brepmfr.inference.result import (
+        build_error_document,
+        write_json_atomic,
+    )
+
     output_value = _option_value(argv, "--output-dir")
     if not output_value:
         return None
@@ -122,7 +119,18 @@ def _write_argument_error(
         return None
 
 
+def _emit_progress(stage: str) -> None:
+    print("BREPMFR_PROGRESS:{0}".format(stage), flush=True)
+
+
+def run_step_inference(request, progress=None):
+    from brepmfr.inference.pipeline import run_step_inference as implementation
+
+    return implementation(request, progress=progress)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    _emit_progress("startup")
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     parser = _parser()
     try:
@@ -135,6 +143,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if result_path is not None:
             print("Error result: {0}".format(result_path), file=sys.stderr)
         raise SystemExit(2)
+    _emit_progress("importing")
+    from brepmfr.inference.pipeline import (
+        InferencePipelineError,
+        InferenceRequest,
+    )
+
     request = InferenceRequest(
         step_path=arguments.step,
         checkpoint_path=arguments.checkpoint,
@@ -145,13 +159,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         seed=arguments.seed,
     )
     try:
-        outcome = run_step_inference(request)
+        outcome = run_step_inference(request, progress=_emit_progress)
     except InferencePipelineError as error:
         traceback.print_exc(file=sys.stderr)
         if error.result_path is not None:
             print("Error result: {0}".format(error.result_path), file=sys.stderr)
         return 1
 
+    _emit_progress("complete")
     print("Result: {0}".format(outcome.result_path))
     print(
         "Faces: {0}; instances: {1}; cache: {2}".format(

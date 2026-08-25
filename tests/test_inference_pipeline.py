@@ -196,6 +196,35 @@ def test_pipeline_reuses_valid_bin_and_skips_conversion(tmp_path, monkeypatch):
     assert outcome.affinity_probabilities.shape == (2, 2)
 
 
+def test_pipeline_reports_cache_hit_stage_boundaries_in_order(
+    tmp_path, monkeypatch
+):
+    request, _, _, _ = make_request_and_patch_runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        pipeline,
+        "inspect_cache",
+        lambda **kwargs: CacheDecision(
+            True,
+            "fp",
+            request.output_dir / "input.bin",
+            request.output_dir / "input.bin.meta.json",
+            "hit",
+        ),
+    )
+    stages = []
+
+    pipeline.run_step_inference(request, progress=stages.append)
+
+    assert stages == [
+        "checkpoint",
+        "cache",
+        "loading",
+        "inference",
+        "postprocess",
+        "serialization",
+    ]
+
+
 def test_pipeline_cache_miss_converts_validates_and_records_seed(
     tmp_path, monkeypatch
 ):
@@ -433,17 +462,20 @@ def test_cli_success_prints_summary_and_returns_zero(tmp_path, monkeypatch, caps
         "instances": [],
         "cache": {"hit": True},
     }
-    monkeypatch.setattr(
-        cli,
-        "run_step_inference",
-        lambda request: InferenceOutcome(
+    def fake_inference(request, progress=None):
+        assert progress is not None
+        progress("checkpoint")
+        progress("cache")
+        progress("inference")
+        return InferenceOutcome(
             document,
             output / "result.json",
             True,
             np.zeros((1, 25)),
             np.zeros((1, 1)),
-        ),
-    )
+        )
+
+    monkeypatch.setattr(cli, "run_step_inference", fake_inference)
 
     exit_code = cli.main(
         [
@@ -461,6 +493,18 @@ def test_cli_success_prints_summary_and_returns_zero(tmp_path, monkeypatch, caps
     assert "result.json" in output_text
     assert "Faces: 1" in output_text
     assert "cache: hit" in output_text
+    progress_lines = [
+        line for line in output_text.splitlines()
+        if line.startswith("BREPMFR_PROGRESS:")
+    ]
+    assert progress_lines == [
+        "BREPMFR_PROGRESS:startup",
+        "BREPMFR_PROGRESS:importing",
+        "BREPMFR_PROGRESS:checkpoint",
+        "BREPMFR_PROGRESS:cache",
+        "BREPMFR_PROGRESS:inference",
+        "BREPMFR_PROGRESS:complete",
+    ]
 
 
 def test_cli_reports_pipeline_error_and_returns_one(
@@ -472,7 +516,8 @@ def test_cli_reports_pipeline_error_and_returns_one(
     step.write_bytes(b"STEP")
     checkpoint.write_bytes(b"CHECKPOINT")
 
-    def fail(_request):
+    def fail(_request, progress=None):
+        assert progress is not None
         try:
             raise ValueError("model failed")
         except ValueError as error:

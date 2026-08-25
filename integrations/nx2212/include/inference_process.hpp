@@ -14,6 +14,7 @@ class ProcessWaitObserver
 public:
     virtual ~ProcessWaitObserver() = default;
     virtual void OnProcessStarted() = 0;
+    virtual void OnProgressStage(const std::string&) {}
     virtual void OnWaitTick(std::chrono::milliseconds elapsed) = 0;
     virtual void OnProcessFinished() noexcept = 0;
 };
@@ -23,6 +24,20 @@ struct ProcessExecution
     unsigned long exit_code = 0;
     std::chrono::milliseconds elapsed{0};
 };
+
+struct ProcessLaunchOptions
+{
+    std::filesystem::path working_directory;
+    std::filesystem::path display_input_path;
+    bool isolate_python_environment = false;
+};
+
+ProcessExecution RunHiddenProcess(
+    const std::filesystem::path& executable,
+    const std::vector<std::wstring>& arguments,
+    const std::filesystem::path& log_path,
+    const ProcessLaunchOptions& options,
+    ProcessWaitObserver& observer);
 
 ProcessExecution RunHiddenProcess(
     const std::filesystem::path& executable,

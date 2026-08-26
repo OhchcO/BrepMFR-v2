@@ -1,5 +1,7 @@
 #pragma once
 
+#include "face_signature.hpp"
+
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -28,14 +30,31 @@ struct InstanceResult
     double confidence = 0.0;
 };
 
+enum class MappingPayloadStatus
+{
+    Unsupported,
+    Ready,
+    Unavailable,
+    Invalid
+};
+
+struct FaceMappingPayload
+{
+    MappingPayloadStatus status = MappingPayloadStatus::Unsupported;
+    std::string diagnostic;
+    FaceGraph graph;
+};
+
 struct SuccessResult
 {
+    std::string schema_version;
     std::filesystem::path step_path;
     int face_count = 0;
     bool cache_hit = false;
     double total_seconds = 0.0;
     std::vector<FaceResult> faces;
     std::vector<InstanceResult> instances;
+    FaceMappingPayload mapping;
 };
 
 struct ErrorResult

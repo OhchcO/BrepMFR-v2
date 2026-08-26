@@ -99,6 +99,145 @@ BREPMFR_TEST(ReadInferenceResultBuildsTypedSuccess)
         success.instances[0].face_indices,
         std::vector<int>{1},
         "instance face indices mismatch");
+    Expect(
+        success.mapping.status == MappingPayloadStatus::Unsupported,
+        "JSON 1.0 unexpectedly enabled mapping");
+}
+
+BREPMFR_TEST(ReadInferenceResultBuildsReadyFaceMappingFromJson11)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    TemporaryDirectory temporary;
+    const auto selected_step = temporary.WriteUtf8("selected.step", "STEP");
+    const auto result_path = MaterializeFixture(
+        temporary, "result_success_1_1.json", selected_step);
+
+    const auto parsed = ReadInferenceResult(result_path, selected_step);
+    const auto& success = std::get<SuccessResult>(parsed);
+    ExpectEqual(success.schema_version, std::string("1.1"), "schema mismatch");
+    Expect(
+        success.mapping.status == MappingPayloadStatus::Ready,
+        success.mapping.diagnostic);
+    ExpectEqual(
+        success.mapping.graph.faces.size(),
+        static_cast<std::size_t>(2),
+        "mapping face count mismatch");
+    ExpectEqual(success.mapping.graph.faces[0].key, FaceKey{0}, "first key mismatch");
+    ExpectEqual(success.mapping.graph.faces[1].key, FaceKey{1}, "second key mismatch");
+    Expect(
+        success.mapping.graph.faces[0].surface.origin.has_value(),
+        "plane origin missing");
+    Expect(
+        success.mapping.graph.faces[0].surface.axis.has_value(),
+        "plane axis missing");
+    ExpectEqual(
+        *success.mapping.graph.faces[0].surface.axis,
+        Vec3{0.0, 0.0, 1.0},
+        "plane axis mismatch");
+    ExpectEqual(
+        success.mapping.graph.faces[1].sample_points,
+        std::vector<Vec3>{{0.5, 0.0, 0.0}},
+        "sample points mismatch");
+    ExpectEqual(
+        success.mapping.graph.adjacency_edges,
+        std::vector<AdjacencyEdge>{{0, 1}},
+        "adjacency mismatch");
+}
+
+BREPMFR_TEST(ReadInferenceResultBuildsUnavailableFaceMappingFromJson11)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    TemporaryDirectory temporary;
+    const auto selected_step = temporary.WriteUtf8("selected.step", "STEP");
+    auto document = FixtureDocument("result_success_1_1.json", selected_step);
+    document["face_mapping"] = {
+        {"contract_version", "1.0"},
+        {"status", "unavailable"},
+        {"reason", "geometry signatures unavailable"}};
+    const auto path = temporary.WriteUtf8("unavailable.json", document.dump(2));
+
+    const auto parsed = ReadInferenceResult(path, selected_step);
+    const auto& success = std::get<SuccessResult>(parsed);
+    Expect(
+        success.mapping.status == MappingPayloadStatus::Unavailable,
+        "unavailable mapping status mismatch");
+    ExpectContains(
+        success.mapping.diagnostic,
+        "geometry signatures unavailable",
+        "unavailable reason missing");
+    Expect(success.mapping.graph.faces.empty(), "unavailable mapping leaked faces");
+}
+
+BREPMFR_TEST(ReadInferenceResultQuarantinesCorruptJson11Mapping)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+    using Json = nlohmann::json;
+    using Mutation = std::function<void(Json&)>;
+
+    TemporaryDirectory temporary;
+    const auto selected_step = temporary.WriteUtf8("selected.step", "STEP");
+    const std::vector<std::pair<std::string, Mutation>> cases = {
+        {"missing field", [](Json& value) {
+             value["face_mapping"]["faces"][0].erase("area");
+         }},
+        {"non-finite numeric payload", [](Json& value) {
+             value["face_mapping"]["faces"][0]["area"] = "NaN";
+         }},
+        {"wrong normalization", [](Json& value) {
+             value["face_mapping"]["normalization"]["box_side"] = 2.0;
+         }},
+        {"unavailable without reason", [](Json& value) {
+             value["face_mapping"] = {
+                 {"contract_version", "1.0"},
+                 {"status", "unavailable"},
+                 {"reason", ""}};
+         }},
+        {"duplicate key", [](Json& value) {
+             value["face_mapping"]["faces"][1]["face_index"] = 0;
+         }},
+        {"empty samples", [](Json& value) {
+             value["face_mapping"]["faces"][0]["sample_points"] = Json::array();
+         }},
+        {"bad adjacency", [](Json& value) {
+             value["face_mapping"]["adjacency_edges"] = Json::array({{0, 0}});
+         }},
+        {"mapping face count mismatch", [](Json& value) {
+             value["face_mapping"]["faces"].erase(
+                 value["face_mapping"]["faces"].begin() + 1);
+             value["face_mapping"]["adjacency_edges"] = Json::array();
+         }}};
+
+    for (const auto& test_case : cases)
+    {
+        auto document = FixtureDocument("result_success_1_1.json", selected_step);
+        test_case.second(document);
+        const auto result_path = temporary.WriteUtf8(
+            test_case.first + ".json", document.dump(2));
+        const auto parsed = ReadInferenceResult(result_path, selected_step);
+        Expect(
+            std::holds_alternative<SuccessResult>(parsed),
+            test_case.first + " destroyed the core success result");
+        const auto& success = std::get<SuccessResult>(parsed);
+        ExpectEqual(success.faces.size(), static_cast<std::size_t>(2),
+                    test_case.first + " changed core faces");
+        ExpectEqual(success.instances.size(), static_cast<std::size_t>(1),
+                    test_case.first + " changed core instances");
+        Expect(
+            success.mapping.status == MappingPayloadStatus::Invalid,
+            test_case.first + " was not quarantined");
+        Expect(
+            !success.mapping.diagnostic.empty(),
+            test_case.first + " has no diagnostic");
+        Expect(
+            success.mapping.graph.faces.empty() &&
+                success.mapping.graph.adjacency_edges.empty(),
+            test_case.first + " leaked a partial mapping graph");
+    }
 }
 
 BREPMFR_TEST(ReadInferenceResultBuildsTypedError)
@@ -131,7 +270,7 @@ BREPMFR_TEST(ReadInferenceResultRejectsInvalidSuccessSemantics)
     const auto selected_step = temporary.WriteUtf8("selected.step", "STEP");
     const std::vector<std::pair<std::string, Mutation>> cases = {
         {"unsupported schema version", [](Json& value) {
-             value["schema_version"] = "2.0";
+             value["schema_version"] = "1.2";
          }},
         {"missing status", [](Json& value) {
              value.erase("status");

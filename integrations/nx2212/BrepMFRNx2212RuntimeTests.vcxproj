@@ -72,6 +72,7 @@
   <ItemGroup>
     <None Include="tests\fixtures\result_error.json" />
     <None Include="tests\fixtures\result_success.json" />
+    <None Include="tests\fixtures\result_success_1_1.json" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\face_signature.hpp" />

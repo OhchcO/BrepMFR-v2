@@ -1,5 +1,6 @@
 #pragma once
 
+#include "color_plan.hpp"
 #include "result_reader.hpp"
 
 #include <chrono>
@@ -17,10 +18,35 @@ struct DisplayText
     std::vector<std::string> listing_lines_utf8;
 };
 
+enum class MappingDisplayStatus
+{
+    Unsupported,
+    Unavailable,
+    Failed,
+    Colored
+};
+
+struct MappingDisplay
+{
+    MappingDisplayStatus status = MappingDisplayStatus::Unsupported;
+    std::string diagnostic;
+    std::size_t mapped_faces = 0;
+    std::size_t colored_instances = 0;
+    double max_error = 0.0;
+    std::chrono::milliseconds elapsed{0};
+    std::vector<InstanceColorRecord> instances;
+};
+
 DisplayText FormatSuccessDisplay(
     const SuccessResult& result,
     const std::filesystem::path& result_path,
     std::chrono::milliseconds process_elapsed = std::chrono::milliseconds{0});
+
+DisplayText FormatSuccessDisplay(
+    const SuccessResult& result,
+    const std::filesystem::path& result_path,
+    std::chrono::milliseconds process_elapsed,
+    const MappingDisplay& mapping);
 
 std::string FormatErrorDisplay(
     const ErrorResult& error,

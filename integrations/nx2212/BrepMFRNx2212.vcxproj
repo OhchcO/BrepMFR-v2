@@ -67,6 +67,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\assignment_solver.cpp" />
+    <ClCompile Include="src\color_plan.cpp" />
     <ClCompile Include="src\face_matcher.cpp" />
     <ClCompile Include="src\face_signature.cpp" />
     <ClCompile Include="src\plugin_config.cpp" />
@@ -83,6 +84,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\assignment_solver.hpp" />
+    <ClInclude Include="include\color_plan.hpp" />
     <ClInclude Include="include\face_matcher.hpp" />
     <ClInclude Include="include\face_signature.hpp" />
     <ClInclude Include="include\plugin_config.hpp" />

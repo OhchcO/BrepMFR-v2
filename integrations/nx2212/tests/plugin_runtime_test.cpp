@@ -72,6 +72,137 @@ nlohmann::json ErrorDocument(const std::filesystem::path& step_path)
         {"input", {{"step_path", step_path.generic_u8string()}}}};
 }
 
+nlohmann::json SignatureJson(
+    int face_index,
+    double marker,
+    int neighbor_count)
+{
+    const double x = marker * 0.1;
+    const double y = marker * 0.02;
+    return {
+        {"face_index", face_index},
+        {"surface_type", "plane"},
+        {"area", 1.0 + marker},
+        {"perimeter", 4.0 + marker},
+        {"centroid", {x, y, 0.0}},
+        {"bounding_box", {x - 0.01, y - 0.01, 0.0, x + 0.01, y + 0.01, 0.0}},
+        {"loop_count", 1},
+        {"edge_count", 4},
+        {"neighbor_count", neighbor_count},
+        {"surface_parameters",
+         {{"origin", {x, y, 0.0}}, {"axis", {0.0, 0.0, 1.0}}}},
+        {"sample_points", nlohmann::json::array({{x, y, 0.0}})}};
+}
+
+nlohmann::json ReadyMapping(
+    int face_count = 2,
+    bool duplicate_geometry = false,
+    bool connected = true)
+{
+    nlohmann::json faces = nlohmann::json::array();
+    for (int index = 0; index < face_count; ++index)
+    {
+        const double marker = duplicate_geometry ? 0.0 : static_cast<double>(index);
+        faces.push_back(SignatureJson(
+            index, marker, connected ? 1 : 0));
+    }
+    return {
+        {"contract_version", "1.0"},
+        {"status", "ready"},
+        {"normalization",
+         {{"kind", "aag_unit_box"},
+          {"box_side", 1.0},
+          {"scale_rule", "2_over_longest_bbox_extent"}}},
+        {"faces", faces},
+        {"adjacency_edges",
+         connected
+             ? nlohmann::json::array({{0, 1}})
+             : nlohmann::json::array()}};
+}
+
+nlohmann::json SuccessDocument11(
+    const std::filesystem::path& step_path,
+    const nlohmann::json& mapping)
+{
+    auto document = SuccessDocument(step_path);
+    document["schema_version"] = "1.1";
+    document["face_mapping"] = mapping;
+    return document;
+}
+
+nlohmann::json LargeColorFailureDocument(
+    const std::filesystem::path& step_path)
+{
+    auto document = SuccessDocument(step_path);
+    document["schema_version"] = "1.1";
+    document["input"]["face_count"] = 217;
+    document["faces"] = nlohmann::json::array();
+    document["instances"] = nlohmann::json::array();
+    for (int index = 0; index < 217; ++index)
+    {
+        document["faces"].push_back({
+            {"face_index", index},
+            {"class_id", 12},
+            {"feature_name", "feature"},
+            {"confidence", 1.0},
+            {"instance_id", index}});
+        document["instances"].push_back({
+            {"instance_id", index},
+            {"class_id", 12},
+            {"feature_name", "feature"},
+            {"face_indices", nlohmann::json::array({index})},
+            {"confidence", 1.0}});
+    }
+    document["face_mapping"] = ReadyMapping(217, false, false);
+    return document;
+}
+
+brepmfr::nx2212::FaceSignature NativeFace(
+    brepmfr::nx2212::FaceKey tag,
+    double marker,
+    int neighbor_count)
+{
+    using namespace brepmfr::nx2212;
+    const double x = marker * 0.1;
+    const double y = marker * 0.02;
+    FaceSignature face{};
+    face.key = tag;
+    face.surface_type = SurfaceType::Plane;
+    face.area = 1.0 + marker;
+    face.perimeter = 4.0 + marker;
+    face.centroid = {x, y, 0.0};
+    face.bounds = {{x - 0.01, y - 0.01, 0.0}, {x + 0.01, y + 0.01, 0.0}};
+    face.loop_count = 1;
+    face.edge_count = 4;
+    face.neighbor_count = neighbor_count;
+    face.surface.origin = Vec3{x, y, 0.0};
+    face.surface.axis = Vec3{0.0, 0.0, 1.0};
+    face.sample_points = {{x, y, 0.0}};
+    return face;
+}
+
+brepmfr::nx2212::FaceGraph NativeGraph(
+    int face_count = 2,
+    bool duplicate_geometry = false,
+    bool connected = true)
+{
+    using namespace brepmfr::nx2212;
+    FaceGraph graph;
+    for (int index = 0; index < face_count; ++index)
+    {
+        const double marker = duplicate_geometry ? 0.0 : static_cast<double>(index);
+        graph.faces.push_back(NativeFace(
+            static_cast<FaceKey>(500 + index),
+            marker,
+            connected ? 1 : 0));
+    }
+    if (connected)
+    {
+        graph.adjacency_edges = {{500, 501}};
+    }
+    return graph;
+}
+
 struct ModuleFixture
 {
     explicit ModuleFixture(brepmfr::nx2212::test::TemporaryDirectory& temporary)
@@ -123,6 +254,41 @@ public:
         return selected_step;
     }
 
+    brepmfr::nx2212::PartSnapshot CaptureCurrentPart() override
+    {
+        ++capture_calls;
+        if (capture_behavior)
+        {
+            return capture_behavior();
+        }
+        if (selected_step)
+        {
+            part.step_path = *selected_step;
+        }
+        return part;
+    }
+
+    brepmfr::nx2212::FaceGraph ReadCurrentFaceGraph(
+        const brepmfr::nx2212::PartSnapshot& snapshot) override
+    {
+        ++graph_calls;
+        graph_snapshot = snapshot;
+        return face_graph;
+    }
+
+    void ApplyFaceColorsAtomically(
+        const brepmfr::nx2212::PartSnapshot& snapshot,
+        const std::vector<brepmfr::nx2212::FaceColorAssignment>& assignments) override
+    {
+        ++color_calls;
+        color_snapshot = snapshot;
+        color_assignments = assignments;
+        if (color_behavior)
+        {
+            color_behavior(snapshot, assignments);
+        }
+    }
+
     brepmfr::nx2212::ProcessExecution RunProcess(
         const std::filesystem::path& executable,
         const std::vector<std::wstring>& arguments,
@@ -155,6 +321,12 @@ public:
 
     std::filesystem::path module_directory_;
     std::optional<std::filesystem::path> selected_step;
+    brepmfr::nx2212::PartSnapshot part{{}, 10, 20, 2};
+    brepmfr::nx2212::FaceGraph face_graph;
+    std::function<brepmfr::nx2212::PartSnapshot()> capture_behavior;
+    std::function<void(
+        const brepmfr::nx2212::PartSnapshot&,
+        const std::vector<brepmfr::nx2212::FaceColorAssignment>&)> color_behavior;
     brepmfr::nx2212::ProcessExecution process_execution{
         0, std::chrono::milliseconds(7500)};
     std::function<brepmfr::nx2212::ProcessExecution(
@@ -163,6 +335,9 @@ public:
         const std::filesystem::path&,
         const brepmfr::nx2212::ProcessLaunchOptions&)> process_behavior;
     int select_calls = 0;
+    int capture_calls = 0;
+    int graph_calls = 0;
+    int color_calls = 0;
     int process_calls = 0;
     int success_calls = 0;
     int error_calls = 0;
@@ -172,10 +347,35 @@ public:
     brepmfr::nx2212::ProcessLaunchOptions process_options;
     brepmfr::nx2212::DisplayText success_display;
     std::string error_message;
+    brepmfr::nx2212::PartSnapshot graph_snapshot;
+    brepmfr::nx2212::PartSnapshot color_snapshot;
+    std::vector<brepmfr::nx2212::FaceColorAssignment> color_assignments;
 };
+
+brepmfr::nx2212::OutputPaths ConfigureDocumentProcess(
+    brepmfr::nx2212::test::TemporaryDirectory& temporary,
+    const ModuleFixture& module,
+    RecordingHost& host,
+    nlohmann::json document,
+    unsigned long exit_code = 0)
+{
+    using namespace brepmfr::nx2212;
+    const auto output = BuildOutputPaths(module.output_root, host.part.step_path);
+    host.process_behavior = [&, output, document = std::move(document), exit_code](
+                                const std::filesystem::path&,
+                                const std::vector<std::wstring>&,
+                                const std::filesystem::path&,
+                                const ProcessLaunchOptions&) {
+        temporary.WriteUtf8(
+            output.result_path.lexically_relative(temporary.Path()),
+            document.dump(2));
+        return ProcessExecution{exit_code, std::chrono::milliseconds(7500)};
+    };
+    return output;
+}
 }
 
-BREPMFR_TEST(InferenceWorkflowTreatsFileSelectionCancellationAsSuccess)
+BREPMFR_TEST(InferenceWorkflowStopsWhenCurrentWorkPartIsUnavailable)
 {
     using namespace brepmfr::nx2212;
     using namespace brepmfr::nx2212::test;
@@ -183,15 +383,22 @@ BREPMFR_TEST(InferenceWorkflowTreatsFileSelectionCancellationAsSuccess)
     TemporaryDirectory temporary;
     ModuleFixture module(temporary);
     RecordingHost host(module.module_directory);
-    host.selected_step = std::nullopt;
+    host.capture_behavior = []() -> PartSnapshot {
+        throw std::runtime_error("Work Part unavailable");
+    };
 
     const int result = RunInferenceWorkflow(host);
 
-    ExpectEqual(result, kSuccess, "cancellation returned failure");
-    ExpectEqual(host.select_calls, 1, "STEP selector call count mismatch");
-    ExpectEqual(host.process_calls, 0, "cancellation launched Python");
-    ExpectEqual(host.success_calls, 0, "cancellation displayed success");
-    ExpectEqual(host.error_calls, 0, "cancellation displayed an error");
+    ExpectEqual(result, kFailure, "missing Work Part returned success");
+    ExpectEqual(host.capture_calls, 1, "Work Part capture call count mismatch");
+    ExpectEqual(host.select_calls, 0, "workflow requested an external STEP");
+    ExpectEqual(host.process_calls, 0, "missing Work Part launched Python");
+    ExpectEqual(host.graph_calls, 0, "missing Work Part read an NX graph");
+    ExpectEqual(host.color_calls, 0, "missing Work Part applied colors");
+    ExpectEqual(host.success_calls, 0, "missing Work Part displayed success");
+    ExpectEqual(host.error_calls, 1, "missing Work Part error call count mismatch");
+    ExpectContains(host.error_message, "Work Part unavailable",
+                   "missing Work Part diagnostic missing");
 }
 
 BREPMFR_TEST(InferenceWorkflowRunsPythonAndDisplaysFreshSuccess)
@@ -246,6 +453,8 @@ BREPMFR_TEST(InferenceWorkflowRunsPythonAndDisplaysFreshSuccess)
 
     ExpectEqual(workflow_result, kSuccess, "successful workflow returned failure");
     ExpectEqual(host.process_calls, 1, "Python process call count mismatch");
+    ExpectEqual(host.capture_calls, 1, "Work Part was not captured once");
+    ExpectEqual(host.select_calls, 0, "workflow requested an external STEP");
     ExpectEqual(host.success_calls, 1, "success display call count mismatch");
     ExpectEqual(host.error_calls, 0, "successful workflow displayed an error");
     ExpectEqual(
@@ -269,6 +478,187 @@ BREPMFR_TEST(InferenceWorkflowRunsPythonAndDisplaysFreshSuccess)
             line == "Process total: 7.5 s; pipeline: 6.0 s";
     }
     Expect(found_process_timing, "success display omitted process duration");
+}
+
+BREPMFR_TEST(InferenceWorkflowMapsAndColorsReadyJson11Once)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    TemporaryDirectory temporary;
+    ModuleFixture module(temporary);
+    RecordingHost host(module.module_directory);
+    host.part.step_path = temporary.WriteUtf8("parts/current.step", "STEP");
+    host.face_graph = NativeGraph();
+    ConfigureDocumentProcess(
+        temporary,
+        module,
+        host,
+        SuccessDocument11(host.part.step_path, ReadyMapping()));
+
+    const int result = RunInferenceWorkflow(host);
+
+    ExpectEqual(result, kSuccess, "ready JSON 1.1 workflow failed");
+    ExpectEqual(host.select_calls, 0, "workflow requested an external STEP");
+    ExpectEqual(host.graph_calls, 1, "NX graph was not read once");
+    ExpectEqual(host.color_calls, 1, "complete mapping was not colored once");
+    ExpectEqual(host.color_assignments.size(), static_cast<std::size_t>(1),
+                "feature color assignment count mismatch");
+    ExpectEqual(host.color_assignments[0].nx_face_tag, FaceKey{501},
+                "recognized feature mapped to wrong NX Face Tag");
+    ExpectEqual(host.color_assignments[0].instance_id, 0,
+                "feature instance ID mismatch");
+    ExpectEqual(host.color_assignments[0].color_index, 1,
+                "feature color mismatch");
+    ExpectEqual(host.success_calls, 1, "colored result was not displayed");
+    ExpectEqual(host.error_calls, 0, "colored result displayed Python error");
+    ExpectContains(host.success_display.summary_utf8, u8"已着色实例：1",
+                   "color summary missing");
+    ExpectEqual(host.process_options.display_input_path, host.part.step_path,
+                "progress path did not use current Work Part");
+}
+
+BREPMFR_TEST(InferenceWorkflowDoesNotReadNxGraphForUnavailableOrInvalidMapping)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    for (const bool invalid : {false, true})
+    {
+        TemporaryDirectory temporary;
+        ModuleFixture module(temporary);
+        RecordingHost host(module.module_directory);
+        host.part.step_path = temporary.WriteUtf8("current.step", "STEP");
+        nlohmann::json mapping;
+        if (invalid)
+        {
+            mapping = ReadyMapping();
+            mapping["faces"][0].erase("area");
+        }
+        else
+        {
+            mapping = {
+                {"contract_version", "1.0"},
+                {"status", "unavailable"},
+                {"reason", "geometry signatures unavailable"}};
+        }
+        ConfigureDocumentProcess(
+            temporary,
+            module,
+            host,
+            SuccessDocument11(host.part.step_path, mapping));
+
+        const int result = RunInferenceWorkflow(host);
+        ExpectEqual(result, kSuccess, "mapping warning changed recognition status");
+        ExpectEqual(host.graph_calls, 0, "unusable mapping read the NX graph");
+        ExpectEqual(host.color_calls, 0, "unusable mapping applied colors");
+        ExpectEqual(host.success_calls, 1, "mapping warning hid recognition result");
+        ExpectEqual(host.error_calls, 0, "mapping warning became Python error");
+        ExpectContains(host.success_display.summary_utf8,
+                       u8"识别成功，但面映射失败",
+                       "mapping warning summary missing");
+    }
+}
+
+BREPMFR_TEST(InferenceWorkflowKeepsTextWhenMatcherFailsOrIsAmbiguous)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    for (const bool ambiguous : {false, true})
+    {
+        TemporaryDirectory temporary;
+        ModuleFixture module(temporary);
+        RecordingHost host(module.module_directory);
+        host.part.step_path = temporary.WriteUtf8("current.step", "STEP");
+        const auto mapping = ambiguous
+            ? ReadyMapping(2, true, false)
+            : ReadyMapping();
+        host.face_graph = ambiguous
+            ? NativeGraph(2, true, false)
+            : NativeGraph();
+        if (!ambiguous)
+        {
+            host.face_graph.faces[0].centroid.x += 1e-3;
+        }
+        ConfigureDocumentProcess(
+            temporary,
+            module,
+            host,
+            SuccessDocument11(host.part.step_path, mapping));
+
+        const int result = RunInferenceWorkflow(host);
+        ExpectEqual(result, kSuccess, "matcher failure changed recognition status");
+        ExpectEqual(host.graph_calls, 1, "matcher case did not read NX graph");
+        ExpectEqual(host.color_calls, 0, "failed matcher applied colors");
+        ExpectEqual(host.success_calls, 1, "failed matcher hid text result");
+        ExpectEqual(host.error_calls, 0, "failed matcher became Python error");
+        ExpectContains(host.success_display.summary_utf8,
+                       u8"识别成功，但面映射失败",
+                       "matcher failure summary missing");
+        if (ambiguous)
+        {
+            ExpectContains(host.success_display.summary_utf8, "ambiguous",
+                           "ambiguity diagnostic missing");
+        }
+    }
+}
+
+BREPMFR_TEST(InferenceWorkflowDoesNotColorWhenColorPlanExceedsPalette)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    TemporaryDirectory temporary;
+    ModuleFixture module(temporary);
+    RecordingHost host(module.module_directory);
+    host.part.step_path = temporary.WriteUtf8("large.step", "STEP");
+    host.part.face_count = 217;
+    host.face_graph = NativeGraph(217, false, false);
+    ConfigureDocumentProcess(
+        temporary,
+        module,
+        host,
+        LargeColorFailureDocument(host.part.step_path));
+
+    const int result = RunInferenceWorkflow(host);
+
+    ExpectEqual(result, kSuccess, "color plan failure changed recognition status");
+    ExpectEqual(host.graph_calls, 1, "color plan case did not read NX graph");
+    ExpectEqual(host.color_calls, 0, "failed color plan applied colors");
+    ExpectEqual(host.success_calls, 1, "failed color plan hid text result");
+    ExpectContains(host.success_display.summary_utf8, "216",
+                   "palette capacity diagnostic missing");
+}
+
+BREPMFR_TEST(InferenceWorkflowConvertsAtomicColorExceptionToMappingFailure)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    TemporaryDirectory temporary;
+    ModuleFixture module(temporary);
+    RecordingHost host(module.module_directory);
+    host.part.step_path = temporary.WriteUtf8("current.step", "STEP");
+    host.face_graph = NativeGraph();
+    host.color_behavior = [](const PartSnapshot&,
+                             const std::vector<FaceColorAssignment>&) {
+        throw std::runtime_error("synthetic color failure");
+    };
+    ConfigureDocumentProcess(
+        temporary,
+        module,
+        host,
+        SuccessDocument11(host.part.step_path, ReadyMapping()));
+
+    const int result = RunInferenceWorkflow(host);
+
+    ExpectEqual(result, kSuccess, "color exception changed recognition status");
+    ExpectEqual(host.color_calls, 1, "atomic coloring was retried");
+    ExpectEqual(host.success_calls, 1, "color exception hid text result");
+    ExpectEqual(host.error_calls, 0, "color exception became Python error");
+    ExpectContains(host.success_display.summary_utf8, "synthetic color failure",
+                   "color exception diagnostic missing");
 }
 
 BREPMFR_TEST(InferenceWorkflowReportsAllPostLaunchFailureBoundaries)

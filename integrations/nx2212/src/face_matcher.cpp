@@ -314,6 +314,23 @@ bool HasTopologyValidAlternative(
     return false;
 }
 
+bool EveryRowHasOnlyOneCandidate(
+    const std::vector<std::vector<double>>& costs)
+{
+    for (const auto& row : costs)
+    {
+        const auto candidate_count = std::count_if(
+            row.begin(), row.end(), [](double cost) {
+                return std::isfinite(cost);
+            });
+        if (candidate_count != 1)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 void ValidateOptions(const FaceMatchOptions& options)
 {
     const double positive[] = {
@@ -398,7 +415,8 @@ FaceMappingResult MatchFaces(
     {
         return Failure("best face assignment does not preserve adjacency");
     }
-    if (HasTopologyValidAlternative(
+    if (!EveryRowHasOnlyOneCandidate(costs) &&
+        HasTopologyValidAlternative(
             occ_graph,
             nx_graph,
             costs,

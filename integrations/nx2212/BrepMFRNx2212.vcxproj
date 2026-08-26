@@ -55,7 +55,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalLibraryDirectories>$(UGII_BASE_DIR)\UGOPEN;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>libnxopencpp.lib;libnxopenuicpp.lib;comdlg32.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>libnxopencpp.lib;libnxopenuicpp.lib;libufun.lib;comdlg32.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>copy /Y "$(ProjectDir)BrepMFRNx2212.config.example.json" "$(TargetDir)BrepMFRNx2212.config.example.json"</Command>
@@ -73,6 +73,7 @@
     <ClCompile Include="src\plugin_config.cpp" />
     <ClCompile Include="src\inference_command.cpp" />
     <ClCompile Include="src\inference_process.cpp" />
+    <ClCompile Include="src\nx_part_adapter.cpp" />
     <ClCompile Include="src\nx_plugin_host.cpp" />
     <ClCompile Include="src\output_paths.cpp" />
     <ClCompile Include="src\plugin_entry.cpp" />
@@ -91,6 +92,7 @@
     <ClInclude Include="include\plugin_exports.hpp" />
     <ClInclude Include="include\inference_command.hpp" />
     <ClInclude Include="include\inference_process.hpp" />
+    <ClInclude Include="include\nx_part_adapter.hpp" />
     <ClInclude Include="include\nx_plugin_host.hpp" />
     <ClInclude Include="include\output_paths.hpp" />
     <ClInclude Include="include\plugin_runtime.hpp" />

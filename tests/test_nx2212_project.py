@@ -123,11 +123,16 @@ def test_nx2212_project_declares_compatible_portable_contract():
     assert "$(ugii_base_dir)\\ugopen" in normalized
     assert "libnxopencpp.lib" in normalized
     assert "libnxopenuicpp.lib" in normalized
+    assert "libufun.lib" in normalized
     assert "comdlg32.lib" in normalized
     assert "comctl32.lib" in normalized
+    assert "src\\assignment_solver.cpp" in normalized
+    assert "src\\color_plan.cpp" in normalized
+    assert "src\\face_matcher.cpp" in normalized
+    assert "src\\face_signature.cpp" in normalized
+    assert "src\\nx_part_adapter.cpp" in normalized
     assert "src\\nx_plugin_host.cpp" in normalized
     assert "src\\progress_window.cpp" in normalized
-    assert "libufun.lib" not in normalized
     assert "nx 10.0" not in normalized
     assert "f:\\program files\\siemens" not in normalized
 

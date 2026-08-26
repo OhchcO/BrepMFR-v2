@@ -1,6 +1,7 @@
 #include "nx_plugin_host.hpp"
 
 #include "inference_process.hpp"
+#include "nx_part_adapter.hpp"
 #include "progress_window.hpp"
 
 #include <windows.h>
@@ -144,6 +145,16 @@ std::optional<std::filesystem::path> NxPluginHost::SelectStepFile()
         throw std::runtime_error("Selected file must use the .step or .stp suffix.");
     }
     return path;
+}
+
+PartSnapshot NxPluginHost::CaptureCurrentPart()
+{
+    return CaptureNxCurrentPart();
+}
+
+FaceGraph NxPluginHost::ReadCurrentFaceGraph(const PartSnapshot& expected)
+{
+    return ReadNxFaceGraph(expected);
 }
 
 ProcessExecution NxPluginHost::RunProcess(

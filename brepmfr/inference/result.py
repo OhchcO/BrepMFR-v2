@@ -8,8 +8,10 @@ import os
 from pathlib import Path
 from typing import Dict, Mapping, Sequence
 
+from brepmfr.inference.face_signature import validate_face_mapping_document
 
-RESULT_SCHEMA_VERSION = "1.0"
+
+RESULT_SCHEMA_VERSION = "1.1"
 ALLOWED_ERROR_STAGES = frozenset(
     {
         "arguments",
@@ -58,8 +60,12 @@ def build_success_document(
     instances: Sequence[Mapping[str, object]],
     timings_seconds: Mapping[str, float],
     warnings: Sequence[str],
+    face_mapping: Mapping[str, object],
 ) -> Dict[str, object]:
     """Build the canonical successful inference document."""
+    validated_face_mapping = validate_face_mapping_document(
+        face_mapping, expected_face_count=int(face_count)
+    )
     document = {
         "schema_version": RESULT_SCHEMA_VERSION,
         "status": "success",
@@ -90,6 +96,7 @@ def build_success_document(
             for name, duration in timings_seconds.items()
         },
         "warnings": [str(warning) for warning in warnings],
+        "face_mapping": validated_face_mapping,
     }
     _reject_nonfinite(document)
     return document

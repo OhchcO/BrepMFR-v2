@@ -99,6 +99,8 @@ def make_request_and_patch_runtime(tmp_path, monkeypatch):
         seed=42,
         num_classes=25,
     )
+    mapping = _two_face_mapping()
+    captured["face_mapping"] = mapping
     monkeypatch.setattr(
         pipeline,
         "_load_checkpoint",
@@ -139,6 +141,12 @@ def make_request_and_patch_runtime(tmp_path, monkeypatch):
             "spatial_pos": torch.tensor([[[1, 2], [2, 1]]]),
         },
     )
+
+    def fake_read_face_mapping(path, expected_face_count=None):
+        calls.append(("read-mapping", Path(path), expected_face_count))
+        return mapping
+
+    monkeypatch.setattr(pipeline, "read_face_mapping", fake_read_face_mapping)
     monkeypatch.setattr(
         pipeline,
         "sha256_file",
@@ -196,7 +204,7 @@ def test_load_checkpoint_uses_stored_hyperparameters(tmp_path, monkeypatch):
 
 
 def test_pipeline_reuses_valid_bin_and_skips_conversion(tmp_path, monkeypatch):
-    request, _, calls, _ = make_request_and_patch_runtime(tmp_path, monkeypatch)
+    request, _, calls, captured = make_request_and_patch_runtime(tmp_path, monkeypatch)
     monkeypatch.setattr(
         pipeline,
         "inspect_cache",
@@ -228,9 +236,17 @@ def test_pipeline_reuses_valid_bin_and_skips_conversion(tmp_path, monkeypatch):
     assert outcome.cache_hit is True
     assert outcome.document["cache"]["hit"] is True
     assert outcome.document["input"]["face_count"] == 2
+    assert outcome.document["schema_version"] == "1.1"
+    assert outcome.document["face_mapping"] == captured["face_mapping"]
     assert outcome.document["instances"][0]["face_indices"] == [0, 1]
     assert outcome.semantic_probabilities.shape == (2, 25)
     assert outcome.affinity_probabilities.shape == (2, 2)
+    read_call = (
+        "read-mapping",
+        request.output_dir / "input.face_signatures.json",
+        2,
+    )
+    assert calls.index(("load", 42)) < calls.index(read_call)
 
 
 def test_pipeline_reports_cache_hit_stage_boundaries_in_order(
@@ -261,6 +277,33 @@ def test_pipeline_reports_cache_hit_stage_boundaries_in_order(
         "postprocess",
         "serialization",
     ]
+
+
+def test_pipeline_rejects_cache_sidecar_face_count_mismatch(tmp_path, monkeypatch):
+    request, _, _, _ = make_request_and_patch_runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        pipeline,
+        "inspect_cache",
+        lambda **kwargs: CacheDecision(
+            True,
+            "fp",
+            request.output_dir / "input.bin",
+            request.output_dir / "input.face_signatures.json",
+            request.output_dir / "input.bin.meta.json",
+            "hit",
+        ),
+    )
+
+    def reject_count(path, expected_face_count=None):
+        raise ValueError("face_count does not match face_mapping.faces")
+
+    monkeypatch.setattr(pipeline, "read_face_mapping", reject_count)
+
+    with pytest.raises(InferencePipelineError) as caught:
+        pipeline.run_step_inference(request)
+
+    assert caught.value.stage == "loading"
+    assert "face_count" in str(caught.value.__cause__)
 
 
 def test_pipeline_cache_miss_converts_validates_and_records_seed(
@@ -313,6 +356,18 @@ def test_pipeline_cache_miss_converts_validates_and_records_seed(
     assert calls.index(("convert", 42)) < calls.index("validate")
     assert calls.index("validate") < calls.index("metadata")
     assert outcome.cache_hit is False
+    assert outcome.document["schema_version"] == "1.1"
+    assert outcome.document["face_mapping"] == _two_face_mapping()
+    assert (
+        "read-mapping",
+        signature_path,
+        None,
+    ) in calls
+    assert (
+        "read-mapping",
+        signature_path,
+        2,
+    ) not in calls
 
 
 def test_pipeline_explicit_seed_overrides_checkpoint_seed(tmp_path, monkeypatch):

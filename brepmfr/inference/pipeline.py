@@ -24,7 +24,10 @@ from brepmfr.inference.conversion import (
     default_conversion_implementation_paths,
     validate_inference_bin,
 )
-from brepmfr.inference.face_signature import read_face_mapping
+from brepmfr.inference.face_signature import (
+    read_face_mapping,
+    validate_face_mapping_document,
+)
 from brepmfr.inference.loading import load_inference_batch, select_device
 from brepmfr.inference.postprocess import (
     GeometryRequirements,
@@ -206,12 +209,13 @@ def run_step_inference(
             force_rebuild=bool(request.force_rebuild),
         )
         conversion_duration = 0.0
+        conversion_artifacts = None
         if not decision.hit:
             stage = "conversion"
             if progress is not None:
                 progress(stage)
             conversion_started = time.perf_counter()
-            convert_step_to_inference_artifacts(
+            conversion_artifacts = convert_step_to_inference_artifacts(
                 step_path,
                 decision.bin_path,
                 decision.signature_path,
@@ -244,6 +248,17 @@ def run_step_inference(
         if not isinstance(padding_mask, torch.Tensor) or padding_mask.shape[0] != 1:
             raise ValueError("Inference batch must contain exactly one graph")
         face_count = int((~padding_mask[0].to(torch.bool)).sum().item())
+        if decision.hit:
+            face_mapping = read_face_mapping(
+                decision.signature_path, expected_face_count=face_count
+            )
+        else:
+            if conversion_artifacts is None:
+                raise RuntimeError("Conversion did not return face mapping artifacts")
+            face_mapping = validate_face_mapping_document(
+                conversion_artifacts.face_mapping,
+                expected_face_count=face_count,
+            )
 
         stage = "inference"
         if progress is not None:
@@ -308,6 +323,7 @@ def run_step_inference(
             instances=processed.instances,
             timings_seconds=timings,
             warnings=[],
+            face_mapping=face_mapping,
         )
 
         stage = "serialization"

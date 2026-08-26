@@ -11,11 +11,45 @@ from brepmfr.inference.result import (
 )
 
 
-def _success_document(tmp_path, timings=None):
+def _ready_mapping():
+    faces = []
+    for face_index in range(2):
+        faces.append(
+            {
+                "face_index": face_index,
+                "surface_type": "plane",
+                "area": 1.0,
+                "perimeter": 4.0,
+                "centroid": [float(face_index), 0.0, 0.0],
+                "bounding_box": [0.0, 0.0, 0.0, 1.0, 1.0, 0.0],
+                "loop_count": 1,
+                "edge_count": 4,
+                "neighbor_count": 1,
+                "surface_parameters": {
+                    "origin": [0.0, 0.0, 0.0],
+                    "axis": [0.0, 0.0, 1.0],
+                },
+                "sample_points": [[float(face_index), 0.0, 0.0]],
+            }
+        )
+    return {
+        "contract_version": "1.0",
+        "status": "ready",
+        "normalization": {
+            "kind": "aag_unit_box",
+            "box_side": 1.0,
+            "scale_rule": "2_over_longest_bbox_extent",
+        },
+        "faces": faces,
+        "adjacency_edges": [[0, 1]],
+    }
+
+
+def _success_document(tmp_path, timings=None, face_mapping=None, face_count=2):
     return build_success_document(
         step_path=tmp_path / "零件.step",
         step_sha256="step-hash",
-        face_count=2,
+        face_count=face_count,
         bin_path=tmp_path / "output" / "input.bin",
         metadata_path=tmp_path / "output" / "input.bin.meta.json",
         cache_hit=False,
@@ -48,13 +82,17 @@ def _success_document(tmp_path, timings=None):
             }
         ),
         warnings=["保留 BIN 缓存"],
+        face_mapping=(
+            _ready_mapping() if face_mapping is None else face_mapping
+        ),
     )
 
 
 def test_success_document_has_stable_field_order_and_absolute_paths(tmp_path):
     document = _success_document(tmp_path)
 
-    assert RESULT_SCHEMA_VERSION == "1.0"
+    assert RESULT_SCHEMA_VERSION == "1.1"
+    assert document["schema_version"] == "1.1"
     assert list(document) == [
         "schema_version",
         "status",
@@ -65,6 +103,7 @@ def test_success_document_has_stable_field_order_and_absolute_paths(tmp_path):
         "instances",
         "timings_seconds",
         "warnings",
+        "face_mapping",
     ]
     assert list(document["input"]) == [
         "step_path",
@@ -95,6 +134,34 @@ def test_success_document_has_stable_field_order_and_absolute_paths(tmp_path):
     assert document["model"]["checkpoint_path"] == (
         tmp_path / "model.ckpt"
     ).resolve().as_posix()
+    assert document["face_mapping"]["contract_version"] == "1.0"
+    assert list(document)[-1] == "face_mapping"
+
+
+def test_success_document_accepts_unavailable_face_mapping(tmp_path):
+    unavailable = {
+        "contract_version": "1.0",
+        "status": "unavailable",
+        "reason": "geometry signatures could not be extracted",
+    }
+
+    document = _success_document(tmp_path, face_mapping=unavailable)
+
+    assert document["status"] == "success"
+    assert document["face_mapping"] == unavailable
+
+
+def test_success_document_rejects_nonfinite_face_mapping(tmp_path):
+    mapping = _ready_mapping()
+    mapping["faces"][0]["area"] = float("nan")
+
+    with pytest.raises(ValueError, match="finite"):
+        _success_document(tmp_path, face_mapping=mapping)
+
+
+def test_success_document_rejects_face_mapping_count_mismatch(tmp_path):
+    with pytest.raises(ValueError, match="face_count"):
+        _success_document(tmp_path, face_count=3)
 
 
 def test_result_documents_reject_nonfinite_floats(tmp_path):
@@ -113,6 +180,7 @@ def test_error_document_accepts_only_known_stages(tmp_path):
 
     assert list(document) == ["schema_version", "status", "stage", "error", "input"]
     assert document["status"] == "error"
+    assert document["schema_version"] == "1.1"
     assert document["error"] == {"type": "ValueError", "message": "无法提取"}
     assert document["input"]["step_path"] == (
         tmp_path / "part.step"

@@ -50,6 +50,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\assignment_solver.cpp" />
+    <ClCompile Include="src\face_matcher.cpp" />
     <ClCompile Include="src\face_signature.cpp" />
     <ClCompile Include="src\plugin_config.cpp" />
     <ClCompile Include="src\inference_command.cpp" />
@@ -61,6 +62,7 @@
     <ClCompile Include="src\result_formatter.cpp" />
     <ClCompile Include="tests\assignment_solver_test.cpp" />
     <ClCompile Include="tests\face_signature_test.cpp" />
+    <ClCompile Include="tests\face_matcher_test.cpp" />
     <ClCompile Include="tests\plugin_config_test.cpp" />
     <ClCompile Include="tests\inference_command_test.cpp" />
     <ClCompile Include="tests\inference_process_test.cpp" />
@@ -78,6 +80,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\assignment_solver.hpp" />
+    <ClInclude Include="include\face_matcher.hpp" />
     <ClInclude Include="include\face_signature.hpp" />
     <ClInclude Include="include\plugin_config.hpp" />
     <ClInclude Include="include\inference_command.hpp" />

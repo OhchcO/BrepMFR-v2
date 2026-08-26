@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from dgl.data.utils import load_graphs, save_graphs
 
+from brepmfr.inference.face_signature import (
+    extract_face_mapping,
+    face_mapping_json_bytes,
+    read_face_mapping,
+)
 from brepmfr.inference.postprocess import GeometryRequirements
 from tools.geometry_features import PointSamplingConfig, extract_geometry_features
 from tools.mfrinstseg_to_bin import (
@@ -28,10 +34,19 @@ from tools.mfrinstseg_to_bin import (
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+@dataclass(frozen=True)
+class ConversionArtifacts:
+    """The paired artifacts produced by one AAG extraction."""
+
+    face_count: int
+    face_mapping: Dict[str, object]
+
+
 def default_conversion_implementation_paths() -> Tuple[Path, ...]:
     """Return ordered source files whose bytes define STEP conversion."""
     return (
         Path(__file__).resolve(),
+        (PROJECT_ROOT / "brepmfr" / "inference" / "face_signature.py").resolve(),
         (PROJECT_ROOT / "tools" / "AAGExtractor.py").resolve(),
         (PROJECT_ROOT / "tools" / "schema.json").resolve(),
         (PROJECT_ROOT / "tools" / "mfrinstseg_to_bin.py").resolve(),
@@ -78,31 +93,41 @@ def validate_inference_bin(
         raise ValueError("Inference BIN must not contain instance ground truth")
 
 
-def convert_step_to_inference_bin(
+def convert_step_to_inference_artifacts(
     step_path: Path,
-    target_path: Path,
+    bin_path: Path,
+    signature_path: Path,
     requirements: GeometryRequirements,
     seed: int,
     extractor_file: Path = DEFAULT_EXTRACTOR_FILE,
     schema_file: Path = DEFAULT_SCHEMA_FILE,
-) -> int:
-    """Convert, validate, and atomically publish one unlabeled inference BIN."""
+) -> ConversionArtifacts:
+    """Convert and publish a paired unlabeled BIN and face-signature sidecar."""
     step_path = Path(step_path).resolve()
-    target_path = Path(target_path).resolve()
+    bin_path = Path(bin_path).resolve()
+    signature_path = Path(signature_path).resolve()
     if step_path.suffix.lower() not in (".step", ".stp"):
         raise ValueError("Input must be a .step or .stp file: {0}".format(step_path))
     if not step_path.is_file():
         raise FileNotFoundError("STEP file not found: {0}".format(step_path))
-    if target_path.suffix.lower() != ".bin":
-        raise ValueError("Inference target must use the .bin suffix: {0}".format(target_path))
-    if target_path == step_path:
+    if bin_path.suffix.lower() != ".bin":
+        raise ValueError("Inference target must use the .bin suffix: {0}".format(bin_path))
+    if signature_path.suffix.lower() != ".json":
+        raise ValueError(
+            "Face signature target must use the .json suffix: {0}".format(
+                signature_path
+            )
+        )
+    if len({step_path, bin_path, signature_path}) != 3:
         raise ValueError("Inference BIN target must differ from the STEP input")
 
     options = conversion_options_from_requirements(requirements, seed)
     extractor_class, topology_utils = load_extractor(Path(extractor_file))
     schema = load_schema(Path(schema_file))
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = target_path.with_suffix(target_path.suffix + ".tmp")
+    bin_path.parent.mkdir(parents=True, exist_ok=True)
+    signature_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_bin = bin_path.with_suffix(bin_path.suffix + ".tmp")
+    temporary_signature = signature_path.with_suffix(signature_path.suffix + ".tmp")
     try:
         extractor = extractor_class(
             step_file=step_path,
@@ -111,6 +136,7 @@ def convert_step_to_inference_bin(
         extraction = extractor.process()
         if not isinstance(extraction, dict):
             raise ValueError("AAG extractor must return a dictionary")
+        mapping = extract_face_mapping(extractor, extraction)
         extraction["_extractor"] = extractor
         graph = build_graph(extraction, None, schema, topology_utils)
         metadata = shortest_path_metadata(
@@ -132,16 +158,25 @@ def convert_step_to_inference_bin(
             metadata.update(geometry_metadata(options.point_sampling))
         if options.include_parametric_surface:
             metadata.update(surface_geometry_metadata())
-        save_graphs(str(temporary_path), [graph], metadata)
+        save_graphs(str(temporary_bin), [graph], metadata)
         face_count = int(graph.num_nodes())
+        temporary_signature.write_bytes(face_mapping_json_bytes(mapping))
         validate_inference_bin(
-            temporary_path,
+            temporary_bin,
             requirements,
             options.point_sampling,
             expected_nodes=face_count,
         )
-        temporary_path.replace(target_path)
-        return face_count
+        validated_mapping = read_face_mapping(
+            temporary_signature, expected_face_count=face_count
+        )
+        temporary_bin.replace(bin_path)
+        temporary_signature.replace(signature_path)
+        return ConversionArtifacts(
+            face_count=face_count,
+            face_mapping=validated_mapping,
+        )
     finally:
-        if temporary_path.exists():
-            temporary_path.unlink()
+        for temporary_path in (temporary_bin, temporary_signature):
+            if temporary_path.exists():
+                temporary_path.unlink()

@@ -5,6 +5,16 @@ import torch
 from dgl.data.utils import save_graphs
 
 from brepmfr.inference import conversion as inference_conversion
+from brepmfr.inference.cache import (
+    build_cache_identity,
+    cache_fingerprint,
+    inspect_cache,
+    write_cache_metadata_atomic,
+)
+from brepmfr.inference.face_signature import (
+    face_mapping_json_bytes,
+    read_face_mapping,
+)
 from brepmfr.inference.postprocess import GeometryRequirements
 from tools import mfrinstseg_to_bin as converter
 from tools.geometry_features import PointSamplingConfig
@@ -42,6 +52,40 @@ def _two_face_contract():
         "edge_attributes": edge_names,
     }
     return extraction, schema
+
+
+def _two_face_mapping():
+    faces = []
+    for face_index in range(2):
+        faces.append(
+            {
+                "face_index": face_index,
+                "surface_type": "plane",
+                "area": 1.0,
+                "perimeter": 4.0,
+                "centroid": [float(face_index), 0.0, 0.0],
+                "bounding_box": [0.0, 0.0, 0.0, 1.0, 1.0, 0.0],
+                "loop_count": 1,
+                "edge_count": 4,
+                "neighbor_count": 1,
+                "surface_parameters": {
+                    "origin": [0.0, 0.0, 0.0],
+                    "axis": [0.0, 0.0, 1.0],
+                },
+                "sample_points": [[float(face_index), 0.0, 0.0]],
+            }
+        )
+    return {
+        "contract_version": "1.0",
+        "status": "ready",
+        "normalization": {
+            "kind": "aag_unit_box",
+            "box_side": 1.0,
+            "scale_rule": "2_over_longest_bbox_extent",
+        },
+        "faces": faces,
+        "adjacency_edges": [[0, 1]],
+    }
 
 
 def _patch_topology_helpers(monkeypatch):
@@ -98,6 +142,7 @@ def test_default_conversion_implementation_paths_cover_contract_sources():
     assert all(path.is_file() for path in paths)
     assert [path.name for path in paths] == [
         "conversion.py",
+        "face_signature.py",
         "AAGExtractor.py",
         "schema.json",
         "mfrinstseg_to_bin.py",
@@ -167,6 +212,7 @@ def test_conversion_builds_unlabeled_bin_without_instance_truth(
 ):
     step_path = tmp_path / "part.step"
     target_path = tmp_path / "output" / "input.bin"
+    signature_path = tmp_path / "output" / "input.face_signatures.json"
     step_path.write_text(
         "ISO-10303-21;END-ISO-10303-21;", encoding="ascii"
     )
@@ -185,6 +231,7 @@ def test_conversion_builds_unlabeled_bin_without_instance_truth(
     saved_metadata = []
     geometry_calls = []
     validation_calls = []
+    mapping = _two_face_mapping()
 
     monkeypatch.setattr(
         converter,
@@ -197,6 +244,11 @@ def test_conversion_builds_unlabeled_bin_without_instance_truth(
         lambda path: (FakeExtractor, object()),
     )
     monkeypatch.setattr(inference_conversion, "load_schema", lambda path: {})
+    monkeypatch.setattr(
+        inference_conversion,
+        "extract_face_mapping",
+        lambda extractor, extraction: mapping,
+    )
     monkeypatch.setattr(
         inference_conversion,
         "build_graph",
@@ -243,15 +295,18 @@ def test_conversion_builds_unlabeled_bin_without_instance_truth(
     def fake_validate(path, requirements, point_sampling, expected_nodes=None):
         assert path.exists()
         assert target_path.exists() is False
+        assert signature_path.exists() is False
+        assert signature_path.with_suffix(signature_path.suffix + ".tmp").exists()
         validation_calls.append((path, requirements, point_sampling, expected_nodes))
 
     monkeypatch.setattr(
         inference_conversion, "validate_inference_bin", fake_validate
     )
 
-    count = inference_conversion.convert_step_to_inference_bin(
+    artifacts = inference_conversion.convert_step_to_inference_artifacts(
         step_path,
         target_path,
+        signature_path,
         GeometryRequirements(False, True, True, True),
         seed=42,
     )
@@ -265,6 +320,107 @@ def test_conversion_builds_unlabeled_bin_without_instance_truth(
         "include_parametric_surface": True,
     }
     assert validation_calls[0][3] == 2
-    assert count == 2
+    assert artifacts.face_count == 2
+    assert artifacts.face_mapping == mapping
     assert target_path.read_bytes() == b"test-bin"
+    assert read_face_mapping(signature_path, expected_face_count=2) == mapping
     assert not target_path.with_suffix(".bin.tmp").exists()
+    assert not signature_path.with_suffix(signature_path.suffix + ".tmp").exists()
+
+
+def test_failed_second_publication_cannot_hit_old_cache(tmp_path, monkeypatch):
+    step_path = tmp_path / "part.step"
+    implementation = tmp_path / "conversion-implementation.py"
+    target_path = tmp_path / "output" / "input.bin"
+    signature_path = tmp_path / "output" / "input.face_signatures.json"
+    metadata_path = tmp_path / "output" / "input.bin.meta.json"
+    target_path.parent.mkdir(parents=True)
+    step_path.write_bytes(b"STEP")
+    implementation.write_bytes(b"implementation")
+    target_path.write_bytes(b"old-bin")
+    mapping = _two_face_mapping()
+    signature_path.write_bytes(face_mapping_json_bytes(mapping))
+    identity = build_cache_identity(
+        step_path,
+        [implementation],
+        42,
+        {"points_per_face": 96},
+        {"pointcloud": False},
+    )
+    write_cache_metadata_atomic(
+        metadata_path,
+        identity,
+        cache_fingerprint(identity),
+        target_path,
+        signature_path,
+    )
+
+    graph = dgl.graph(([0], [1]), num_nodes=2)
+    graph.ndata["x"] = torch.zeros((2, 5, 5, 7), dtype=torch.float32)
+
+    class FakeExtractor:
+        def __init__(self, step_file, attribute_schema):
+            pass
+
+        def process(self):
+            return {}
+
+    monkeypatch.setattr(
+        inference_conversion,
+        "load_extractor",
+        lambda path: (FakeExtractor, object()),
+    )
+    monkeypatch.setattr(inference_conversion, "load_schema", lambda path: {})
+    monkeypatch.setattr(
+        inference_conversion,
+        "build_graph",
+        lambda extraction, labels, schema, topology: graph,
+    )
+    monkeypatch.setattr(
+        inference_conversion,
+        "shortest_path_metadata",
+        lambda graph, node_grid: {},
+    )
+    monkeypatch.setattr(
+        inference_conversion, "extract_face_mapping", lambda *args: mapping
+    )
+    monkeypatch.setattr(
+        inference_conversion,
+        "save_graphs",
+        lambda path, graphs, metadata: type(target_path)(path).write_bytes(b"new-bin"),
+    )
+    monkeypatch.setattr(
+        inference_conversion, "validate_inference_bin", lambda *args, **kwargs: None
+    )
+
+    path_type = type(target_path)
+    original_replace = path_type.replace
+
+    def fail_signature_replace(source, target):
+        if path_type(target) == signature_path:
+            raise OSError("injected signature publication failure")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(path_type, "replace", fail_signature_replace)
+
+    with pytest.raises(OSError, match="signature publication"):
+        inference_conversion.convert_step_to_inference_artifacts(
+            step_path,
+            target_path,
+            signature_path,
+            GeometryRequirements(False, False, False, False),
+            seed=42,
+        )
+
+    decision = inspect_cache(
+        target_path,
+        signature_path,
+        metadata_path,
+        identity,
+        lambda path: None,
+        lambda path: None,
+    )
+    assert decision.hit is False
+    assert decision.reason == "invalid-bin"
+    assert not target_path.with_suffix(target_path.suffix + ".tmp").exists()
+    assert not signature_path.with_suffix(signature_path.suffix + ".tmp").exists()

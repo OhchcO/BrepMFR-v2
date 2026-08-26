@@ -6,6 +6,8 @@ import pytest
 import torch
 
 from brepmfr.inference.cache import CacheDecision
+from brepmfr.inference.conversion import ConversionArtifacts
+from brepmfr.inference.face_signature import face_mapping_json_bytes
 from brepmfr.inference.pipeline import (
     InferenceOutcome,
     InferencePipelineError,
@@ -40,6 +42,40 @@ class FakeModel:
             else None
         )
         return probabilities, affinity_logits
+
+
+def _two_face_mapping():
+    faces = []
+    for face_index in range(2):
+        faces.append(
+            {
+                "face_index": face_index,
+                "surface_type": "plane",
+                "area": 1.0,
+                "perimeter": 4.0,
+                "centroid": [float(face_index), 0.0, 0.0],
+                "bounding_box": [0.0, 0.0, 0.0, 1.0, 1.0, 0.0],
+                "loop_count": 1,
+                "edge_count": 4,
+                "neighbor_count": 1,
+                "surface_parameters": {
+                    "origin": [0.0, 0.0, 0.0],
+                    "axis": [0.0, 0.0, 1.0],
+                },
+                "sample_points": [[float(face_index), 0.0, 0.0]],
+            }
+        )
+    return {
+        "contract_version": "1.0",
+        "status": "ready",
+        "normalization": {
+            "kind": "aag_unit_box",
+            "box_side": 1.0,
+            "scale_rule": "2_over_longest_bbox_extent",
+        },
+        "faces": faces,
+        "adjacency_edges": [[0, 1]],
+    }
 
 
 def make_request_and_patch_runtime(tmp_path, monkeypatch):
@@ -169,13 +205,14 @@ def test_pipeline_reuses_valid_bin_and_skips_conversion(tmp_path, monkeypatch):
             True,
             "fp",
             request.output_dir / "input.bin",
+            request.output_dir / "input.face_signatures.json",
             request.output_dir / "input.bin.meta.json",
             "hit",
         ),
     )
     monkeypatch.setattr(
         pipeline,
-        "convert_step_to_inference_bin",
+        "convert_step_to_inference_artifacts",
         lambda *args, **kwargs: calls.append("convert"),
     )
     monkeypatch.setattr(
@@ -207,6 +244,7 @@ def test_pipeline_reports_cache_hit_stage_boundaries_in_order(
             True,
             "fp",
             request.output_dir / "input.bin",
+            request.output_dir / "input.face_signatures.json",
             request.output_dir / "input.bin.meta.json",
             "hit",
         ),
@@ -232,20 +270,30 @@ def test_pipeline_cache_miss_converts_validates_and_records_seed(
         tmp_path, monkeypatch
     )
     bin_path = request.output_dir / "input.bin"
+    signature_path = request.output_dir / "input.face_signatures.json"
     metadata_path = request.output_dir / "input.bin.meta.json"
     monkeypatch.setattr(
         pipeline,
         "inspect_cache",
         lambda **kwargs: calls.append("inspect")
-        or CacheDecision(False, "fp", bin_path, metadata_path, "missing-bin"),
+        or CacheDecision(
+            False,
+            "fp",
+            bin_path,
+            signature_path,
+            metadata_path,
+            "missing-bin",
+        ),
     )
 
-    def convert(step, target, requirements, seed):
+    def convert(step, target, signatures, requirements, seed):
         calls.append(("convert", seed))
         target.write_bytes(b"bin")
-        return 2
+        mapping = _two_face_mapping()
+        signatures.write_bytes(face_mapping_json_bytes(mapping))
+        return ConversionArtifacts(2, mapping)
 
-    monkeypatch.setattr(pipeline, "convert_step_to_inference_bin", convert)
+    monkeypatch.setattr(pipeline, "convert_step_to_inference_artifacts", convert)
     monkeypatch.setattr(
         pipeline,
         "validate_inference_bin",
@@ -283,6 +331,7 @@ def test_pipeline_explicit_seed_overrides_checkpoint_seed(tmp_path, monkeypatch)
             True,
             "fp",
             request.output_dir / "input.bin",
+            request.output_dir / "input.face_signatures.json",
             request.output_dir / "input.bin.meta.json",
             "hit",
         ),
@@ -310,6 +359,7 @@ def test_pipeline_returns_absolute_result_path_for_new_relative_output(
             True,
             "fp",
             kwargs["bin_path"],
+            kwargs["signature_path"],
             kwargs["metadata_path"],
             "hit",
         )
@@ -339,6 +389,7 @@ def test_pipeline_writes_stage_specific_error_documents(
 ):
     request, _, _, _ = make_request_and_patch_runtime(tmp_path, monkeypatch)
     bin_path = request.output_dir / "input.bin"
+    signature_path = request.output_dir / "input.face_signatures.json"
     metadata_path = request.output_dir / "input.bin.meta.json"
     if boundary == "checkpoint":
         monkeypatch.setattr(
@@ -360,6 +411,7 @@ def test_pipeline_writes_stage_specific_error_documents(
                 boundary != "conversion",
                 "fp",
                 bin_path,
+                signature_path,
                 metadata_path,
                 "hit" if boundary != "conversion" else "missing-bin",
             ),
@@ -367,7 +419,7 @@ def test_pipeline_writes_stage_specific_error_documents(
     if boundary == "conversion":
         monkeypatch.setattr(
             pipeline,
-            "convert_step_to_inference_bin",
+            "convert_step_to_inference_artifacts",
             lambda *args, **kwargs: (_ for _ in ()).throw(
                 RuntimeError("conversion failed")
             ),
@@ -439,6 +491,7 @@ def test_pipeline_rejects_missing_affinity_logits_as_inference_error(
             True,
             "fp",
             request.output_dir / "input.bin",
+            request.output_dir / "input.face_signatures.json",
             request.output_dir / "input.bin.meta.json",
             "hit",
         ),

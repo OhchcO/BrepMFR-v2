@@ -20,10 +20,11 @@ from brepmfr.inference.cache import (
 )
 from brepmfr.inference.conversion import (
     conversion_options_from_requirements,
-    convert_step_to_inference_bin,
+    convert_step_to_inference_artifacts,
     default_conversion_implementation_paths,
     validate_inference_bin,
 )
+from brepmfr.inference.face_signature import read_face_mapping
 from brepmfr.inference.loading import load_inference_batch, select_device
 from brepmfr.inference.postprocess import (
     GeometryRequirements,
@@ -170,6 +171,7 @@ def run_step_inference(
         if progress is not None:
             progress(stage)
         bin_path = output_dir / "input.bin"
+        signature_path = output_dir / "input.face_signatures.json"
         metadata_path = output_dir / "input.bin.meta.json"
         identity = build_cache_identity(
             step_path,
@@ -191,11 +193,16 @@ def run_step_inference(
                 conversion_options.point_sampling,
             )
 
+        def validate_signature_file(path):
+            read_face_mapping(path)
+
         decision = inspect_cache(
             bin_path=bin_path,
+            signature_path=signature_path,
             metadata_path=metadata_path,
             identity=identity,
             validate_bin_file=validate_bin_file,
+            validate_signature_file=validate_signature_file,
             force_rebuild=bool(request.force_rebuild),
         )
         conversion_duration = 0.0
@@ -204,19 +211,22 @@ def run_step_inference(
             if progress is not None:
                 progress(stage)
             conversion_started = time.perf_counter()
-            convert_step_to_inference_bin(
+            convert_step_to_inference_artifacts(
                 step_path,
                 decision.bin_path,
+                decision.signature_path,
                 loaded.requirements,
                 seed,
             )
             validate_bin_file(decision.bin_path)
+            validate_signature_file(decision.signature_path)
             stage = "cache"
             write_cache_metadata_atomic(
                 decision.metadata_path,
                 identity,
                 decision.fingerprint,
                 decision.bin_path,
+                decision.signature_path,
             )
             conversion_duration = time.perf_counter() - conversion_started
 

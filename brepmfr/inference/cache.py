@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Dict, Mapping, Sequence
 
 
-INFERENCE_BIN_CONTRACT_VERSION = 2
+INFERENCE_BIN_CONTRACT_VERSION = 3
 _HASH_CHUNK_SIZE = 1024 * 1024
 
 
@@ -21,6 +21,7 @@ class CacheDecision:
     hit: bool
     fingerprint: str
     bin_path: Path
+    signature_path: Path
     metadata_path: Path
     reason: str
 
@@ -83,6 +84,7 @@ def _decision(
     hit: bool,
     fingerprint: str,
     bin_path: Path,
+    signature_path: Path,
     metadata_path: Path,
     reason: str,
 ) -> CacheDecision:
@@ -90,6 +92,7 @@ def _decision(
         hit=hit,
         fingerprint=fingerprint,
         bin_path=Path(bin_path),
+        signature_path=Path(signature_path),
         metadata_path=Path(metadata_path),
         reason=reason,
     )
@@ -97,61 +100,162 @@ def _decision(
 
 def inspect_cache(
     bin_path: Path,
+    signature_path: Path,
     metadata_path: Path,
     identity: Mapping[str, object],
     validate_bin_file: Callable[[Path], None],
+    validate_signature_file: Callable[[Path], None],
     force_rebuild: bool = False,
 ) -> CacheDecision:
-    """Return a cache hit only after identity and BIN validation succeed."""
+    """Return a hit only after the paired BIN and face signatures validate."""
     bin_path = Path(bin_path)
+    signature_path = Path(signature_path)
     metadata_path = Path(metadata_path)
     fingerprint = cache_fingerprint(identity)
     if force_rebuild:
-        return _decision(False, fingerprint, bin_path, metadata_path, "forced")
+        return _decision(
+            False, fingerprint, bin_path, signature_path, metadata_path, "forced"
+        )
     if not bin_path.is_file():
-        return _decision(False, fingerprint, bin_path, metadata_path, "missing-bin")
+        return _decision(
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "missing-bin",
+        )
+    if not signature_path.is_file():
+        return _decision(
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "missing-signatures",
+        )
     if not metadata_path.is_file():
         return _decision(
-            False, fingerprint, bin_path, metadata_path, "missing-metadata"
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "missing-metadata",
         )
 
     try:
         document = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         return _decision(
-            False, fingerprint, bin_path, metadata_path, "invalid-metadata"
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "invalid-metadata",
         )
     if not isinstance(document, dict) or set(document) != {
         "schema_version",
         "fingerprint",
         "identity",
         "bin_sha256",
+        "face_signatures_sha256",
     }:
         return _decision(
-            False, fingerprint, bin_path, metadata_path, "invalid-metadata"
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "invalid-metadata",
         )
     if document["schema_version"] != INFERENCE_BIN_CONTRACT_VERSION:
         return _decision(
-            False, fingerprint, bin_path, metadata_path, "invalid-metadata"
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "invalid-metadata",
         )
     if document["fingerprint"] != fingerprint or document["identity"] != dict(
         identity
     ):
         return _decision(
-            False, fingerprint, bin_path, metadata_path, "identity-mismatch"
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "identity-mismatch",
         )
     try:
         current_bin_sha256 = sha256_file(bin_path)
     except OSError:
-        return _decision(False, fingerprint, bin_path, metadata_path, "invalid-bin")
+        return _decision(
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "invalid-bin",
+        )
     if document["bin_sha256"] != current_bin_sha256:
-        return _decision(False, fingerprint, bin_path, metadata_path, "invalid-bin")
+        return _decision(
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "invalid-bin",
+        )
+    try:
+        current_signature_sha256 = sha256_file(signature_path)
+    except OSError:
+        return _decision(
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "invalid-signatures",
+        )
+    if document["face_signatures_sha256"] != current_signature_sha256:
+        return _decision(
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "invalid-signatures",
+        )
 
     try:
         validate_bin_file(bin_path)
     except Exception:
-        return _decision(False, fingerprint, bin_path, metadata_path, "invalid-bin")
-    return _decision(True, fingerprint, bin_path, metadata_path, "hit")
+        return _decision(
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "invalid-bin",
+        )
+    try:
+        validate_signature_file(signature_path)
+    except Exception:
+        return _decision(
+            False,
+            fingerprint,
+            bin_path,
+            signature_path,
+            metadata_path,
+            "invalid-signatures",
+        )
+    return _decision(
+        True, fingerprint, bin_path, signature_path, metadata_path, "hit"
+    )
 
 
 def write_cache_metadata_atomic(
@@ -159,8 +263,9 @@ def write_cache_metadata_atomic(
     identity: Mapping[str, object],
     fingerprint: str,
     bin_path: Path,
+    signature_path: Path,
 ) -> None:
-    """Write and read back a cache sidecar before atomically publishing it."""
+    """Publish metadata that binds one BIN/signature generation together."""
     path = Path(path)
     temporary_path = path.with_suffix(path.suffix + ".tmp")
     document = {
@@ -168,6 +273,7 @@ def write_cache_metadata_atomic(
         "fingerprint": fingerprint,
         "identity": dict(identity),
         "bin_sha256": sha256_file(Path(bin_path)),
+        "face_signatures_sha256": sha256_file(Path(signature_path)),
     }
     try:
         with temporary_path.open("w", encoding="utf-8", newline="\n") as handle:

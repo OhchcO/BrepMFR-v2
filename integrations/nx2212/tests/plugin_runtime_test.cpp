@@ -248,22 +248,12 @@ public:
         return module_directory_;
     }
 
-    std::optional<std::filesystem::path> SelectStepFile() override
-    {
-        ++select_calls;
-        return selected_step;
-    }
-
     brepmfr::nx2212::PartSnapshot CaptureCurrentPart() override
     {
         ++capture_calls;
         if (capture_behavior)
         {
             return capture_behavior();
-        }
-        if (selected_step)
-        {
-            part.step_path = *selected_step;
         }
         return part;
     }
@@ -320,7 +310,6 @@ public:
     }
 
     std::filesystem::path module_directory_;
-    std::optional<std::filesystem::path> selected_step;
     brepmfr::nx2212::PartSnapshot part{{}, 10, 20, 2};
     brepmfr::nx2212::FaceGraph face_graph;
     std::function<brepmfr::nx2212::PartSnapshot()> capture_behavior;
@@ -334,7 +323,6 @@ public:
         const std::vector<std::wstring>&,
         const std::filesystem::path&,
         const brepmfr::nx2212::ProcessLaunchOptions&)> process_behavior;
-    int select_calls = 0;
     int capture_calls = 0;
     int graph_calls = 0;
     int color_calls = 0;
@@ -391,7 +379,6 @@ BREPMFR_TEST(InferenceWorkflowStopsWhenCurrentWorkPartIsUnavailable)
 
     ExpectEqual(result, kFailure, "missing Work Part returned success");
     ExpectEqual(host.capture_calls, 1, "Work Part capture call count mismatch");
-    ExpectEqual(host.select_calls, 0, "workflow requested an external STEP");
     ExpectEqual(host.process_calls, 0, "missing Work Part launched Python");
     ExpectEqual(host.graph_calls, 0, "missing Work Part read an NX graph");
     ExpectEqual(host.color_calls, 0, "missing Work Part applied colors");
@@ -410,7 +397,7 @@ BREPMFR_TEST(InferenceWorkflowRunsPythonAndDisplaysFreshSuccess)
     ModuleFixture module(temporary);
     RecordingHost host(module.module_directory);
     const auto selected_step = temporary.WriteUtf8("parts/sample.step", "STEP");
-    host.selected_step = selected_step;
+    host.part.step_path = selected_step;
     const auto output = BuildOutputPaths(module.output_root, selected_step);
     std::filesystem::create_directories(output.directory);
     temporary.WriteUtf8(
@@ -454,7 +441,6 @@ BREPMFR_TEST(InferenceWorkflowRunsPythonAndDisplaysFreshSuccess)
     ExpectEqual(workflow_result, kSuccess, "successful workflow returned failure");
     ExpectEqual(host.process_calls, 1, "Python process call count mismatch");
     ExpectEqual(host.capture_calls, 1, "Work Part was not captured once");
-    ExpectEqual(host.select_calls, 0, "workflow requested an external STEP");
     ExpectEqual(host.success_calls, 1, "success display call count mismatch");
     ExpectEqual(host.error_calls, 0, "successful workflow displayed an error");
     ExpectEqual(
@@ -499,7 +485,6 @@ BREPMFR_TEST(InferenceWorkflowMapsAndColorsReadyJson11Once)
     const int result = RunInferenceWorkflow(host);
 
     ExpectEqual(result, kSuccess, "ready JSON 1.1 workflow failed");
-    ExpectEqual(host.select_calls, 0, "workflow requested an external STEP");
     ExpectEqual(host.graph_calls, 1, "NX graph was not read once");
     ExpectEqual(host.color_calls, 1, "complete mapping was not colored once");
     ExpectEqual(host.color_assignments.size(), static_cast<std::size_t>(1),
@@ -711,7 +696,7 @@ BREPMFR_TEST(InferenceWorkflowReportsAllPostLaunchFailureBoundaries)
         ModuleFixture module(temporary);
         RecordingHost host(module.module_directory);
         const auto selected_step = temporary.WriteUtf8("part.step", "STEP");
-        host.selected_step = selected_step;
+        host.part.step_path = selected_step;
         const auto output = BuildOutputPaths(module.output_root, selected_step);
         host.process_behavior = [&](const std::filesystem::path&,
                                     const std::vector<std::wstring>&,

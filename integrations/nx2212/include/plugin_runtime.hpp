@@ -4,8 +4,6 @@
 #include "result_formatter.hpp"
 
 #include <filesystem>
-#include <optional>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -29,21 +27,11 @@ class PluginHost
 public:
     virtual ~PluginHost() = default;
     virtual std::filesystem::path ModuleDirectory() const = 0;
-    virtual std::optional<std::filesystem::path> SelectStepFile() = 0;
-    virtual PartSnapshot CaptureCurrentPart()
-    {
-        throw std::runtime_error("NX current Part adapter is not connected");
-    }
-    virtual FaceGraph ReadCurrentFaceGraph(const PartSnapshot&)
-    {
-        throw std::runtime_error("NX face signature adapter is not connected");
-    }
+    virtual PartSnapshot CaptureCurrentPart() = 0;
+    virtual FaceGraph ReadCurrentFaceGraph(const PartSnapshot&) = 0;
     virtual void ApplyFaceColorsAtomically(
         const PartSnapshot&,
-        const std::vector<FaceColorAssignment>&)
-    {
-        throw std::runtime_error("NX coloring adapter is not connected");
-    }
+        const std::vector<FaceColorAssignment>&) = 0;
     virtual ProcessExecution RunProcess(
         const std::filesystem::path& executable,
         const std::vector<std::wstring>& arguments,

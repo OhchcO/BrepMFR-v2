@@ -12,6 +12,7 @@ import pytest
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 NX_ROOT = REPOSITORY_ROOT / "integrations" / "nx2212"
 PROJECT_PATH = NX_ROOT / "BrepMFRNx2212.vcxproj"
+NX_COLORING_PATH = NX_ROOT / "src" / "nx_coloring.cpp"
 DLL_PATH = NX_ROOT / "build" / "Release" / "BrepMFRNx2212.dll"
 OUTPUT_CONFIG_EXAMPLE_PATH = (
     NX_ROOT / "build" / "Release" / "BrepMFRNx2212.config.example.json"
@@ -124,17 +125,31 @@ def test_nx2212_project_declares_compatible_portable_contract():
     assert "libnxopencpp.lib" in normalized
     assert "libnxopenuicpp.lib" in normalized
     assert "libufun.lib" in normalized
-    assert "comdlg32.lib" in normalized
+    assert "comdlg32.lib" not in normalized
     assert "comctl32.lib" in normalized
     assert "src\\assignment_solver.cpp" in normalized
     assert "src\\color_plan.cpp" in normalized
     assert "src\\face_matcher.cpp" in normalized
     assert "src\\face_signature.cpp" in normalized
     assert "src\\nx_part_adapter.cpp" in normalized
+    assert "src\\nx_coloring.cpp" in normalized
     assert "src\\nx_plugin_host.cpp" in normalized
     assert "src\\progress_window.cpp" in normalized
     assert "nx 10.0" not in normalized
     assert "f:\\program files\\siemens" not in normalized
+
+    coloring_source = NX_COLORING_PATH.read_text(encoding="utf-8")
+    assert "DisplayModification" in coloring_source
+    assert "SetNewColor" in coloring_source
+    assert "ApplyNxFaceColorsAtomically" in coloring_source
+
+    runtime_normalized = (
+        RUNTIME_TEST_PROJECT_PATH.read_text(encoding="utf-8-sig")
+        .replace("/", "\\")
+        .casefold()
+    )
+    assert "nx_coloring.cpp" not in runtime_normalized
+    assert "libnxopencpp.lib" not in runtime_normalized
 
 
 def test_nx2212_plugin_builds_and_exports_user_functions():

@@ -1,11 +1,11 @@
 #include "nx_plugin_host.hpp"
 
 #include "inference_process.hpp"
+#include "nx_coloring.hpp"
 #include "nx_part_adapter.hpp"
 #include "progress_window.hpp"
 
 #include <windows.h>
-#include <commdlg.h>
 
 #ifdef CreateDialog
 #undef CreateDialog
@@ -19,8 +19,6 @@
 
 #include <algorithm>
 #include <filesystem>
-#include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -66,17 +64,6 @@ private:
     NXOpen::UI* ui_;
 };
 
-std::wstring LowerAscii(std::wstring value)
-{
-    for (wchar_t& character : value)
-    {
-        if (character >= L'A' && character <= L'Z')
-        {
-            character = static_cast<wchar_t>(character - L'A' + L'a');
-        }
-    }
-    return value;
-}
 }
 
 std::filesystem::path NxPluginHost::ModuleDirectory() const
@@ -108,45 +95,6 @@ std::filesystem::path NxPluginHost::ModuleDirectory() const
     }
 }
 
-std::optional<std::filesystem::path> NxPluginHost::SelectStepFile()
-{
-    std::vector<wchar_t> selected(32768, L'\0');
-    constexpr wchar_t filter[] =
-        L"STEP files (*.step;*.stp)\0*.step;*.stp\0\0";
-
-    OPENFILENAMEW dialog{};
-    dialog.lStructSize = sizeof(dialog);
-    dialog.hwndOwner = GetForegroundWindow();
-    dialog.lpstrFilter = filter;
-    dialog.lpstrFile = selected.data();
-    dialog.nMaxFile = static_cast<DWORD>(selected.size());
-    dialog.lpstrTitle = L"选择要识别的 STEP 文件";
-    dialog.lpstrDefExt = L"step";
-    dialog.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST |
-        OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-
-    if (!GetOpenFileNameW(&dialog))
-    {
-        const DWORD error = CommDlgExtendedError();
-        if (error == 0)
-        {
-            return std::nullopt;
-        }
-        std::ostringstream message;
-        message << "GetOpenFileNameW failed with common-dialog error 0x"
-                << std::hex << error;
-        throw std::runtime_error(message.str());
-    }
-
-    const std::filesystem::path path(selected.data());
-    const auto extension = LowerAscii(path.extension().wstring());
-    if (extension != L".step" && extension != L".stp")
-    {
-        throw std::runtime_error("Selected file must use the .step or .stp suffix.");
-    }
-    return path;
-}
-
 PartSnapshot NxPluginHost::CaptureCurrentPart()
 {
     return CaptureNxCurrentPart();
@@ -155,6 +103,13 @@ PartSnapshot NxPluginHost::CaptureCurrentPart()
 FaceGraph NxPluginHost::ReadCurrentFaceGraph(const PartSnapshot& expected)
 {
     return ReadNxFaceGraph(expected);
+}
+
+void NxPluginHost::ApplyFaceColorsAtomically(
+    const PartSnapshot& expected,
+    const std::vector<FaceColorAssignment>& assignments)
+{
+    ApplyNxFaceColorsAtomically(expected, assignments);
 }
 
 ProcessExecution NxPluginHost::RunProcess(

@@ -10,9 +10,11 @@ class NxPluginHost final : public PluginHost
 {
 public:
     std::filesystem::path ModuleDirectory() const override;
-    std::optional<std::filesystem::path> SelectStepFile() override;
     PartSnapshot CaptureCurrentPart() override;
     FaceGraph ReadCurrentFaceGraph(const PartSnapshot& expected) override;
+    void ApplyFaceColorsAtomically(
+        const PartSnapshot& expected,
+        const std::vector<FaceColorAssignment>& assignments) override;
     ProcessExecution RunProcess(
         const std::filesystem::path& executable,
         const std::vector<std::wstring>& arguments,

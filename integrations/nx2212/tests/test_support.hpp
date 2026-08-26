@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <process.h>
@@ -29,6 +30,27 @@ public:
 };
 
 void Expect(bool condition, const std::string& message);
+
+inline void ExpectNear(
+    double actual,
+    double expected,
+    double tolerance,
+    const std::string& message)
+{
+    Expect(
+        std::isfinite(actual) && std::isfinite(expected) &&
+            std::isfinite(tolerance) && tolerance >= 0.0 &&
+            std::abs(actual - expected) <= tolerance,
+        message);
+}
+
+inline void ExpectContains(
+    std::string_view text,
+    std::string_view needle,
+    const std::string& message)
+{
+    Expect(text.find(needle) != std::string_view::npos, message);
+}
 
 class TemporaryDirectory
 {

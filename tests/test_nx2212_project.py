@@ -21,6 +21,7 @@ RUNTIME_TEST_PROJECT_PATH = NX_ROOT / "BrepMFRNx2212RuntimeTests.vcxproj"
 RUNTIME_TEST_EXE_PATH = (
     NX_ROOT / "build" / "Tests" / "BrepMFRNx2212RuntimeTests.exe"
 )
+NX_README_PATH = NX_ROOT / "README.md"
 MSBUILD = {"m": "http://schemas.microsoft.com/developer/msbuild/2003"}
 
 
@@ -150,6 +151,20 @@ def test_nx2212_project_declares_compatible_portable_contract():
     )
     assert "nx_coloring.cpp" not in runtime_normalized
     assert "libnxopencpp.lib" not in runtime_normalized
+
+
+def test_nx2212_operator_guide_describes_current_part_face_mapping():
+    guide = NX_README_PATH.read_text(encoding="utf-8")
+    for required in (
+        "JSON 1.1",
+        "input.face_signatures.json",
+        "41/41",
+        "不自动保存",
+        "映射失败",
+        "当前 Work Part",
+    ):
+        assert required in guide
+    assert "在 Unicode 文件对话框中选择现有 `.step` 或 `.stp` 文件" not in guide
 
 
 def test_nx2212_plugin_builds_and_exports_user_functions():

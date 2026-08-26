@@ -83,6 +83,7 @@
     <ClCompile Include="src\progress_window.cpp" />
     <ClCompile Include="src\result_reader.cpp" />
     <ClCompile Include="src\result_formatter.cpp" />
+    <ClCompile Include="src\step_source_resolver.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\assignment_solver.hpp" />
@@ -102,6 +103,7 @@
     <ClInclude Include="include\progress_window.hpp" />
     <ClInclude Include="include\result_reader.hpp" />
     <ClInclude Include="include\result_formatter.hpp" />
+    <ClInclude Include="include\step_source_resolver.hpp" />
     <ClInclude Include="third_party\nlohmann\json.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

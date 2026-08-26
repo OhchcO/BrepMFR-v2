@@ -61,6 +61,7 @@
     <ClCompile Include="src\progress_layout.cpp" />
     <ClCompile Include="src\result_reader.cpp" />
     <ClCompile Include="src\result_formatter.cpp" />
+    <ClCompile Include="src\step_source_resolver.cpp" />
     <ClCompile Include="tests\assignment_solver_test.cpp" />
     <ClCompile Include="tests\color_plan_test.cpp" />
     <ClCompile Include="tests\face_signature_test.cpp" />
@@ -73,6 +74,7 @@
     <ClCompile Include="tests\result_reader_test.cpp" />
     <ClCompile Include="tests\result_formatter_test.cpp" />
     <ClCompile Include="tests\output_paths_test.cpp" />
+    <ClCompile Include="tests\step_source_resolver_test.cpp" />
     <ClCompile Include="tests\test_main.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -93,6 +95,7 @@
     <ClInclude Include="include\progress_layout.hpp" />
     <ClInclude Include="include\result_reader.hpp" />
     <ClInclude Include="include\result_formatter.hpp" />
+    <ClInclude Include="include\step_source_resolver.hpp" />
     <ClInclude Include="third_party\nlohmann\json.hpp" />
     <ClInclude Include="tests\test_support.hpp" />
   </ItemGroup>

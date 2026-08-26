@@ -14,7 +14,6 @@ struct FaceMatchOptions
     double relative_scalar_tolerance = 1e-4;
     double normalized_position_tolerance = 1e-5;
     double axis_angle_tolerance = 1e-6;
-    double sample_distance_tolerance = 2e-3;
     double ambiguity_cost_margin = 1e-8;
 };
 

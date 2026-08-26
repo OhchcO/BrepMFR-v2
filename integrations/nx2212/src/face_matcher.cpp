@@ -4,10 +4,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <limits>
 #include <optional>
 #include <queue>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -23,6 +25,15 @@ struct CandidateScore
 {
     double cost = 0.0;
     double max_normalized_error = 0.0;
+};
+
+struct CandidateRejection
+{
+    int stage = 0;
+    const char* component = "structural_signature";
+    double error = std::numeric_limits<double>::infinity();
+    double tolerance = 0.0;
+    bool numeric = false;
 };
 
 FaceMappingResult Failure(const std::string& diagnostic)
@@ -46,39 +57,20 @@ double RelativeError(double left, double right)
     return std::abs(left - right) / denominator;
 }
 
-double DirectedHausdorff(
-    const std::vector<Vec3>& source,
-    const std::vector<Vec3>& target)
-{
-    double maximum = 0.0;
-    for (const auto& source_point : source)
-    {
-        double minimum = std::numeric_limits<double>::infinity();
-        for (const auto& target_point : target)
-        {
-            minimum = std::min(minimum, Distance(source_point, target_point));
-        }
-        maximum = std::max(maximum, minimum);
-    }
-    return maximum;
-}
-
-double SymmetricHausdorff(
-    const std::vector<Vec3>& left,
-    const std::vector<Vec3>& right)
-{
-    return std::max(
-        DirectedHausdorff(left, right),
-        DirectedHausdorff(right, left));
-}
-
 bool AddComponent(
     CandidateScore& score,
     double error,
-    double tolerance)
+    double tolerance,
+    int stage,
+    const char* component,
+    CandidateRejection* rejection)
 {
     if (!std::isfinite(error) || error > tolerance)
     {
+        if (rejection != nullptr)
+        {
+            *rejection = {stage, component, error, tolerance, true};
+        }
         return false;
     }
     const double normalized = error / tolerance;
@@ -86,6 +78,18 @@ bool AddComponent(
     score.max_normalized_error =
         std::max(score.max_normalized_error, normalized);
     return true;
+}
+
+std::optional<CandidateScore> StructuralFailure(
+    int stage,
+    const char* component,
+    CandidateRejection* rejection)
+{
+    if (rejection != nullptr)
+    {
+        *rejection = {stage, component};
+    }
+    return std::nullopt;
 }
 
 bool SameParameterPresence(
@@ -102,38 +106,54 @@ bool SameParameterPresence(
 std::optional<CandidateScore> ScoreCandidate(
     const FaceSignature& occ,
     const FaceSignature& nx,
-    const FaceMatchOptions& options)
+    const FaceMatchOptions& options,
+    CandidateRejection* rejection = nullptr)
 {
-    if (occ.surface_type != nx.surface_type ||
-        occ.edge_count != nx.edge_count ||
-        occ.loop_count != nx.loop_count ||
-        occ.neighbor_count != nx.neighbor_count ||
-        !SameParameterPresence(occ.surface, nx.surface))
+    if (occ.surface_type != nx.surface_type)
     {
-        return std::nullopt;
+        return StructuralFailure(1, "surface_type", rejection);
+    }
+    if (occ.edge_count != nx.edge_count)
+    {
+        return StructuralFailure(2, "edge_count", rejection);
+    }
+    if (occ.loop_count != nx.loop_count)
+    {
+        return StructuralFailure(3, "loop_count", rejection);
+    }
+    if (occ.neighbor_count != nx.neighbor_count)
+    {
+        return StructuralFailure(4, "neighbor_count", rejection);
+    }
+    if (!SameParameterPresence(occ.surface, nx.surface))
+    {
+        return StructuralFailure(5, "surface_parameter_presence", rejection);
     }
 
     CandidateScore score;
     if (!AddComponent(score, RelativeError(occ.area, nx.area),
-                      options.relative_scalar_tolerance) ||
+                      options.relative_scalar_tolerance,
+                      6, "area", rejection) ||
         !AddComponent(score, RelativeError(occ.perimeter, nx.perimeter),
-                      options.relative_scalar_tolerance) ||
+                      options.relative_scalar_tolerance,
+                      7, "perimeter", rejection) ||
         !AddComponent(score, Distance(occ.centroid, nx.centroid),
-                      options.normalized_position_tolerance) ||
+                      options.normalized_position_tolerance,
+                      8, "centroid", rejection) ||
         !AddComponent(score, Distance(occ.bounds.minimum, nx.bounds.minimum),
-                      options.normalized_position_tolerance) ||
+                      options.normalized_position_tolerance,
+                      9, "bounding_box.minimum", rejection) ||
         !AddComponent(score, Distance(occ.bounds.maximum, nx.bounds.maximum),
-                      options.normalized_position_tolerance) ||
-        !AddComponent(score,
-                      SymmetricHausdorff(occ.sample_points, nx.sample_points),
-                      options.sample_distance_tolerance))
+                      options.normalized_position_tolerance,
+                      10, "bounding_box.maximum", rejection))
     {
         return std::nullopt;
     }
 
     if (occ.surface.origin &&
         !AddComponent(score, Distance(*occ.surface.origin, *nx.surface.origin),
-                      options.normalized_position_tolerance))
+                      options.normalized_position_tolerance,
+                      11, "surface.origin", rejection))
     {
         return std::nullopt;
     }
@@ -145,21 +165,30 @@ std::optional<CandidateScore> ScoreCandidate(
             std::abs(left.x * right.x + left.y * right.y + left.z * right.z),
             0.0,
             1.0);
-        if (!AddComponent(score, std::acos(dot), options.axis_angle_tolerance))
+        if (!AddComponent(
+                score, std::acos(dot), options.axis_angle_tolerance,
+                12, "surface.axis", rejection))
         {
             return std::nullopt;
         }
     }
     const auto add_optional_scalar = [&](const std::optional<double>& left,
-                                         const std::optional<double>& right) {
+                                         const std::optional<double>& right,
+                                         int stage,
+                                         const char* component) {
         return !left || AddComponent(
             score, RelativeError(*left, *right),
-            options.relative_scalar_tolerance);
+            options.relative_scalar_tolerance,
+            stage, component, rejection);
     };
-    if (!add_optional_scalar(occ.surface.radius, nx.surface.radius) ||
+    if (!add_optional_scalar(
+            occ.surface.radius, nx.surface.radius, 13, "surface.radius") ||
         !add_optional_scalar(
-            occ.surface.secondary_radius, nx.surface.secondary_radius) ||
-        !add_optional_scalar(occ.surface.half_angle, nx.surface.half_angle))
+            occ.surface.secondary_radius, nx.surface.secondary_radius,
+            14, "surface.secondary_radius") ||
+        !add_optional_scalar(
+            occ.surface.half_angle, nx.surface.half_angle,
+            15, "surface.half_angle"))
     {
         return std::nullopt;
     }
@@ -331,13 +360,116 @@ bool EveryRowHasOnlyOneCandidate(
     return true;
 }
 
+double RejectionNormalizedError(const CandidateRejection& rejection)
+{
+    if (!rejection.numeric || !std::isfinite(rejection.error) ||
+        rejection.tolerance <= 0.0)
+    {
+        return std::numeric_limits<double>::infinity();
+    }
+    return rejection.error / rejection.tolerance;
+}
+
+bool IsBetterDiagnosticCandidate(
+    const CandidateRejection& candidate,
+    const CandidateRejection& current)
+{
+    if (candidate.stage != current.stage)
+    {
+        return candidate.stage > current.stage;
+    }
+    return RejectionNormalizedError(candidate) <
+        RejectionNormalizedError(current);
+}
+
+std::string NoAssignmentDiagnostic(
+    const FaceGraph& occ_graph,
+    const FaceGraph& nx_graph,
+    const FaceMatchOptions& options,
+    const std::vector<std::vector<double>>& costs)
+{
+    std::ostringstream diagnostic;
+    diagnostic << "no complete OCC-to-NX face assignment exists";
+    std::size_t zero_candidate_rows = 0;
+    constexpr std::size_t kMaximumDetailedRows = 6;
+    for (std::size_t row = 0; row < costs.size(); ++row)
+    {
+        const auto candidate_count = std::count_if(
+            costs[row].begin(), costs[row].end(), [](double cost) {
+                return std::isfinite(cost);
+            });
+        if (candidate_count != 0)
+        {
+            continue;
+        }
+        ++zero_candidate_rows;
+        if (zero_candidate_rows > kMaximumDetailedRows)
+        {
+            continue;
+        }
+
+        std::optional<CandidateRejection> best_rejection;
+        FaceKey best_nx_key = 0;
+        for (std::size_t column = 0; column < nx_graph.faces.size(); ++column)
+        {
+            CandidateRejection rejection;
+            const auto score = ScoreCandidate(
+                occ_graph.faces[row], nx_graph.faces[column],
+                options, &rejection);
+            if (score)
+            {
+                continue;
+            }
+            if (!best_rejection ||
+                IsBetterDiagnosticCandidate(rejection, *best_rejection))
+            {
+                best_rejection = rejection;
+                best_nx_key = nx_graph.faces[column].key;
+            }
+        }
+
+        diagnostic << "; OCC face " << occ_graph.faces[row].key
+                   << " has 0 candidates";
+        if (best_rejection)
+        {
+            diagnostic << "; best-surviving NX face " << best_nx_key
+                       << " rejected at " << best_rejection->component;
+            if (best_rejection->numeric)
+            {
+                diagnostic << " (error=" << std::setprecision(8)
+                           << best_rejection->error
+                           << ", tolerance=" << best_rejection->tolerance
+                           << ')';
+            }
+        }
+    }
+    if (zero_candidate_rows > kMaximumDetailedRows)
+    {
+        diagnostic << "; "
+                   << (zero_candidate_rows - kMaximumDetailedRows)
+                   << " additional OCC faces have 0 candidates";
+    }
+    if (zero_candidate_rows == 0)
+    {
+        diagnostic << "; candidate counts:";
+        for (std::size_t row = 0; row < costs.size(); ++row)
+        {
+            const auto count = std::count_if(
+                costs[row].begin(), costs[row].end(), [](double cost) {
+                    return std::isfinite(cost);
+                });
+            diagnostic << ' ' << occ_graph.faces[row].key << '=' << count;
+        }
+    }
+    return diagnostic.str();
+}
+
 void ValidateOptions(const FaceMatchOptions& options)
 {
     const double positive[] = {
         options.relative_scalar_tolerance,
         options.normalized_position_tolerance,
-        options.axis_angle_tolerance,
-        options.sample_distance_tolerance};
+        options.axis_angle_tolerance};
     for (const double value : positive)
     {
         if (!std::isfinite(value) || value <= 0.0)
@@ -408,7 +540,8 @@ FaceMappingResult MatchFaces(
     const auto solution = SolveMinimumCostAssignment(costs);
     if (!solution)
     {
-        return Failure("no complete OCC-to-NX face assignment exists");
+        return Failure(NoAssignmentDiagnostic(
+            occ_graph, nx_graph, options, costs));
     }
     if (!AdjacencyMatches(
             occ_graph, nx_graph, solution->column_for_row))

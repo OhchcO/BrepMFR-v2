@@ -1,6 +1,7 @@
 #include "nx_part_adapter.hpp"
 
 #include "face_signature.hpp"
+#include "step_source_resolver.hpp"
 
 #include <NXOpen/Body.hxx>
 #include <NXOpen/BodyCollection.hxx>
@@ -86,23 +87,7 @@ std::filesystem::path ValidateStepPath(NXOpen::Part* part)
     {
         throw std::runtime_error("current Work Part has no file path");
     }
-    const auto path = std::filesystem::weakly_canonical(
-        std::filesystem::u8path(utf8));
-    std::error_code error;
-    const bool exists = std::filesystem::is_regular_file(path, error);
-    if (error || !exists)
-    {
-        throw std::runtime_error(
-            "current Work Part path is not an existing file: " +
-            path.generic_u8string());
-    }
-    const auto extension = LowerAscii(path.extension().wstring());
-    if (extension != L".step" && extension != L".stp")
-    {
-        throw std::runtime_error(
-            "current Work Part must be an opened STEP file");
-    }
-    return path;
+    return ResolveOpenedStepSource(std::filesystem::u8path(utf8));
 }
 
 CurrentPartData CaptureCurrentPartData()
@@ -206,16 +191,6 @@ Vec3 Subtract(const Vec3& left, const Vec3& right)
 Vec3 Scale(const Vec3& value, double scale)
 {
     return {value.x * scale, value.y * scale, value.z * scale};
-}
-
-double Dot(const Vec3& left, const Vec3& right)
-{
-    return left.x * right.x + left.y * right.y + left.z * right.z;
-}
-
-Vec3 ClosestPointToOriginOnPlane(const Vec3& point, const Vec3& axis)
-{
-    return Subtract(point, Scale(axis, Dot(point, axis)));
 }
 
 Vec3 ExtremePoint(
@@ -388,7 +363,7 @@ std::vector<Vec3> SampleFace(tag_t face)
     std::vector<Vec3> samples;
     for (std::size_t index = 0; index < u_values.size(); ++index)
     {
-        if (containment[index] != 1 && containment[index] != 3)
+        if (!IncludeFaceGridSample(containment[index]))
         {
             continue;
         }
@@ -509,10 +484,15 @@ void NormalizeSurface(
         surface->secondary_radius = NormalizeLength(
             transform, *surface->secondary_radius);
     }
-    if (surface->origin && surface->axis &&
-        (type == SurfaceType::Plane || type == SurfaceType::Cylinder))
+    if (surface->origin && surface->axis && type == SurfaceType::Plane)
     {
-        surface->origin = ClosestPointToOriginOnPlane(
+        surface->origin = CanonicalPlaneOrigin(
+            *surface->origin, *surface->axis);
+    }
+    else if (surface->origin && surface->axis &&
+             type == SurfaceType::Cylinder)
+    {
+        surface->origin = CanonicalAxisOrigin(
             *surface->origin, *surface->axis);
     }
 }

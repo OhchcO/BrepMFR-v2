@@ -107,6 +107,42 @@ BREPMFR_TEST(CanonicalAxisNormalizesDirectionAndSign)
         "zero axis was accepted");
 }
 
+BREPMFR_TEST(PlaneAndAxisOriginsUseDifferentCanonicalProjections)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    const Vec3 axis{0.0, 0.0, 1.0};
+    ExpectEqual(
+        CanonicalPlaneOrigin({3.0, 4.0, 5.0}, axis),
+        Vec3{0.0, 0.0, 5.0},
+        "plane origin is not the closest point on the plane");
+    ExpectEqual(
+        CanonicalPlaneOrigin({8.0, -2.0, 5.0}, axis),
+        Vec3{0.0, 0.0, 5.0},
+        "plane origin depends on the kernel reference point");
+    ExpectEqual(
+        CanonicalAxisOrigin({3.0, 4.0, 5.0}, axis),
+        Vec3{3.0, 4.0, 0.0},
+        "axis origin is not the closest point on the axis");
+}
+
+BREPMFR_TEST(FaceGridSamplingIncludesOnlyStrictlyInteriorUvPoints)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    Expect(
+        IncludeFaceGridSample(1),
+        "strictly interior UV point was excluded");
+    Expect(
+        !IncludeFaceGridSample(2),
+        "outside UV point was included");
+    Expect(
+        !IncludeFaceGridSample(3),
+        "boundary UV point was included");
+}
+
 BREPMFR_TEST(ValidateFaceGraphAcceptsConsistentGraph)
 {
     brepmfr::nx2212::ValidateFaceGraph(MakeValidGraph());

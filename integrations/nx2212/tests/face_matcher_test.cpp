@@ -203,6 +203,26 @@ BREPMFR_TEST(FaceMatcherRejectsGeometryOutsideToleranceWithoutPartialMatches)
     ExpectClosedFailure(MatchFaces(occ, nx), "out-of-tolerance centroid");
 }
 
+BREPMFR_TEST(FaceMatcherIgnoresKernelSpecificSamplePointLayouts)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    const auto occ = MakeIsolatedGraph({0}, {0.0});
+    auto nx = MakeIsolatedGraph({101}, {0.0});
+    for (auto& point : nx.faces[0].sample_points)
+    {
+        point.x += 0.01;
+    }
+
+    const auto result = MatchFaces(occ, nx);
+
+    Expect(result.success, result.diagnostic);
+    ExpectEqual(TagFor(result, 0), FaceKey{101}, "sample-independent face mismatch");
+    ExpectNear(result.total_cost, 0.0, 1e-12,
+               "sample layout affected the face match cost");
+}
+
 BREPMFR_TEST(FaceMatcherRejectsAssignmentThatBreaksAdjacency)
 {
     using namespace brepmfr::nx2212;

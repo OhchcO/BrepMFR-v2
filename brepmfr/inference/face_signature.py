@@ -82,7 +82,7 @@ def _closest_point_on_plane_to_origin(
 ) -> List[float]:
     location = np.asarray(point, dtype=np.float64)
     axis = np.asarray(normal, dtype=np.float64)
-    closest = location - axis * float(np.dot(location, axis))
+    closest = axis * float(np.dot(location, axis))
     return [float(component) for component in closest]
 
 

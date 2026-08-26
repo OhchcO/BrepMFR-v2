@@ -1,12 +1,13 @@
 # BrepMFR NX2212 识别插件
 
-该插件把 NX2212 用作 STEP 选择和识别结果展示界面。STEP 转 BIN、缓存校验、
-模型加载、推理、后处理和 `result.json` 写入全部由独立 Python 进程完成；DLL
-不会把 Python、PyTorch 或 CUDA 加载进 NX 进程。
+该插件把 NX2212 用作当前 STEP 的入口和识别结果可视化界面。STEP 转 BIN、缓存
+校验、模型加载、推理、后处理和 `result.json` 写入全部由独立 Python 进程完成；
+DLL 不会把 Python、PyTorch 或 CUDA 加载进 NX 进程。
 
-当前版本展示识别摘要和特征实例列表，但不高亮 NX 面。JSON 中的
-`face_index` 是 OCC/AAG 构图时的 0-based 面序号，不是 NX Face Tag；在建立
-经过验证的 OCC 面到 NX 面映射之前，不能把该编号直接用于 NX 高亮。
+Python 输出 JSON 1.1 时，插件从当前 Work Part 提取 NX 面几何/拓扑签名，进行
+OCC/AAG 面到 NX Face Tag 的全局一一映射，再按特征实例为对应面着色。JSON 中的
+`face_index` 始终是 OCC/AAG 构图时的 0-based 面序号，不是 NX Face Tag；二者只
+能通过已验证的映射关系对应，不能直接互换。
 
 ## 环境要求
 
@@ -93,20 +94,38 @@ checkpoint 必须以 `.ckpt` 结尾。`device` 只能是 `auto`、`cpu` 或 `cud
 阈值必须在 0 到 1 之间。真实配置位于被忽略的 `build/` 目录，不应提交到 Git。
 
 建议先在 PowerShell 里用同一 Python、STEP 和 checkpoint 直接运行 CLI；确认
-生成 `status=success` 的 `result.json` 后，再从 NX 加载 DLL。这样可以把 Python
-环境问题与 NX 集成问题分开定位。
+生成 `status=success`、`schema_version=1.1`、`face_mapping.status=ready` 的
+`result.json` 后，再从 NX 加载 DLL。这样可以把 Python 环境问题与 NX 集成问题
+分开定位。转换输出还包含 `input.face_signatures.json`；它与 `input.bin` 共享缓存
+身份，供 JSON 1.1 面映射使用。
 
 ## 在 NX2212 中运行
 
-1. 启动 NX2212。
-2. 使用 `File -> Execute -> NX Open`，快捷键通常为 `Ctrl+U`。
-3. 选择 `build/Release/BrepMFRNx2212.dll`。
-4. 在 Unicode 文件对话框中选择现有 `.step` 或 `.stp` 文件；取消选择不会报错。
-5. Python 启动后会显示当前 STEP、真实处理阶段、不确定进度条和已用时间。首版
+1. 启动 NX2212，用 `File -> Open` 打开要识别的 `.step` 或 `.stp`。
+2. 第一版要求当前 Work Part 未经修改，并且只包含一个非片体、非收敛体的精确
+   solid body；打开 STEP 后不要编辑、切换 Part 或增删面。
+3. 使用 `File -> Execute -> NX Open`（快捷键通常为 `Ctrl+U`），选择
+   `build/Release/BrepMFRNx2212.dll`。插件不再显示 STEP 文件选择器，输入就是当前
+   Work Part 对应的原始 STEP 路径。
+4. Python 启动后会显示当前 STEP、真实处理阶段、不确定进度条和已用时间。首版
    不提供强制取消，避免损坏正在写入的转换缓存。
-6. 成功后，信息框显示面数量、特征实例数、BIN 缓存是否命中、Python 进程总用时
-   和流水线用时；NX
-   Listing Window 显示每个实例及其 OCC/AAG 面编号。
+5. 成功后，信息框显示面数量、特征实例数、BIN 缓存是否命中、Python 进程总用时、
+   流水线用时和映射状态；NX Listing Window 同时保留每个实例的 OCC/AAG 面编号、
+   NX Face Tag、颜色和置信度。
+6. JSON 1.1 且完整映射成功时，识别到的特征面按实例着色，stock 面保持原色。以
+   41 面黄金 STEP 为例，成功摘要应显示 `41/41` 已映射。着色创建名为
+   `BrepMFR feature colors` 的可见撤销标记，但不自动保存 Part；需要保留颜色时
+   由用户手动保存，需要撤销时使用 NX Undo。
+
+NX2212 打开中性 STEP 后，通常会把当前 Work Part 表示为同目录下自动生成的
+`<名称>_step.prt`，并生成对应的 `<名称>.log`。插件会校验日志中的 `Converting Part` 与
+`Filing Part` 配对，唯一还原原始 `.step/.stp` 供 Python 推理；取面、Face Tag
+匹配和着色仍针对当前 NX Work Part。日志缺失、目标 PRT 不匹配或来源不唯一时会
+终止识别，不会猜测同名 STEP，也不会自动导出新 STEP。
+
+JSON 1.0 仍可显示原有文字结果，但不会读取 NX 几何或着色。JSON 1.1 的签名
+不可用、非法、匹配歧义或着色异常时，识别文字结果仍然保留，摘要明确显示映射失败；
+任何映射失败都实行零着色，不留下部分修改，也不会被误报为 Python 推理失败。
 
 同一个 STEP 路径会使用稳定的独立输出目录：
 
@@ -114,6 +133,7 @@ checkpoint 必须以 `.ckpt` 结尾。`device` 只能是 `auto`、`cpu` 或 `cud
 output_root/<STEP stem>-<path hash>/
   input.bin
   input.bin.meta.json
+  input.face_signatures.json
   result.json
   run.log
 ```
@@ -141,8 +161,16 @@ NX 自带 DLL 或 Python 设置污染 OCC/深度学习依赖；不会把 Python 
   里的流水线用时。前者额外包含 Python 冷启动和模块导入。
 - 重复识别未命中缓存：查看 `input.bin.meta.json`；STEP 内容、转换实现、采样
   配置或 checkpoint 几何需求任一改变都应触发重建。
-- 面编号不能在 NX 中直接定位：这是当前明确边界。Listing Window 已统一标注
-  `OCC/AAG face_index (not NX Face Tag)`，面高亮要等可靠映射完成后再接入。
+- 当前 Work Part 校验失败：确认 NX 中已直接打开现有 `.step`/`.stp`，原始 STEP、
+  NX 自动生成的 `*_step.prt` 和转换 `.log` 仍位于原目录，且模型仍是未修改的单个
+  精确 solid body。不要在 Python 推理期间切换 Part、重命名转换文件或改变拓扑。
+- 映射失败但识别文字正常：查看 Listing Window 的 `Face mapping failed` 诊断。
+  常见原因是 JSON 1.0、`input.face_signatures.json` 不可用、NX/OCC 面数不同、几何
+  超出容差或存在多个同样合理的拓扑映射；失败路径不会应用任何颜色。
+- 面已着色但关闭后颜色消失：这是预期行为，插件不自动保存。确认结果后由用户决定
+  是否保存 NX Part；也可以通过 `BrepMFR feature colors` 撤销标记恢复原色。
+- Listing Window 同时显示 `OCC faces [...]` 与 `NX Face Tags [...]`：前者属于
+  Python/OCC AAG，后者才是当前 NX 会话中的可视化对象标识。
 
 DLL 导出 `ufusr` 和 `ufusr_ask_unload`，入口完成后请求 NX 立即卸载，因此同一
 NX 会话可以再次通过 `Ctrl+U` 加载并执行。

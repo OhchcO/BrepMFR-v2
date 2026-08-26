@@ -87,13 +87,15 @@ the committed STEP integrity check still runs.
 
 ### NX 2212 integration
 
-The optional NX2212 C++ plug-in lets NX select a STEP file, launch the Python
-CLI as an isolated process, show an indeterminate progress window, and display
-the validated `result.json`. Python remains responsible for STEP conversion,
-BIN caching, model inference, and postprocessing. See the
+The optional NX2212 C++ plug-in recognizes the current, unmodified, single-body
+STEP Work Part, launches the Python CLI as an isolated process, validates JSON
+1.1 face signatures, maps OCC/AAG faces to NX Face Tags, and colors recognized
+feature instances. Python remains responsible for STEP conversion, BIN caching,
+model inference, and postprocessing; the plug-in does not automatically save the
+NX Part. See the
 [NX2212 build, configuration, and operation guide](integrations/nx2212/README.md).
 
-The current integration reports OCC/AAG `face_index` values in the NX Listing
-Window. It does not treat them as NX Face Tags and does not highlight faces
-until a reliable OCC-to-NX face mapping is available.
+The Listing Window preserves both OCC/AAG `face_index` values and mapped NX Face
+Tags. JSON 1.0 remains text-only; mapping failure keeps the recognition text and
+applies no partial coloring.
 

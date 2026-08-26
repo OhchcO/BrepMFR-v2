@@ -120,6 +120,27 @@ def test_golden_step_face_mapping_is_complete_and_aligned(golden_extraction):
     assert [face["neighbor_count"] for face in mapping["faces"]] == degrees
 
 
+def test_plane_origins_are_closest_points_on_planes_to_normalized_origin(
+    golden_extraction,
+):
+    mapping = extract_face_mapping(*golden_extraction)
+    plane_count = 0
+    for face in mapping["faces"]:
+        if face["surface_type"] != "plane":
+            continue
+        plane_count += 1
+        axis = np.asarray(face["surface_parameters"]["axis"], dtype=np.float64)
+        centroid = np.asarray(face["centroid"], dtype=np.float64)
+        expected = axis * float(np.dot(centroid, axis))
+        np.testing.assert_allclose(
+            face["surface_parameters"]["origin"],
+            expected,
+            atol=1.0e-9,
+            rtol=0.0,
+        )
+    assert plane_count == 39
+
+
 def _read_step_shape(path):
     reader = STEPControl_Reader()
     assert reader.ReadFile(str(path)) == 1

@@ -25,6 +25,7 @@ struct Bounds3
 };
 
 bool operator==(const Vec3& left, const Vec3& right) noexcept;
+bool IncludeFaceGridSample(int containment_status) noexcept;
 
 enum class SurfaceType
 {
@@ -81,6 +82,8 @@ Vec3 NormalizePoint(const UnitBoxTransform& transform, const Vec3& point);
 double NormalizeLength(const UnitBoxTransform& transform, double length);
 double NormalizeArea(const UnitBoxTransform& transform, double area);
 Vec3 CanonicalAxis(const Vec3& axis);
+Vec3 CanonicalPlaneOrigin(const Vec3& point, const Vec3& axis);
+Vec3 CanonicalAxisOrigin(const Vec3& point, const Vec3& axis);
 void ValidateFaceGraph(const FaceGraph& graph);
 }
 }

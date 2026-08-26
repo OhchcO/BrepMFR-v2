@@ -63,6 +63,11 @@ bool operator==(const Vec3& left, const Vec3& right) noexcept
     return left.x == right.x && left.y == right.y && left.z == right.z;
 }
 
+bool IncludeFaceGridSample(int containment_status) noexcept
+{
+    return containment_status == 1;
+}
+
 UnitBoxTransform MakeUnitBoxTransform(const Bounds3& body_bounds)
 {
     if (!IsFinite(body_bounds.minimum) || !IsFinite(body_bounds.maximum))
@@ -150,6 +155,36 @@ Vec3 CanonicalAxis(const Vec3& axis)
         }
     }
     return result;
+}
+
+Vec3 CanonicalPlaneOrigin(const Vec3& point, const Vec3& axis)
+{
+    if (!IsFinite(point))
+    {
+        throw std::invalid_argument("plane point is not finite");
+    }
+    const Vec3 unit_axis = CanonicalAxis(axis);
+    const double projection = point.x * unit_axis.x +
+        point.y * unit_axis.y + point.z * unit_axis.z;
+    return {
+        unit_axis.x * projection,
+        unit_axis.y * projection,
+        unit_axis.z * projection};
+}
+
+Vec3 CanonicalAxisOrigin(const Vec3& point, const Vec3& axis)
+{
+    if (!IsFinite(point))
+    {
+        throw std::invalid_argument("axis point is not finite");
+    }
+    const Vec3 unit_axis = CanonicalAxis(axis);
+    const double projection = point.x * unit_axis.x +
+        point.y * unit_axis.y + point.z * unit_axis.z;
+    return {
+        point.x - unit_axis.x * projection,
+        point.y - unit_axis.y * projection,
+        point.z - unit_axis.z * projection};
 }
 
 void ValidateFaceGraph(const FaceGraph& graph)

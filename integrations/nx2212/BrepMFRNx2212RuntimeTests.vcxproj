@@ -56,6 +56,7 @@
     <ClCompile Include="src\plugin_config.cpp" />
     <ClCompile Include="src\inference_command.cpp" />
     <ClCompile Include="src\inference_process.cpp" />
+    <ClCompile Include="src\instance_browser.cpp" />
     <ClCompile Include="src\output_paths.cpp" />
     <ClCompile Include="src\plugin_runtime.cpp" />
     <ClCompile Include="src\progress_layout.cpp" />
@@ -69,6 +70,7 @@
     <ClCompile Include="tests\plugin_config_test.cpp" />
     <ClCompile Include="tests\inference_command_test.cpp" />
     <ClCompile Include="tests\inference_process_test.cpp" />
+    <ClCompile Include="tests\instance_browser_test.cpp" />
     <ClCompile Include="tests\plugin_runtime_test.cpp" />
     <ClCompile Include="tests\progress_layout_test.cpp" />
     <ClCompile Include="tests\result_reader_test.cpp" />
@@ -90,6 +92,7 @@
     <ClInclude Include="include\plugin_config.hpp" />
     <ClInclude Include="include\inference_command.hpp" />
     <ClInclude Include="include\inference_process.hpp" />
+    <ClInclude Include="include\instance_browser.hpp" />
     <ClInclude Include="include\output_paths.hpp" />
     <ClInclude Include="include\plugin_runtime.hpp" />
     <ClInclude Include="include\progress_layout.hpp" />

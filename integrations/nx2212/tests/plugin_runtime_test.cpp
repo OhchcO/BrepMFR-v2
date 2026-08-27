@@ -1,5 +1,6 @@
 #include "plugin_runtime.hpp"
 
+#include "instance_browser.hpp"
 #include "output_paths.hpp"
 
 #include "test_support.hpp"
@@ -303,6 +304,15 @@ public:
         success_display = display;
     }
 
+    void ShowInstanceBrowser(
+        const brepmfr::nx2212::PartSnapshot& snapshot,
+        const brepmfr::nx2212::InstanceBrowserModel& model) override
+    {
+        ++browser_calls;
+        browser_snapshot = snapshot;
+        browser_model = model;
+    }
+
     void ShowError(const std::string& message_utf8) noexcept override
     {
         ++error_calls;
@@ -328,12 +338,15 @@ public:
     int color_calls = 0;
     int process_calls = 0;
     int success_calls = 0;
+    int browser_calls = 0;
     int error_calls = 0;
     std::filesystem::path process_executable;
     std::vector<std::wstring> process_arguments;
     std::filesystem::path process_log_path;
     brepmfr::nx2212::ProcessLaunchOptions process_options;
     brepmfr::nx2212::DisplayText success_display;
+    brepmfr::nx2212::PartSnapshot browser_snapshot;
+    brepmfr::nx2212::InstanceBrowserModel browser_model;
     std::string error_message;
     brepmfr::nx2212::PartSnapshot graph_snapshot;
     brepmfr::nx2212::PartSnapshot color_snapshot;
@@ -383,6 +396,7 @@ BREPMFR_TEST(InferenceWorkflowStopsWhenCurrentWorkPartIsUnavailable)
     ExpectEqual(host.graph_calls, 0, "missing Work Part read an NX graph");
     ExpectEqual(host.color_calls, 0, "missing Work Part applied colors");
     ExpectEqual(host.success_calls, 0, "missing Work Part displayed success");
+    ExpectEqual(host.browser_calls, 0, "missing Work Part opened browser");
     ExpectEqual(host.error_calls, 1, "missing Work Part error call count mismatch");
     ExpectContains(host.error_message, "Work Part unavailable",
                    "missing Work Part diagnostic missing");
@@ -442,6 +456,7 @@ BREPMFR_TEST(InferenceWorkflowRunsPythonAndDisplaysFreshSuccess)
     ExpectEqual(host.process_calls, 1, "Python process call count mismatch");
     ExpectEqual(host.capture_calls, 1, "Work Part was not captured once");
     ExpectEqual(host.success_calls, 1, "success display call count mismatch");
+    ExpectEqual(host.browser_calls, 0, "JSON 1.0 success opened browser");
     ExpectEqual(host.error_calls, 0, "successful workflow displayed an error");
     ExpectEqual(
         host.process_options.working_directory,
@@ -495,9 +510,17 @@ BREPMFR_TEST(InferenceWorkflowMapsAndColorsReadyJson11Once)
                 "feature instance ID mismatch");
     ExpectEqual(host.color_assignments[0].color_index, 1,
                 "feature color mismatch");
-    ExpectEqual(host.success_calls, 1, "colored result was not displayed");
+    ExpectEqual(host.success_calls, 0, "colored result opened legacy popup");
+    ExpectEqual(host.browser_calls, 1, "colored success did not open browser");
+    ExpectEqual(host.browser_snapshot.body_tag, host.part.body_tag,
+                "browser snapshot mismatch");
+    ExpectEqual(host.browser_model.rows.size(), std::size_t{1},
+                "browser row count mismatch");
+    ExpectEqual(host.browser_model.rows[0].nx_face_tags,
+                std::vector<FaceKey>{501}, "browser face tags mismatch");
     ExpectEqual(host.error_calls, 0, "colored result displayed Python error");
-    ExpectContains(host.success_display.summary_utf8, u8"已着色实例：1",
+    ExpectContains(host.browser_model.complete_text.summary_utf8,
+                   u8"已着色实例：1",
                    "color summary missing");
     ExpectEqual(host.process_options.display_input_path, host.part.step_path,
                 "progress path did not use current Work Part");
@@ -538,6 +561,8 @@ BREPMFR_TEST(InferenceWorkflowDoesNotReadNxGraphForUnavailableOrInvalidMapping)
         ExpectEqual(host.graph_calls, 0, "unusable mapping read the NX graph");
         ExpectEqual(host.color_calls, 0, "unusable mapping applied colors");
         ExpectEqual(host.success_calls, 1, "mapping warning hid recognition result");
+        ExpectEqual(host.browser_calls, 0,
+                    "mapping warning opened browser");
         ExpectEqual(host.error_calls, 0, "mapping warning became Python error");
         ExpectContains(host.success_display.summary_utf8,
                        u8"识别成功，但面映射失败",
@@ -577,6 +602,8 @@ BREPMFR_TEST(InferenceWorkflowKeepsTextWhenMatcherFailsOrIsAmbiguous)
         ExpectEqual(host.graph_calls, 1, "matcher case did not read NX graph");
         ExpectEqual(host.color_calls, 0, "failed matcher applied colors");
         ExpectEqual(host.success_calls, 1, "failed matcher hid text result");
+        ExpectEqual(host.browser_calls, 0,
+                    "failed matcher opened browser");
         ExpectEqual(host.error_calls, 0, "failed matcher became Python error");
         ExpectContains(host.success_display.summary_utf8,
                        u8"识别成功，但面映射失败",
@@ -612,6 +639,7 @@ BREPMFR_TEST(InferenceWorkflowDoesNotColorWhenColorPlanExceedsPalette)
     ExpectEqual(host.graph_calls, 1, "color plan case did not read NX graph");
     ExpectEqual(host.color_calls, 0, "failed color plan applied colors");
     ExpectEqual(host.success_calls, 1, "failed color plan hid text result");
+    ExpectEqual(host.browser_calls, 0, "failed color plan opened browser");
     ExpectContains(host.success_display.summary_utf8, "216",
                    "palette capacity diagnostic missing");
 }
@@ -641,6 +669,7 @@ BREPMFR_TEST(InferenceWorkflowConvertsAtomicColorExceptionToMappingFailure)
     ExpectEqual(result, kSuccess, "color exception changed recognition status");
     ExpectEqual(host.color_calls, 1, "atomic coloring was retried");
     ExpectEqual(host.success_calls, 1, "color exception hid text result");
+    ExpectEqual(host.browser_calls, 0, "color exception opened browser");
     ExpectEqual(host.error_calls, 0, "color exception became Python error");
     ExpectContains(host.success_display.summary_utf8, "synthetic color failure",
                    "color exception diagnostic missing");

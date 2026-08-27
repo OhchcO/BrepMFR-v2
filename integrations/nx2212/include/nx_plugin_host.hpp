@@ -21,6 +21,9 @@ public:
         const std::filesystem::path& log_path,
         const ProcessLaunchOptions& options) override;
     void ShowSuccess(const DisplayText& display) override;
+    void ShowInstanceBrowser(
+        const PartSnapshot& part,
+        const InstanceBrowserModel& model) override;
     void ShowError(const std::string& message_utf8) noexcept override;
 };
 }

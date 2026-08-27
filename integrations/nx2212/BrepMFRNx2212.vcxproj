@@ -73,6 +73,7 @@
     <ClCompile Include="src\plugin_config.cpp" />
     <ClCompile Include="src\inference_command.cpp" />
     <ClCompile Include="src\inference_process.cpp" />
+    <ClCompile Include="src\instance_browser.cpp" />
     <ClCompile Include="src\nx_coloring.cpp" />
     <ClCompile Include="src\nx_part_adapter.cpp" />
     <ClCompile Include="src\nx_plugin_host.cpp" />
@@ -94,6 +95,7 @@
     <ClInclude Include="include\plugin_exports.hpp" />
     <ClInclude Include="include\inference_command.hpp" />
     <ClInclude Include="include\inference_process.hpp" />
+    <ClInclude Include="include\instance_browser.hpp" />
     <ClInclude Include="include\nx_coloring.hpp" />
     <ClInclude Include="include\nx_part_adapter.hpp" />
     <ClInclude Include="include\nx_plugin_host.hpp" />

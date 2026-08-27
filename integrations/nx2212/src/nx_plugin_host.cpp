@@ -150,6 +150,13 @@ void NxPluginHost::ShowSuccess(const DisplayText& display)
         NXOpen::NXString(display.summary_utf8, NXOpen::NXString::UTF8));
 }
 
+void NxPluginHost::ShowInstanceBrowser(
+    const PartSnapshot&,
+    const InstanceBrowserModel& model)
+{
+    ShowSuccess(model.complete_text);
+}
+
 void NxPluginHost::ShowError(const std::string& message_utf8) noexcept
 {
     try

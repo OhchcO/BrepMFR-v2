@@ -1,6 +1,7 @@
 #pragma once
 
 #include "inference_process.hpp"
+#include "instance_browser.hpp"
 #include "result_formatter.hpp"
 
 #include <filesystem>
@@ -38,6 +39,9 @@ public:
         const std::filesystem::path& log_path,
         const ProcessLaunchOptions& options) = 0;
     virtual void ShowSuccess(const DisplayText& display) = 0;
+    virtual void ShowInstanceBrowser(
+        const PartSnapshot& part,
+        const InstanceBrowserModel& model) = 0;
     virtual void ShowError(const std::string& message_utf8) noexcept = 0;
 };
 

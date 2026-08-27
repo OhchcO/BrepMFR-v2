@@ -3,6 +3,7 @@
 #include "color_plan.hpp"
 #include "face_matcher.hpp"
 #include "inference_command.hpp"
+#include "instance_browser.hpp"
 #include "output_paths.hpp"
 #include "plugin_config.hpp"
 #include "result_reader.hpp"
@@ -185,11 +186,25 @@ int RunInferenceWorkflow(PluginHost& host) noexcept
             }
             const auto& success = std::get<SuccessResult>(result);
             const auto mapping = MapAndColorCurrentPart(host, part, success);
-            host.ShowSuccess(FormatSuccessDisplay(
+            const auto display = FormatSuccessDisplay(
                 success,
                 output->result_path,
                 process_execution->elapsed,
-                mapping));
+                mapping);
+            if (mapping.status == MappingDisplayStatus::Colored)
+            {
+                host.ShowInstanceBrowser(
+                    part,
+                    BuildInstanceBrowserModel(
+                        success,
+                        process_execution->elapsed,
+                        mapping,
+                        display));
+            }
+            else
+            {
+                host.ShowSuccess(display);
+            }
             return kSuccess;
         }
 

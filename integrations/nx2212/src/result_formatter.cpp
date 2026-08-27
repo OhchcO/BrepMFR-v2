@@ -1,6 +1,7 @@
 #include "result_formatter.hpp"
 
 #include <algorithm>
+#include <array>
 #include <iomanip>
 #include <locale>
 #include <sstream>
@@ -34,7 +35,8 @@ std::string FormatInstance(
     std::ostringstream stream;
     stream.imbue(std::locale::classic());
     stream << '[' << instance.instance_id << "] "
-           << instance.feature_name << ": OCC faces [";
+           << LocalizedFeatureNameUtf8(instance.feature_name)
+           << u8"：OCC 面索引 [";
     for (std::size_t index = 0; index < instance.face_indices.size(); ++index)
     {
         if (index != 0)
@@ -46,11 +48,11 @@ std::string FormatInstance(
     stream << ']';
     if (color != nullptr)
     {
-        stream << ", NX Face Tags [";
+        stream << u8"，NX 面标签 [";
         AppendTags(stream, color->nx_face_tags);
-        stream << "], color " << color->color_index;
+        stream << u8"]，颜色编号 " << color->color_index;
     }
-    stream << ", confidence " << std::fixed << std::setprecision(4)
+    stream << u8"，置信度 " << std::fixed << std::setprecision(4)
            << instance.confidence;
     return stream.str();
 }
@@ -61,6 +63,48 @@ std::string MappingDiagnostic(
 {
     return mapping.diagnostic.empty() ? fallback : mapping.diagnostic;
 }
+}
+
+std::string LocalizedFeatureNameUtf8(const std::string& feature_name)
+{
+    struct FeatureName
+    {
+        const char* english;
+        const char* chinese;
+    };
+    static const std::array<FeatureName, 25> names{{
+        {"chamfer", u8"倒角"},
+        {"through_hole", u8"通孔"},
+        {"triangular_passage", u8"三角形通孔"},
+        {"rectangular_passage", u8"矩形通孔"},
+        {"6sides_passage", u8"六边形通孔"},
+        {"triangular_through_slot", u8"三角形通槽"},
+        {"rectangular_through_slot", u8"矩形通槽"},
+        {"circular_through_slot", u8"圆形通槽"},
+        {"rectangular_through_step", u8"矩形台阶"},
+        {"2sides_through_step", u8"两侧贯通台阶"},
+        {"slanted_through_step", u8"斜向贯通台阶"},
+        {"Oring", u8"O型环槽"},
+        {"blind_hole", u8"盲孔"},
+        {"triangular_pocket", u8"三角形腔"},
+        {"rectangular_pocket", u8"矩形腔"},
+        {"6sides_pocket", u8"六边形腔"},
+        {"circular_end_pocket", u8"圆形腔"},
+        {"rectangular_blind_slot", u8"矩形盲槽"},
+        {"v_circular_end_blind_slot", u8"V形圆盲槽"},
+        {"h_circular_end_blind_slot", u8"半圆形盲槽"},
+        {"triangular_blind_step", u8"三角形盲台阶"},
+        {"circular_blind_step", u8"圆形盲台阶"},
+        {"rectangular_blind_step", u8"矩形盲台阶"},
+        {"round", u8"圆角"},
+        {"stock", u8"毛坯"},
+    }};
+    const auto found = std::find_if(
+        names.begin(), names.end(),
+        [&feature_name](const FeatureName& item) {
+            return feature_name == item.english;
+        });
+    return found == names.end() ? feature_name : found->chinese;
 }
 
 DisplayText FormatSuccessDisplay(
@@ -103,7 +147,7 @@ DisplayText FormatSuccessDisplay(
     case MappingDisplayStatus::Unavailable:
     case MappingDisplayStatus::Failed:
         summary << '\n' << u8"识别成功，但面映射失败" << '\n'
-                << u8"面映射：" << MappingDiagnostic(mapping, "unknown reason");
+                << u8"面映射：" << MappingDiagnostic(mapping, u8"未知原因");
         break;
     case MappingDisplayStatus::Colored:
         summary << '\n' << u8"已映射面：" << mapping.mapped_faces
@@ -118,15 +162,15 @@ DisplayText FormatSuccessDisplay(
 
     std::ostringstream timing_line;
     timing_line.imbue(std::locale::classic());
-    timing_line << "Process total: " << std::fixed << std::setprecision(1)
-                << process_seconds << " s; pipeline: "
-                << result.total_seconds << " s";
+    timing_line << u8"进程总用时：" << std::fixed << std::setprecision(1)
+                << process_seconds << u8" 秒；识别流水线："
+                << result.total_seconds << u8" 秒";
 
     display.listing_lines_utf8 = {
-        "BrepMFR recognition result",
-        "STEP: " + result.step_path.generic_u8string(),
-        "Result: " + result_path.generic_u8string(),
-        "Face numbering: OCC/AAG face_index (not NX Face Tag)",
+        u8"BrepMFR 特征识别结果",
+        u8"STEP 文件：" + result.step_path.generic_u8string(),
+        u8"结果文件：" + result_path.generic_u8string(),
+        u8"面编号说明：OCC/AAG 面索引（不是 NX 面标签）",
         timing_line.str(),
         ""};
 
@@ -135,21 +179,21 @@ DisplayText FormatSuccessDisplay(
     switch (mapping.status)
     {
     case MappingDisplayStatus::Unsupported:
-        mapping_line << "Face mapping unavailable: "
+        mapping_line << u8"面映射不可用："
                      << MappingDiagnostic(mapping, "JSON 1.0");
         break;
     case MappingDisplayStatus::Unavailable:
     case MappingDisplayStatus::Failed:
-        mapping_line << "Face mapping failed: "
-                     << MappingDiagnostic(mapping, "unknown reason");
+        mapping_line << u8"面映射失败："
+                     << MappingDiagnostic(mapping, u8"未知原因");
         break;
     case MappingDisplayStatus::Colored:
-        mapping_line << "Mapped faces: " << mapping.mapped_faces << '/'
-                     << result.face_count << "; max error: "
+        mapping_line << u8"已映射面：" << mapping.mapped_faces << '/'
+                     << result.face_count << u8"；最大误差："
                      << std::fixed << std::setprecision(6) << mapping.max_error
-                     << "; mapping: " << std::setprecision(1)
+                     << u8"；映射用时：" << std::setprecision(1)
                      << static_cast<double>(mapping.elapsed.count()) / 1000.0
-                     << " s";
+                     << u8" 秒";
         break;
     }
     display.listing_lines_utf8.insert(
@@ -165,7 +209,7 @@ DisplayText FormatSuccessDisplay(
     if (instances.empty())
     {
         display.listing_lines_utf8.push_back(
-            "No non-stock feature instances were recognized.");
+            u8"未识别到非毛坯特征实例。");
     }
     else
     {
@@ -201,9 +245,9 @@ std::string FormatErrorDisplay(
     stream << u8"识别失败\n"
            << u8"阶段：" << error.stage << '\n'
            << u8"错误：" << error.error_type << ": " << error.message << '\n'
-           << "STEP: " << error.step_path.generic_u8string() << '\n'
-           << "Result: " << result_path.generic_u8string() << '\n'
-           << "Log: " << log_path.generic_u8string();
+           << u8"STEP 文件：" << error.step_path.generic_u8string() << '\n'
+           << u8"结果文件：" << result_path.generic_u8string() << '\n'
+           << u8"日志文件：" << log_path.generic_u8string();
     return stream.str();
 }
 }

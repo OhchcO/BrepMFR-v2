@@ -117,8 +117,8 @@ BREPMFR_TEST(InstanceBrowserModelJoinsAndSortsRecognitionRows)
 
     ExpectEqual(model.rows.size(), std::size_t{2}, "row count mismatch");
     ExpectEqual(model.rows[0].instance_id, 2, "rows were not ID sorted");
-    ExpectEqual(model.rows[0].feature_name_utf8, std::string("blind_hole"),
-                "feature name mismatch");
+    ExpectEqual(model.rows[0].feature_name_utf8, std::string(u8"盲孔"),
+                "feature name was not localized for display");
     ExpectEqual(model.rows[0].occ_face_indices, std::vector<int>{1},
                 "OCC face indices mismatch");
     ExpectEqual(model.rows[0].nx_face_tags, std::vector<FaceKey>{501},
@@ -398,4 +398,20 @@ BREPMFR_TEST(InstanceBrowserSessionClearsSelectionWhenHighlightFails)
            "failed highlight retained selected row");
     Expect(!session.State().SelectedGlobalIndex().has_value(),
            "failed highlight retained selected index");
+}
+
+BREPMFR_TEST(InstanceBrowserMultilineTextPreservesSeparateRows)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    const auto lines = SplitInstanceBrowserMultilineText(
+        u8"面数量：41\n流水线用时：3.4 秒\n已映射面：41/41");
+    ExpectEqual(
+        lines,
+        std::vector<std::string>{
+            u8"面数量：41",
+            u8"流水线用时：3.4 秒",
+            u8"已映射面：41/41"},
+        "multiline Block Styler rows were not preserved");
 }

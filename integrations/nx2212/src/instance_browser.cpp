@@ -10,6 +10,33 @@ namespace brepmfr
 {
 namespace nx2212
 {
+std::vector<std::string> SplitInstanceBrowserMultilineText(
+    const std::string& text_utf8)
+{
+    std::vector<std::string> lines;
+    std::size_t begin = 0;
+    for (;;)
+    {
+        const std::size_t end = text_utf8.find('\n', begin);
+        std::string line = text_utf8.substr(
+            begin,
+            end == std::string::npos
+                ? std::string::npos
+                : end - begin);
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
+        lines.push_back(std::move(line));
+        if (end == std::string::npos)
+        {
+            break;
+        }
+        begin = end + 1;
+    }
+    return lines;
+}
+
 InstanceBrowserModel BuildInstanceBrowserModel(
     const SuccessResult& recognition,
     std::chrono::milliseconds process_elapsed,
@@ -101,7 +128,8 @@ InstanceBrowserModel BuildInstanceBrowserModel(
         const auto& color = *found->second;
         InstanceBrowserRow row;
         row.instance_id = instance.instance_id;
-        row.feature_name_utf8 = instance.feature_name;
+        row.feature_name_utf8 =
+            LocalizedFeatureNameUtf8(instance.feature_name);
         row.confidence = instance.confidence;
         row.occ_face_indices = instance.face_indices;
         row.nx_face_tags = color.nx_face_tags;

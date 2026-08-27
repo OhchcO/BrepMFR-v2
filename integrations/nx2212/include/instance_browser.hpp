@@ -43,6 +43,9 @@ struct InstanceBrowserModel
     DisplayText complete_text;
 };
 
+std::vector<std::string> SplitInstanceBrowserMultilineText(
+    const std::string& text_utf8);
+
 InstanceBrowserModel BuildInstanceBrowserModel(
     const SuccessResult& recognition,
     std::chrono::milliseconds process_elapsed,

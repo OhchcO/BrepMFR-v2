@@ -37,6 +37,8 @@ struct MappingDisplay
     std::vector<InstanceColorRecord> instances;
 };
 
+std::string LocalizedFeatureNameUtf8(const std::string& feature_name);
+
 DisplayText FormatSuccessDisplay(
     const SuccessResult& result,
     const std::filesystem::path& result_path,

@@ -45,22 +45,49 @@ NXOpen::NXString Utf8(const std::string& value)
     return NXOpen::NXString(value, NXOpen::NXString::UTF8);
 }
 
-void SetBlockValue(
+void SetSingleLineBlockValue(
     NXOpen::BlockStyler::UIBlock* block,
     const std::string& value)
 {
     if (block == nullptr)
     {
-        throw std::runtime_error("instance browser UI block is unavailable");
+        throw std::runtime_error(u8"特征实例浏览器界面控件不可用");
     }
     std::unique_ptr<NXOpen::BlockStyler::PropertyList> properties(
         block->GetProperties());
     if (!properties)
     {
         throw std::runtime_error(
-            "instance browser UI properties are unavailable");
+            u8"特征实例浏览器界面属性不可用");
     }
     properties->SetString("Value", Utf8(value));
+}
+
+void SetMultilineBlockValue(
+    NXOpen::BlockStyler::UIBlock* block,
+    const std::string& value)
+{
+    if (block == nullptr)
+    {
+        throw std::runtime_error(u8"特征实例浏览器界面控件不可用");
+    }
+    std::unique_ptr<NXOpen::BlockStyler::PropertyList> properties(
+        block->GetProperties());
+    if (!properties)
+    {
+        throw std::runtime_error(
+            u8"特征实例浏览器界面属性不可用");
+    }
+
+    const std::vector<std::string> utf8_lines =
+        SplitInstanceBrowserMultilineText(value);
+    std::vector<NXOpen::NXString> nx_lines;
+    nx_lines.reserve(utf8_lines.size());
+    for (const std::string& line : utf8_lines)
+    {
+        nx_lines.push_back(Utf8(line));
+    }
+    properties->SetStrings("Value", nx_lines);
 }
 
 void ShowBrowserError(const std::string& message) noexcept
@@ -133,8 +160,8 @@ std::string FormatDetails(const InstanceBrowserRow& row)
            << u8"特征类型：" << row.feature_name_utf8 << '\n'
            << u8"置信度：" << std::fixed << std::setprecision(4)
            << row.confidence << '\n'
-           << u8"OCC/AAG 面：" << JoinValues(row.occ_face_indices) << '\n'
-           << u8"NX Face Tags：" << JoinValues(row.nx_face_tags);
+           << u8"OCC/AAG 面索引：" << JoinValues(row.occ_face_indices) << '\n'
+           << u8"NX 面标签：" << JoinValues(row.nx_face_tags);
     return stream.str();
 }
 
@@ -146,14 +173,14 @@ std::unordered_map<FaceKey, NXOpen::Face*> CurrentBodyFacesByTag(
     if (session == nullptr || session->Parts() == nullptr)
     {
         throw std::runtime_error(
-            "NX session or Part collection is unavailable");
+            u8"NX 会话或部件集合不可用");
     }
     NXOpen::Part* part = session->Parts()->Work();
     if (part == nullptr || part->Bodies() == nullptr ||
         static_cast<FaceKey>(part->Tag()) != expected.part_tag)
     {
         throw std::runtime_error(
-            "current Work Part no longer matches recognition");
+            u8"当前工作部件已与本次识别对象不一致");
     }
 
     std::vector<NXOpen::Body*> bodies;
@@ -168,14 +195,14 @@ std::unordered_map<FaceKey, NXOpen::Face*> CurrentBodyFacesByTag(
         static_cast<FaceKey>(bodies.front()->Tag()) != expected.body_tag)
     {
         throw std::runtime_error(
-            "current body no longer matches recognition");
+            u8"当前实体已与本次识别对象不一致");
     }
 
     const auto faces = bodies.front()->GetFaces();
     if (faces.size() != expected.face_count)
     {
         throw std::runtime_error(
-            "current body face count no longer matches recognition");
+            u8"当前实体的面数量已与识别结果不一致");
     }
     std::unordered_map<FaceKey, NXOpen::Face*> faces_by_tag;
     faces_by_tag.reserve(faces.size());
@@ -186,7 +213,7 @@ std::unordered_map<FaceKey, NXOpen::Face*> CurrentBodyFacesByTag(
                 static_cast<FaceKey>(face->Tag()), face).second)
         {
             throw std::runtime_error(
-                "current body contains a null or duplicate NX face");
+                u8"当前实体包含空面或重复的 NX 面标签");
         }
     }
     return faces_by_tag;
@@ -211,7 +238,7 @@ public:
         if (face_tags.empty())
         {
             throw std::runtime_error(
-                "temporary highlight requires at least one NX face");
+                u8"临时高亮至少需要一个 NX 面");
         }
         const auto faces_by_tag = CurrentBodyFacesByTag(expected_);
         std::set<FaceKey> unique_tags;
@@ -222,13 +249,13 @@ public:
             if (!unique_tags.insert(tag).second)
             {
                 throw std::runtime_error(
-                    "temporary highlight contains duplicate NX face tags");
+                    u8"临时高亮包含重复的 NX 面标签");
             }
             const auto found = faces_by_tag.find(tag);
             if (found == faces_by_tag.end())
             {
                 throw std::runtime_error(
-                    "temporary highlight references a face outside the current body");
+                    u8"临时高亮引用了当前实体之外的面");
             }
             targets.push_back(found->second);
         }
@@ -312,14 +339,14 @@ public:
         NXOpen::UI* ui = NXOpen::UI::GetUI();
         if (ui == nullptr)
         {
-            throw std::runtime_error("NX UI is unavailable");
+            throw std::runtime_error(u8"NX 用户界面不可用");
         }
         dialog_.reset(
             ui->CreateDialog(Utf8(dlx_path.generic_u8string())));
         if (dialog_ == nullptr)
         {
             throw std::runtime_error(
-                "NX failed to create the feature instance browser");
+                u8"NX 无法创建特征实例浏览器");
         }
         dialog_->AddInitializeHandler(
             NXOpen::make_callback(
@@ -362,14 +389,14 @@ private:
         if (dialog_ == nullptr || dialog_->TopBlock() == nullptr)
         {
             throw std::runtime_error(
-                "instance browser top block is unavailable");
+                u8"特征实例浏览器的顶层控件不可用");
         }
         NXOpen::BlockStyler::UIBlock* block =
             dialog_->TopBlock()->FindBlock(block_id);
         if (block == nullptr)
         {
             throw std::runtime_error(
-                std::string("instance browser block is missing: ") +
+                std::string(u8"特征实例浏览器缺少界面控件：") +
                 block_id);
         }
         return block;
@@ -391,7 +418,7 @@ private:
             if (tree_ == nullptr)
             {
                 throw std::runtime_error(
-                    "instance_tree is not an NX Tree block");
+                    u8"实例列表控件不是有效的 NX 树控件");
             }
             tree_->SetOnSelectHandler(
                 NXOpen::make_callback(
@@ -406,7 +433,7 @@ private:
         catch (...)
         {
             DisableAfterError(
-                "unknown error while initializing the instance browser");
+                u8"初始化特征实例浏览器时发生未知错误");
         }
     }
 
@@ -442,7 +469,8 @@ private:
                 3,
                 NXOpen::BlockStyler::Tree::
                     ColumnResizePolicyConstantWidth);
-            SetBlockValue(summary_, FormatSummary(model_.summary));
+            SetMultilineBlockValue(
+                summary_, FormatSummary(model_.summary));
             ResetDetails();
             RefreshPage();
         }
@@ -453,7 +481,7 @@ private:
         catch (...)
         {
             DisableAfterError(
-                "unknown error while showing the instance browser");
+                u8"显示特征实例浏览器时发生未知错误");
         }
     }
 
@@ -527,7 +555,7 @@ private:
             instance_id = model_.rows.at(global_index).instance_id;
             const InstanceBrowserRow& row =
                 session_.SelectVisibleRow(found->second);
-            SetBlockValue(details_, FormatDetails(row));
+            SetMultilineBlockValue(details_, FormatDetails(row));
         }
         catch (const std::exception& error)
         {
@@ -536,7 +564,7 @@ private:
         catch (...)
         {
             HandleHighlightFailure(
-                instance_id, "unknown NX highlight error");
+                instance_id, u8"NX 临时高亮发生未知错误");
         }
     }
 
@@ -561,8 +589,13 @@ private:
             if (node == nullptr)
             {
                 throw std::runtime_error(
-                    "NX failed to create an instance tree node");
+                    u8"NX 无法创建特征实例列表项");
             }
+            tree_->InsertNode(
+                node,
+                nullptr,
+                nullptr,
+                NXOpen::BlockStyler::Tree::NodeInsertOptionLast);
             node->SetColumnDisplayText(1, Utf8(row.feature_name_utf8));
             node->SetColumnDisplayText(
                 2, std::to_string(row.nx_face_tags.size()).c_str());
@@ -570,11 +603,6 @@ private:
             confidence << std::fixed << std::setprecision(4)
                        << row.confidence;
             node->SetColumnDisplayText(3, confidence.str().c_str());
-            tree_->InsertNode(
-                node,
-                nullptr,
-                nullptr,
-                NXOpen::BlockStyler::Tree::NodeInsertOptionLast);
             visible_row_by_node_.emplace(
                 node, global_index - state.PageBegin());
         }
@@ -590,12 +618,12 @@ private:
         std::ostringstream label;
         label << u8"第 " << state.CurrentPage() + 1 << " / "
               << state.PageCount() << u8" 页";
-        SetBlockValue(page_label_, label.str());
+        SetSingleLineBlockValue(page_label_, label.str());
     }
 
     void ResetDetails()
     {
-        SetBlockValue(details_, kNoSelectionUtf8);
+        SetMultilineBlockValue(details_, kNoSelectionUtf8);
     }
 
     void ShowFullResult()
@@ -603,7 +631,7 @@ private:
         NXOpen::Session* nx_session = NXOpen::Session::GetSession();
         if (nx_session == nullptr || nx_session->ListingWindow() == nullptr)
         {
-            throw std::runtime_error("NX Listing Window is unavailable");
+            throw std::runtime_error(u8"NX 信息窗口不可用");
         }
         NXOpen::ListingWindow* listing = nx_session->ListingWindow();
         listing->Open();
@@ -727,7 +755,7 @@ void ShowNxInstanceBrowser(
     if (!std::filesystem::is_regular_file(dlx_path, error))
     {
         throw std::runtime_error(
-            "NX instance browser layout is unavailable: " +
+            std::string(u8"NX 特征实例浏览器布局文件不可用：") +
             dlx_path.generic_u8string());
     }
     NxInstanceBrowserDialog dialog(dlx_path, part, model);

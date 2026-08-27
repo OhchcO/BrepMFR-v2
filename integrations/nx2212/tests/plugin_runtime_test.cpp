@@ -476,7 +476,7 @@ BREPMFR_TEST(InferenceWorkflowRunsPythonAndDisplaysFreshSuccess)
     for (const auto& line : host.success_display.listing_lines_utf8)
     {
         found_process_timing = found_process_timing ||
-            line == "Process total: 7.5 s; pipeline: 6.0 s";
+            line == u8"进程总用时：7.5 秒；识别流水线：6.0 秒";
     }
     Expect(found_process_timing, "success display omitted process duration");
 }

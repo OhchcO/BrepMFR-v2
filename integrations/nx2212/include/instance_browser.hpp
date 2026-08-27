@@ -73,5 +73,39 @@ private:
     std::size_t current_page_ = 0;
     std::optional<std::size_t> selected_global_index_;
 };
+
+class TemporaryHighlightSink
+{
+public:
+    virtual ~TemporaryHighlightSink() = default;
+    virtual void Replace(const std::vector<FaceKey>& face_tags) = 0;
+    virtual void Clear() noexcept = 0;
+};
+
+class InstanceBrowserSession
+{
+public:
+    InstanceBrowserSession(
+        const InstanceBrowserModel& model,
+        TemporaryHighlightSink& highlight_sink);
+    ~InstanceBrowserSession();
+
+    InstanceBrowserSession(const InstanceBrowserSession&) = delete;
+    InstanceBrowserSession& operator=(const InstanceBrowserSession&) = delete;
+
+    const InstanceBrowserState& State() const noexcept;
+    const InstanceBrowserRow* SelectedRow() const noexcept;
+    const InstanceBrowserRow& SelectVisibleRow(std::size_t visible_row);
+    bool GoPrevious();
+    bool GoNext();
+    void ClearSelection() noexcept;
+    void Close() noexcept;
+
+private:
+    const InstanceBrowserModel& model_;
+    TemporaryHighlightSink& highlight_sink_;
+    InstanceBrowserState state_;
+    bool closed_ = false;
+};
 }
 }

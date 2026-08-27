@@ -213,5 +213,97 @@ std::optional<std::size_t> InstanceBrowserState::SelectedGlobalIndex() const noe
 {
     return selected_global_index_;
 }
+
+InstanceBrowserSession::InstanceBrowserSession(
+    const InstanceBrowserModel& model,
+    TemporaryHighlightSink& highlight_sink)
+    : model_(model),
+      highlight_sink_(highlight_sink),
+      state_(model.rows.size())
+{
+}
+
+InstanceBrowserSession::~InstanceBrowserSession()
+{
+    Close();
+}
+
+const InstanceBrowserState& InstanceBrowserSession::State() const noexcept
+{
+    return state_;
+}
+
+const InstanceBrowserRow* InstanceBrowserSession::SelectedRow() const noexcept
+{
+    const auto selected = state_.SelectedGlobalIndex();
+    return selected ? &model_.rows[*selected] : nullptr;
+}
+
+const InstanceBrowserRow& InstanceBrowserSession::SelectVisibleRow(
+    std::size_t visible_row)
+{
+    if (closed_)
+    {
+        throw std::logic_error("instance browser session is closed");
+    }
+    const std::size_t global_index =
+        state_.GlobalIndexForVisibleRow(visible_row);
+    if (state_.SelectedGlobalIndex() == global_index)
+    {
+        return model_.rows[global_index];
+    }
+
+    try
+    {
+        highlight_sink_.Replace(model_.rows[global_index].nx_face_tags);
+    }
+    catch (...)
+    {
+        state_.ClearSelection();
+        throw;
+    }
+    state_.SelectGlobalIndex(global_index);
+    return model_.rows[global_index];
+}
+
+bool InstanceBrowserSession::GoPrevious()
+{
+    if (closed_ || !state_.CanGoPrevious())
+    {
+        return false;
+    }
+    highlight_sink_.Clear();
+    return state_.GoPrevious();
+}
+
+bool InstanceBrowserSession::GoNext()
+{
+    if (closed_ || !state_.CanGoNext())
+    {
+        return false;
+    }
+    highlight_sink_.Clear();
+    return state_.GoNext();
+}
+
+void InstanceBrowserSession::ClearSelection() noexcept
+{
+    if (state_.SelectedGlobalIndex())
+    {
+        highlight_sink_.Clear();
+        state_.ClearSelection();
+    }
+}
+
+void InstanceBrowserSession::Close() noexcept
+{
+    if (closed_)
+    {
+        return;
+    }
+    highlight_sink_.Clear();
+    state_.ClearSelection();
+    closed_ = true;
+}
 }
 }

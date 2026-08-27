@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -37,6 +38,46 @@ MappingDisplay BrowserMapping()
         {2, 1, {501}}};
     return mapping;
 }
+
+InstanceBrowserModel SessionModel(std::size_t row_count)
+{
+    InstanceBrowserModel model;
+    model.summary.instance_count = row_count;
+    for (std::size_t index = 0; index < row_count; ++index)
+    {
+        InstanceBrowserRow row;
+        row.instance_id = static_cast<int>(index);
+        row.feature_name_utf8 = "feature";
+        row.confidence = 0.9;
+        row.occ_face_indices = {static_cast<int>(index)};
+        row.nx_face_tags = {static_cast<FaceKey>(600 + index)};
+        row.color_index = static_cast<int>(index + 1);
+        model.rows.push_back(std::move(row));
+    }
+    return model;
+}
+
+class RecordingHighlightSink final : public TemporaryHighlightSink
+{
+public:
+    void Replace(const std::vector<FaceKey>& tags) override
+    {
+        replacements.push_back(tags);
+        if (replace_error)
+        {
+            throw std::runtime_error(*replace_error);
+        }
+    }
+
+    void Clear() noexcept override
+    {
+        ++clear_calls;
+    }
+
+    std::vector<std::vector<FaceKey>> replacements;
+    std::optional<std::string> replace_error;
+    int clear_calls = 0;
+};
 
 void ExpectBuildFailure(
     const SuccessResult& recognition,
@@ -237,4 +278,124 @@ BREPMFR_TEST(InstanceBrowserPaginationNavigatesAndClearsSelection)
     catch (const std::out_of_range&)
     {
     }
+}
+
+BREPMFR_TEST(InstanceBrowserSessionReplacesSelectionAndSkipsRepeatedRow)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    const auto model = SessionModel(2);
+    RecordingHighlightSink sink;
+    InstanceBrowserSession session(model, sink);
+
+    const auto& first = session.SelectVisibleRow(0);
+    ExpectEqual(first.instance_id, 0, "wrong first selected instance");
+    ExpectEqual(sink.replacements.size(), std::size_t{1},
+                "first selection did not replace highlight");
+    ExpectEqual(sink.replacements[0], std::vector<FaceKey>{600},
+                "first highlight tags mismatch");
+
+    (void)session.SelectVisibleRow(0);
+    ExpectEqual(sink.replacements.size(), std::size_t{1},
+                "repeated selection replaced highlight again");
+
+    const auto& second = session.SelectVisibleRow(1);
+    ExpectEqual(second.instance_id, 1, "wrong second selected instance");
+    ExpectEqual(sink.replacements.size(), std::size_t{2},
+                "second selection did not replace highlight");
+    ExpectEqual(sink.replacements[1], std::vector<FaceKey>{601},
+                "second highlight tags mismatch");
+    Expect(session.SelectedRow() != nullptr,
+           "selected row was not exposed");
+    ExpectEqual(session.SelectedRow()->instance_id, 1,
+                "selected row pointer mismatch");
+}
+
+BREPMFR_TEST(InstanceBrowserSessionClearsHighlightOnlyForRealPageChanges)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    const auto model = SessionModel(51);
+    RecordingHighlightSink sink;
+    InstanceBrowserSession session(model, sink);
+    (void)session.SelectVisibleRow(0);
+
+    Expect(session.GoNext(), "next page failed");
+    ExpectEqual(sink.clear_calls, 1, "next page did not clear highlight");
+    ExpectEqual(session.State().CurrentPage(), std::size_t{1},
+                "next page index mismatch");
+    Expect(session.SelectedRow() == nullptr,
+           "next page retained selected row");
+    Expect(!session.GoNext(), "moved beyond final page");
+    ExpectEqual(sink.clear_calls, 1,
+                "failed next navigation cleared highlight");
+
+    Expect(session.GoPrevious(), "previous page failed");
+    ExpectEqual(sink.clear_calls, 2,
+                "previous page did not clear highlight");
+    Expect(!session.GoPrevious(), "moved before first page");
+    ExpectEqual(sink.clear_calls, 2,
+                "failed previous navigation cleared highlight");
+}
+
+BREPMFR_TEST(InstanceBrowserSessionCloseIsIdempotent)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    const auto model = SessionModel(1);
+    RecordingHighlightSink sink;
+    {
+        InstanceBrowserSession session(model, sink);
+        (void)session.SelectVisibleRow(0);
+        session.Close();
+        session.Close();
+        ExpectEqual(sink.clear_calls, 1,
+                    "explicit close was not idempotent");
+    }
+    ExpectEqual(sink.clear_calls, 1,
+                "destructor repeated explicit close cleanup");
+}
+
+BREPMFR_TEST(InstanceBrowserSessionDestructorClearsHighlight)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    const auto model = SessionModel(1);
+    RecordingHighlightSink sink;
+    {
+        InstanceBrowserSession session(model, sink);
+        (void)session.SelectVisibleRow(0);
+    }
+    ExpectEqual(sink.clear_calls, 1,
+                "session destructor did not clear highlight");
+}
+
+BREPMFR_TEST(InstanceBrowserSessionClearsSelectionWhenHighlightFails)
+{
+    using namespace brepmfr::nx2212;
+    using namespace brepmfr::nx2212::test;
+
+    const auto model = SessionModel(1);
+    RecordingHighlightSink sink;
+    sink.replace_error = "synthetic highlight failure";
+    InstanceBrowserSession session(model, sink);
+
+    try
+    {
+        (void)session.SelectVisibleRow(0);
+        throw std::runtime_error("highlight failure was not propagated");
+    }
+    catch (const std::runtime_error& error)
+    {
+        ExpectContains(error.what(), "synthetic highlight failure",
+                       "highlight diagnostic mismatch");
+    }
+    Expect(session.SelectedRow() == nullptr,
+           "failed highlight retained selected row");
+    Expect(!session.State().SelectedGlobalIndex().has_value(),
+           "failed highlight retained selected index");
 }

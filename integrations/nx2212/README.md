@@ -61,6 +61,7 @@ python -m pytest tests\test_nx2212_project.py -q
 
 ```text
 integrations/nx2212/build/Release/BrepMFRNx2212.dll
+integrations/nx2212/build/Release/BrepMFRInstanceBrowser.dlx
 integrations/nx2212/build/Release/BrepMFRNx2212.config.example.json
 ```
 
@@ -109,10 +110,19 @@ checkpoint 必须以 `.ckpt` 结尾。`device` 只能是 `auto`、`cpu` 或 `cud
    Work Part 对应的原始 STEP 路径。
 4. Python 启动后会显示当前 STEP、真实处理阶段、不确定进度条和已用时间。首版
    不提供强制取消，避免损坏正在写入的转换缓存。
-5. 成功后，信息框显示面数量、特征实例数、BIN 缓存是否命中、Python 进程总用时、
-   流水线用时和映射状态；NX Listing Window 同时保留每个实例的 OCC/AAG 面编号、
-   NX Face Tag、颜色和置信度。
-6. JSON 1.1 且完整映射成功时，识别到的特征面按实例着色，stock 面保持原色。以
+5. JSON 1.1 且完整映射、着色成功后，插件直接打开模态的“特征实例浏览器”，
+   不再弹出旧的成功信息框，也不会自动打开 Listing Window。浏览器顶部固定显示
+   面数量、特征实例数、BIN 缓存状态、流水线用时、Python 进程总用时、映射面数、
+   已着色实例数和映射用时。
+6. 浏览器的实例列表为单选。选中一行时，该实例对应的 NX 面获得临时高亮；其他
+   实例仍保留识别后写入的基础颜色。改选另一实例时会先移除旧临时高亮，再高亮新
+   实例。列表固定按实例 ID 排序并以 50 个实例一页显示；不超过 50 个实例时隐藏
+   翻页控件。
+7. 选择实例后，浏览器底部显示特征类型、置信度、OCC/AAG 面序号和 NX Face Tag。
+   按“查看完整结果”才会打开 Listing Window 并写入完整文字结果；同一浏览器中
+   再次点击只重新打开窗口，不会重复追加已经写入的内容。
+8. 关闭浏览器会清除当前临时高亮，但保留所有实例的基础颜色。JSON 1.1 且完整
+   映射成功时，识别到的特征面按实例着色，stock 面保持原色。以
    41 面黄金 STEP 为例，成功摘要应显示 `41/41` 已映射。着色创建名为
    `BrepMFR feature colors` 的可见撤销标记，但不自动保存 Part；需要保留颜色时
    由用户手动保存，需要撤销时使用 NX Undo。
@@ -126,6 +136,7 @@ NX2212 打开中性 STEP 后，通常会把当前 Work Part 表示为同目录�
 JSON 1.0 仍可显示原有文字结果，但不会读取 NX 几何或着色。JSON 1.1 的签名
 不可用、非法、匹配歧义或着色异常时，识别文字结果仍然保留，摘要明确显示映射失败；
 任何映射失败都实行零着色，不留下部分修改，也不会被误报为 Python 推理失败。
+这类降级成功继续使用原有文字结果窗口，不打开特征实例浏览器。
 
 同一个 STEP 路径会使用稳定的独立输出目录：
 
@@ -151,6 +162,8 @@ NX 自带 DLL 或 Python 设置污染 OCC/深度学习依赖；不会把 Python 
 
 - 报错包含 `BrepMFRNx2212.config.json`：检查真实配置是否与 DLL 同目录，以及
   所有路径、设备名和阈值是否合法。
+- 报错指出 `BrepMFRInstanceBrowser.dlx` 不可用：确认该文件与
+  `BrepMFRNx2212.dll` 位于同一个 Release 目录；部署插件时必须同时复制两者。
 - 报错指出 checkpoint 不存在或后缀错误：修正配置后重新加载 DLL。
 - Python 非零退出、JSON 缺失或损坏：先查看错误框给出的 `run.log` 和
   `result.json` 路径，再在 PowerShell 中直接运行同一 CLI 命令。
@@ -169,6 +182,8 @@ NX 自带 DLL 或 Python 设置污染 OCC/深度学习依赖；不会把 Python 
   超出容差或存在多个同样合理的拓扑映射；失败路径不会应用任何颜色。
 - 面已着色但关闭后颜色消失：这是预期行为，插件不自动保存。确认结果后由用户决定
   是否保存 NX Part；也可以通过 `BrepMFR feature colors` 撤销标记恢复原色。
+- 关闭浏览器后仍看到实例颜色：这是预期行为。关闭只清除当前实例的 NX 临时高亮，
+  基础颜色会保留到用户执行 Undo、关闭未保存 Part 或主动修改颜色。
 - Listing Window 同时显示 `OCC faces [...]` 与 `NX Face Tags [...]`：前者属于
   Python/OCC AAG，后者才是当前 NX 会话中的可视化对象标识。
 

@@ -191,9 +191,15 @@ def test_nx2212_operator_guide_describes_current_part_face_mapping():
         "不自动保存",
         "映射失败",
         "当前 Work Part",
+        "特征实例浏览器",
+        "50 个实例一页",
+        "临时高亮",
+        "查看完整结果",
+        "关闭浏览器",
     ):
         assert required in guide
     assert "在 Unicode 文件对话框中选择现有 `.step` 或 `.stp` 文件" not in guide
+    assert "成功后，信息框显示" not in guide
 
 
 def test_nx2212_plugin_builds_and_exports_user_functions():

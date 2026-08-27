@@ -2,6 +2,7 @@
 
 #include "inference_process.hpp"
 #include "nx_coloring.hpp"
+#include "nx_instance_browser.hpp"
 #include "nx_part_adapter.hpp"
 #include "progress_window.hpp"
 
@@ -151,10 +152,13 @@ void NxPluginHost::ShowSuccess(const DisplayText& display)
 }
 
 void NxPluginHost::ShowInstanceBrowser(
-    const PartSnapshot&,
+    const PartSnapshot& part,
     const InstanceBrowserModel& model)
 {
-    ShowSuccess(model.complete_text);
+    ShowNxInstanceBrowser(
+        ModuleDirectory() / "BrepMFRInstanceBrowser.dlx",
+        part,
+        model);
 }
 
 void NxPluginHost::ShowError(const std::string& message_utf8) noexcept

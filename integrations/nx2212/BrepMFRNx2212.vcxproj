@@ -58,12 +58,14 @@
       <AdditionalDependencies>libnxopencpp.lib;libnxopenuicpp.lib;libufun.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>copy /Y "$(ProjectDir)BrepMFRNx2212.config.example.json" "$(TargetDir)BrepMFRNx2212.config.example.json"</Command>
-      <Message>Copying the NX inference configuration example</Message>
+      <Command>copy /Y "$(ProjectDir)BrepMFRNx2212.config.example.json" "$(TargetDir)BrepMFRNx2212.config.example.json"
+copy /Y "$(ProjectDir)BrepMFRInstanceBrowser.dlx" "$(TargetDir)BrepMFRInstanceBrowser.dlx"</Command>
+      <Message>Copying the NX inference configuration and instance browser layout</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <None Include="BrepMFRNx2212.config.example.json" />
+    <None Include="BrepMFRInstanceBrowser.dlx" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\assignment_solver.cpp" />

@@ -13,7 +13,12 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 NX_ROOT = REPOSITORY_ROOT / "integrations" / "nx2212"
 PROJECT_PATH = NX_ROOT / "BrepMFRNx2212.vcxproj"
 NX_COLORING_PATH = NX_ROOT / "src" / "nx_coloring.cpp"
+NX_INSTANCE_BROWSER_SOURCE_PATH = NX_ROOT / "src" / "nx_instance_browser.cpp"
+INSTANCE_BROWSER_DLX_PATH = NX_ROOT / "BrepMFRInstanceBrowser.dlx"
 DLL_PATH = NX_ROOT / "build" / "Release" / "BrepMFRNx2212.dll"
+OUTPUT_INSTANCE_BROWSER_DLX_PATH = (
+    NX_ROOT / "build" / "Release" / "BrepMFRInstanceBrowser.dlx"
+)
 OUTPUT_CONFIG_EXAMPLE_PATH = (
     NX_ROOT / "build" / "Release" / "BrepMFRNx2212.config.example.json"
 )
@@ -134,7 +139,10 @@ def test_nx2212_project_declares_compatible_portable_contract():
     assert "src\\face_signature.cpp" in normalized
     assert "src\\nx_part_adapter.cpp" in normalized
     assert "src\\nx_coloring.cpp" in normalized
+    assert "src\\nx_instance_browser.cpp" in normalized
     assert "src\\nx_plugin_host.cpp" in normalized
+    assert "include\\nx_instance_browser.hpp" in normalized
+    assert "brepmfrinstancebrowser.dlx" in normalized
     assert "src\\progress_window.cpp" in normalized
     assert "nx 10.0" not in normalized
     assert "f:\\program files\\siemens" not in normalized
@@ -150,7 +158,28 @@ def test_nx2212_project_declares_compatible_portable_contract():
         .casefold()
     )
     assert "nx_coloring.cpp" not in runtime_normalized
+    assert "nx_instance_browser.cpp" not in runtime_normalized
     assert "libnxopencpp.lib" not in runtime_normalized
+
+
+def test_nx2212_instance_browser_asset_has_required_blocks():
+    assert INSTANCE_BROWSER_DLX_PATH.is_file()
+    root = ET.parse(str(INSTANCE_BROWSER_DLX_PATH)).getroot()
+    block_ids = {
+        node.attrib.get("value")
+        for node in root.findall(".//Property")
+        if node.attrib.get("sname") == "BlockID"
+    }
+    assert {
+        "summary",
+        "instance_tree",
+        "paging_group",
+        "previous_page",
+        "page_label",
+        "next_page",
+        "details",
+        "show_full_result",
+    } <= block_ids
 
 
 def test_nx2212_operator_guide_describes_current_part_face_mapping():
@@ -188,6 +217,11 @@ def test_nx2212_plugin_builds_and_exports_user_functions():
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert DLL_PATH.is_file()
     assert DLL_PATH.stat().st_size > 0
+    assert OUTPUT_INSTANCE_BROWSER_DLX_PATH.is_file()
+    assert (
+        OUTPUT_INSTANCE_BROWSER_DLX_PATH.read_bytes()
+        == INSTANCE_BROWSER_DLX_PATH.read_bytes()
+    )
     assert OUTPUT_CONFIG_EXAMPLE_PATH.is_file()
     assert json.loads(OUTPUT_CONFIG_EXAMPLE_PATH.read_text(encoding="utf-8")) == {
         "schema_version": "1.0",

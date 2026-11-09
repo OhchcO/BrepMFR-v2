@@ -899,12 +899,13 @@ def _merge_conversion_counts(
     accumulated: Optional[Mapping[str, object]],
     addition: Optional[Mapping[str, object]],
 ) -> dict:
-    """Accumulate numeric converter counters without inventing a schema."""
+    """Sum attempt counters while preserving converter metadata such as seed."""
     merged = dict(accumulated or {})
     for key, value in dict(addition or {}).items():
         previous = merged.get(key)
         if (
-            isinstance(previous, (int, float))
+            key in ("selected", "converted", "skipped", "failed")
+            and isinstance(previous, (int, float))
             and not isinstance(previous, bool)
             and isinstance(value, (int, float))
             and not isinstance(value, bool)

@@ -1447,3 +1447,33 @@ def test_unstructured_replacement_converter_error_is_fatal_without_retry(
             "sample_id": None,
         }
     ]
+
+
+def test_merge_conversion_counts_preserves_seed_and_sums_only_attempt_counts():
+    initial = {
+        "selected": 3,
+        "converted": 2,
+        "skipped": 0,
+        "failed": 1,
+        "base_seed": 42,
+        "point_sampling_mode": "area_adaptive",
+    }
+    replacement = {
+        "selected": 1,
+        "converted": 0,
+        "skipped": 1,
+        "failed": 0,
+        "base_seed": 42,
+        "point_sampling_mode": "area_adaptive",
+    }
+
+    merged = prepare_dataset._merge_conversion_counts(initial, replacement)
+
+    assert merged == {
+        "selected": 4,
+        "converted": 2,
+        "skipped": 1,
+        "failed": 1,
+        "base_seed": 42,
+        "point_sampling_mode": "area_adaptive",
+    }

@@ -1,3 +1,5 @@
 tests/assets/step_inference/*.step binary
 integrations/nx2212/third_party/nlohmann/json.hpp binary
 integrations/nx2212/third_party/nlohmann/LICENSE.MIT text eol=lf
+tools/AAGExtractor.py text eol=lf
+tools/schema.json text eol=lf

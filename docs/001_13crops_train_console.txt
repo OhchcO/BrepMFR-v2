@@ -1,0 +1,496 @@
+
+Run configuration: {"accelerator": null, "accumulate_grad_batches": null, "act_dropout": 0.0, "affinity_dim": 64, "affinity_loss_weight": 0.1, "affinity_temperature": 0.2, "affinity_warmup_epochs": 10, "amp_backend": null, "amp_level": null, "area_sampling_exponent": 0.5, "attention_dropout": 0.0, "auto_lr_find": false, "auto_prepare": false, "auto_scale_batch_size": false, "auto_select_gpus": null, "base_seed": 42, "batch_size": 1, "benchmark": null, "bin_cache_path": "D:\\Code\\Datasets\\�Խ���ϻ���ݼ�\\001_overfit_13crops_seed42", "bin_root": "D:\\Code\\Datasets\\�Խ���ϻ���ݼ�\\001_overfit_13crops_seed42", "candidate_grids": [20, 32, 48, 64, 80], "check_val_every_n_epoch": 1, "checkpoint": null, "cylindrical_scale": 1.0, "d_model": 128, "dataset": "cadsynth", "dataset_path": "D:\\Code\\Datasets\\�Խ���ϻ���ݼ�\\001_overfit_13crops_seed42", "default_root_dir": null, "detect_anomaly": false, "devices": null, "dim_node": 64, "donor_prepared_dataset_paths": [], "dropout": 0.0, "enable_checkpointing": true, "enable_model_summary": true, "enable_progress_bar": true, "experiment_alias": "spe_instance", "experiment_mode": "dynamic_affinity", "experiment_name": "Casing001_13crops_fullcoverage", "extractor_file": "D:\\Code\\BrepMFR\\tools\\AAGExtractor.py", "face_geometry_encoder": "param_surface", "fast_dev_run": false, "fixed_point_count": 64, "gpus": null, "gradient_clip_algorithm": null, "gradient_clip_val": null, "inference_mode": true, "instance_bias_confidence_power": 1.0, "instance_bias_delay_epochs": 10, "instance_bias_gate_init": 0.0, "instance_bias_last_layers": 2, "instance_bias_max_gate_scale": 1.0, "instance_bias_ramp_epochs": 10, "instance_bias_scale": 1.0, "instance_bias_strategy": "late_gated", "instance_relation_mapping": "signed", "ipus": null, "limit_predict_batches": null, "limit_test_batches": null, "limit_train_batches": null, "limit_val_batches": null, "log_every_n_steps": 1, "logger": true, "max_epochs": 160, "max_point_count": 96, "max_steps": -1, "max_time": null, "min_epochs": null, "min_point_count": 32, "min_steps": null, "move_metrics_to_cpu": false, "multiple_trainloader_mode": "max_size_cycle", "n_heads": 8, "n_layers_encode": 2, "num_classes": 30, "num_nodes": 1, "num_processes": null, "num_sanity_val_steps": 2, "num_workers": 0, "output_cylindrical_pos": null, "output_face_pointcloud": null, "output_parametric_surface": null, "overfit_batches": 0.0, "plugins": null, "point_sampling_mode": "area_adaptive", "pointcloud_scale": 1.0, "precision": 32, "preparation_reuse_status": "legacy", "prepared_dataset_path": null, "profiler": null, "random_rotate": false, "raw_dataset_path": null, "rebuild_prepared_data": false, "reload_dataloaders_every_n_epochs": 0, "replace_sampler_ddp": true, "results_root": "D:\\Code\\BrepMFR\\docs\\001_overfit_results", "resume_from_checkpoint": "D:\\Code\\BrepMFR\\docs\\001_overfit_results\\Casing001_spe_instance_resume_debug\\1121\\101435\\last.ckpt", "sample_percent": 0.01, "schema_file": "D:\\Code\\BrepMFR\\tools\\schema.json", "seed": 42, "selected_split_counts": {"test": 13, "train": 13, "val": 13}, "shared_bin_cache_path": null, "split_ratios": [0.8, 0.1, 0.1], "strategy": null, "surface_fusion": "add", "surface_neighbor_metric": "intrinsic", "surface_trim_aware": false, "sync_batchnorm": false, "tpu_cores": null, "track_grad_norm": -1, "traintest": "train", "use_cylindrical_pos": true, "use_face_pointcloud": true, "use_face_uv": false, "val_check_interval": null}
+Loading data...
+  0%|          | 0/14 [00:00<?, ?it/s]
+100%|��������������������| 14/14 [00:00<?, ?it/s]
+Done loading 13 files
+Loading data...
+
+  0%|          | 0/14 [00:00<?, ?it/s]
+100%|��������������������| 14/14 [00:00<?, ?it/s]
+F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\connectors\accelerator_connector.py:589: LightningDeprecationWarning: The Trainer argument `auto_select_gpus` has been deprecated in v1.9.0 and will be removed in v2.0.0. Please use the function `pytorch_lightning.accelerators.find_usable_cuda_devices` instead.
+  rank_zero_deprecation(
+Auto select gpus: [0]
+F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\connectors\checkpoint_connector.py:55: LightningDeprecationWarning: Setting `Trainer(resume_from_checkpoint=)` is deprecated in v1.5 and will be removed in v2.0. Please pass `Trainer.fit(ckpt_path=)` directly instead.
+  rank_zero_deprecation(
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\trainer.py:1906: LightningDeprecationWarning: `trainer.resume_from_checkpoint` is deprecated in v1.5 and will be removed in v2.0. Specify the fit checkpoint path with `trainer.fit(ckpt_path=)` instead.
+  rank_zero_deprecation(
+You are using a CUDA device ('NVIDIA GeForce RTX 4060 Laptop GPU') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\callbacks\model_checkpoint.py:613: UserWarning: Checkpoint directory D:\Code\BrepMFR\docs\001_overfit_results\Casing001_13crops_fullcoverage\1121\102905 exists and is not empty.
+  rank_zero_warn(f"Checkpoint directory {dirpath} exists and is not empty.")
+Restoring states from the checkpoint path at D:\Code\BrepMFR\docs\001_overfit_results\Casing001_spe_instance_resume_debug\1121\101435\last.ckpt
+F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\callbacks\model_checkpoint.py:338: UserWarning: The dirpath has changed from 'D:\\Code\\BrepMFR\\docs\\001_overfit_results\\Casing001_spe_instance_resume_debug\\1121\\101435' to 'D:\\Code\\BrepMFR\\docs\\001_overfit_results\\Casing001_13crops_fullcoverage\\1121\\102905', therefore `best_model_score`, `kth_best_model_path`, `kth_value`, `last_model_path` and `best_k_models` won't be reloaded. Only `best_model_path` will be reloaded.
+  warnings.warn(
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+  | Name         | Type                | Params
+-----------------------------------------------------
+0 | brep_encoder | BrepEncoder         | 283 K 
+1 | attention    | Attention           | 65    
+2 | classifier   | NonLinearClassifier | 436 K 
+-----------------------------------------------------
+719 K     Trainable params
+0         Non-trainable params
+719 K     Total params
+2.879     Total estimated model params size (MB)
+Restored all states from the checkpoint file at D:\Code\BrepMFR\docs\001_overfit_results\Casing001_spe_instance_resume_debug\1121\101435\last.ckpt
+Done loading 13 files
+Logs: D:\Code\BrepMFR\docs\001_overfit_results\Casing001_13crops_fullcoverage\1121\102905
+Checkpoint patterns: best-mIoU-<epoch>-<mean_iou>.ckpt; best-Macro-F1-<epoch>-<macro_f1>.ckpt; last.ckpt
+
+Sanity Checking: 0it [00:00, ?it/s]
+Sanity Checking:   0%|          | 0/2 [00:00<?, ?it/s]
+Sanity Checking DataLoader 0:   0%|          | 0/2 [00:00<?, ?it/s]
+Sanity Checking DataLoader 0:  50%|����������     | 1/2 [00:02<00:02,  2.30s/it]
+Sanity Checking DataLoader 0: 100%|��������������������| 2/2 [00:02<00:00,  1.17s/it]
+F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\connectors\data_connector.py:224: PossibleUserWarning: The dataloader, val_dataloader 0, does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` (try 32 which is the number of cpus on this machine) in the `DataLoader` init to improve performance.
+  rank_zero_warn(
+F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\utilities\data.py:83: UserWarning: Trying to infer the `batch_size` from an ambiguous collection. The batch size we found is 1. To avoid any miscalculations, use `self.log(..., batch_size=batch_size)`.
+  warning_cache.warn(
+F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\connectors\data_connector.py:224: PossibleUserWarning: The dataloader, train_dataloader, does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` (try 32 which is the number of cpus on this machine) in the `DataLoader` init to improve performance.
+  rank_zero_warn(
+                                                                           
+
+Training: 9it [00:00, ?it/s]
+Training:   0%|          | 0/26 [00:00<?, ?it/s]
+Epoch 100:   0%|          | 0/26 [00:00<?, ?it/s]
+Epoch 100:   4%|��         | 1/26 [00:00<00:10,  2.32it/s]
+Epoch 100:   4%|��         | 1/26 [00:00<00:10,  2.32it/s, loss=2.54, v_num=2905]
+Epoch 100:   8%|��         | 2/26 [00:00<00:07,  3.30it/s, loss=2.54, v_num=2905]
+Epoch 100:   8%|��         | 2/26 [00:00<00:07,  3.29it/s, loss=2.61, v_num=2905]
+Epoch 100:  12%|����        | 3/26 [00:00<00:05,  3.84it/s, loss=2.61, v_num=2905]
+Epoch 100:  12%|����        | 3/26 [00:00<00:05,  3.84it/s, loss=1.75, v_num=2905]
+Epoch 100:  15%|����        | 4/26 [00:00<00:05,  4.21it/s, loss=1.75, v_num=2905]
+Epoch 100:  15%|����        | 4/26 [00:00<00:05,  4.20it/s, loss=1.33, v_num=2905]
+Epoch 100:  19%|����        | 5/26 [00:01<00:04,  4.39it/s, loss=1.33, v_num=2905]
+Epoch 100:  19%|����        | 5/26 [00:01<00:04,  4.39it/s, loss=1.55, v_num=2905]
+Epoch 100:  23%|������       | 6/26 [00:01<00:04,  4.53it/s, loss=1.55, v_num=2905]
+Epoch 100:  23%|������       | 6/26 [00:01<00:04,  4.53it/s, loss=1.79, v_num=2905]
+Epoch 100:  27%|������       | 7/26 [00:01<00:04,  4.69it/s, loss=1.79, v_num=2905]
+Epoch 100:  27%|������       | 7/26 [00:01<00:04,  4.69it/s, loss=1.54, v_num=2905]
+Epoch 100:  31%|������       | 8/26 [00:01<00:03,  4.82it/s, loss=1.54, v_num=2905]
+Epoch 100:  31%|������       | 8/26 [00:01<00:03,  4.82it/s, loss=1.35, v_num=2905]
+Epoch 100:  35%|��������      | 9/26 [00:01<00:03,  4.91it/s, loss=1.35, v_num=2905]
+Epoch 100:  35%|��������      | 9/26 [00:01<00:03,  4.91it/s, loss=1.21, v_num=2905]
+Epoch 100:  38%|��������      | 10/26 [00:02<00:03,  4.99it/s, loss=1.21, v_num=2905]
+Epoch 100:  38%|��������      | 10/26 [00:02<00:03,  4.99it/s, loss=1.09, v_num=2905]
+Epoch 100:  42%|����������     | 11/26 [00:02<00:02,  5.03it/s, loss=1.09, v_num=2905]
+Epoch 100:  42%|����������     | 11/26 [00:02<00:02,  5.03it/s, loss=1, v_num=2905]   
+Epoch 100:  46%|����������     | 12/26 [00:02<00:02,  5.06it/s, loss=1, v_num=2905]
+Epoch 100:  46%|����������     | 12/26 [00:02<00:02,  5.06it/s, loss=0.921, v_num=2905]
+Epoch 100:  50%|����������     | 13/26 [00:02<00:02,  5.05it/s, loss=0.921, v_num=2905]
+Epoch 100:  50%|����������     | 13/26 [00:02<00:02,  5.05it/s, loss=0.854, v_num=2905]
+F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\loops\optimization\optimizer_loop.py:362: LightningDeprecationWarning: The NVIDIA/apex AMP implementation has been deprecated upstream. Consequently, its integration inside PyTorch Lightning has been deprecated in v1.9.0 and will be removed in v2.0.0. The `BrepSeg.optimizer_step()` hook is overridden, including the `using_native_amp` argument. Removing this argument will avoid this message, you can expect it to return True.
+  rank_zero_deprecation(
+
+Validation: 0it [00:00, ?it/s][A
+
+Validation:   0%|          | 0/13 [00:00<?, ?it/s][A
+
+Validation DataLoader 0:   0%|          | 0/13 [00:00<?, ?it/s][A
+
+Validation DataLoader 0:   8%|��         | 1/13 [00:00<00:00, 25.31it/s][A
+Epoch 100:  54%|������������    | 14/26 [00:02<00:02,  5.31it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0:  15%|����        | 2/13 [00:00<00:00, 28.98it/s][A
+Epoch 100:  58%|������������    | 15/26 [00:02<00:01,  5.63it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0:  23%|������       | 3/13 [00:00<00:00, 30.76it/s][A
+Epoch 100:  62%|��������������   | 16/26 [00:02<00:01,  5.94it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0:  31%|������       | 4/13 [00:00<00:00, 31.60it/s][A
+Epoch 100:  65%|��������������   | 17/26 [00:02<00:01,  6.24it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0:  38%|��������      | 5/13 [00:00<00:00, 32.06it/s][A
+Epoch 100:  69%|��������������   | 18/26 [00:02<00:01,  6.54it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0:  46%|����������     | 6/13 [00:00<00:00, 32.24it/s][A
+Epoch 100:  73%|����������������  | 19/26 [00:02<00:01,  6.83it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0:  54%|������������    | 7/13 [00:00<00:00, 33.02it/s][A
+Epoch 100:  77%|����������������  | 20/26 [00:02<00:00,  7.12it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0:  62%|��������������   | 8/13 [00:00<00:00, 33.15it/s][A
+Epoch 100:  81%|����������������  | 21/26 [00:02<00:00,  7.40it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0:  69%|��������������   | 9/13 [00:00<00:00, 33.33it/s][A
+Epoch 100:  85%|������������������ | 22/26 [00:02<00:00,  7.68it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0:  77%|����������������  | 10/13 [00:00<00:00, 33.44it/s][A
+Epoch 100:  88%|������������������ | 23/26 [00:02<00:00,  7.95it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0:  85%|������������������ | 11/13 [00:00<00:00, 33.06it/s][A
+Epoch 100:  92%|��������������������| 24/26 [00:02<00:00,  8.20it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0:  92%|��������������������| 12/13 [00:00<00:00, 33.25it/s][A
+Epoch 100:  96%|��������������������| 25/26 [00:02<00:00,  8.46it/s, loss=0.854, v_num=2905]
+
+Validation DataLoader 0: 100%|��������������������| 13/13 [00:00<00:00, 33.49it/s][A
+Epoch 100: 100%|��������������������| 26/26 [00:02<00:00,  8.71it/s, loss=0.854, v_num=2905]
+Epoch 100: 100%|��������������������| 26/26 [00:02<00:00,  8.68it/s, loss=0.854, v_num=2905]
+
+                                                                        [A
+Epoch 100: 100%|��������������������| 26/26 [00:02<00:00,  8.67it/s, loss=0.854, v_num=2905]
+Epoch 100:   0%|          | 0/26 [00:00<?, ?it/s, loss=0.854, v_num=2905]         
+Epoch 101:   0%|          | 0/26 [00:00<?, ?it/s, loss=0.854, v_num=2905]
+Epoch 101:   4%|��         | 1/26 [00:00<00:04,  5.51it/s, loss=0.854, v_num=2905]
+Epoch 101:   4%|��         | 1/26 [00:00<00:04,  5.51it/s, loss=0.797, v_num=2905]
+Epoch 101:   8%|��         | 2/26 [00:00<00:04,  5.61it/s, loss=0.797, v_num=2905]
+Epoch 101:   8%|��         | 2/26 [00:00<00:04,  5.61it/s, loss=0.747, v_num=2905]
+Epoch 101:  12%|����        | 3/26 [00:00<00:04,  5.58it/s, loss=0.747, v_num=2905]
+Epoch 101:  12%|����        | 3/26 [00:00<00:04,  5.58it/s, loss=0.704, v_num=2905]
+Epoch 101:  15%|����        | 4/26 [00:00<00:03,  5.59it/s, loss=0.704, v_num=2905]
+Epoch 101:  15%|����        | 4/26 [00:00<00:03,  5.59it/s, loss=0.665, v_num=2905]
+Epoch 101:  19%|����        | 5/26 [00:00<00:03,  5.54it/s, loss=0.665, v_num=2905]
+Epoch 101:  19%|����        | 5/26 [00:00<00:03,  5.54it/s, loss=0.762, v_num=2905]
+Epoch 101:  23%|������       | 6/26 [00:01<00:03,  5.58it/s, loss=0.762, v_num=2905]
+Epoch 101:  23%|������       | 6/26 [00:01<00:03,  5.58it/s, loss=0.725, v_num=2905]
+Epoch 101:  27%|������       | 7/26 [00:01<00:03,  5.62it/s, loss=0.725, v_num=2905]
+Epoch 101:  27%|������       | 7/26 [00:01<00:03,  5.62it/s, loss=0.691, v_num=2905]
+Epoch 101:  31%|������       | 8/26 [00:01<00:03,  5.62it/s, loss=0.691, v_num=2905]
+Epoch 101:  31%|������       | 8/26 [00:01<00:03,  5.62it/s, loss=0.567, v_num=2905]
+Epoch 101:  35%|��������      | 9/26 [00:01<00:03,  5.61it/s, loss=0.567, v_num=2905]
+Epoch 101:  35%|��������      | 9/26 [00:01<00:03,  5.61it/s, loss=0.559, v_num=2905]
+Epoch 101:  38%|��������      | 10/26 [00:01<00:02,  5.62it/s, loss=0.559, v_num=2905]
+Epoch 101:  38%|��������      | 10/26 [00:01<00:02,  5.62it/s, loss=0.708, v_num=2905]
+Epoch 101:  42%|����������     | 11/26 [00:01<00:02,  5.65it/s, loss=0.708, v_num=2905]
+Epoch 101:  42%|����������     | 11/26 [00:01<00:02,  5.65it/s, loss=0.709, v_num=2905]
+Epoch 101:  46%|����������     | 12/26 [00:02<00:02,  5.65it/s, loss=0.709, v_num=2905]
+Epoch 101:  46%|����������     | 12/26 [00:02<00:02,  5.65it/s, loss=0.589, v_num=2905]
+Epoch 101:  50%|����������     | 13/26 [00:02<00:02,  5.69it/s, loss=0.589, v_num=2905]
+Epoch 101:  50%|����������     | 13/26 [00:02<00:02,  5.69it/s, loss=0.572, v_num=2905]
+
+Validation: 0it [00:00, ?it/s][A
+
+Validation:   0%|          | 0/13 [00:00<?, ?it/s][A
+
+Validation DataLoader 0:   0%|          | 0/13 [00:00<?, ?it/s][A
+
+Validation DataLoader 0:   8%|��         | 1/13 [00:00<00:00, 26.20it/s][A
+Epoch 101:  54%|������������    | 14/26 [00:02<00:02,  5.97it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0:  15%|����        | 2/13 [00:00<00:00, 29.55it/s][A
+Epoch 101:  58%|������������    | 15/26 [00:02<00:01,  6.32it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0:  23%|������       | 3/13 [00:00<00:00, 30.60it/s][A
+Epoch 101:  62%|��������������   | 16/26 [00:02<00:01,  6.66it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0:  31%|������       | 4/13 [00:00<00:00, 30.06it/s][A
+Epoch 101:  65%|��������������   | 17/26 [00:02<00:01,  6.97it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0:  38%|��������      | 5/13 [00:00<00:00, 30.64it/s][A
+Epoch 101:  69%|��������������   | 18/26 [00:02<00:01,  7.29it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0:  46%|����������     | 6/13 [00:00<00:00, 29.28it/s][A
+Epoch 101:  73%|����������������  | 19/26 [00:02<00:00,  7.56it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0:  54%|������������    | 7/13 [00:00<00:00, 29.92it/s][A
+Epoch 101:  77%|����������������  | 20/26 [00:02<00:00,  7.87it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0:  62%|��������������   | 8/13 [00:00<00:00, 30.39it/s][A
+Epoch 101:  81%|����������������  | 21/26 [00:02<00:00,  8.17it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0:  69%|��������������   | 9/13 [00:00<00:00, 30.97it/s][A
+Epoch 101:  85%|������������������ | 22/26 [00:02<00:00,  8.47it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0:  77%|����������������  | 10/13 [00:00<00:00, 31.29it/s][A
+Epoch 101:  88%|������������������ | 23/26 [00:02<00:00,  8.76it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0:  85%|������������������ | 11/13 [00:00<00:00, 31.51it/s][A
+Epoch 101:  92%|��������������������| 24/26 [00:02<00:00,  9.04it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0:  92%|��������������������| 12/13 [00:00<00:00, 31.94it/s][A
+Epoch 101:  96%|��������������������| 25/26 [00:02<00:00,  9.32it/s, loss=0.572, v_num=2905]
+
+Validation DataLoader 0: 100%|��������������������| 13/13 [00:00<00:00, 32.28it/s][A
+Epoch 101: 100%|��������������������| 26/26 [00:02<00:00,  9.60it/s, loss=0.572, v_num=2905]
+Epoch 101: 100%|��������������������| 26/26 [00:02<00:00,  9.56it/s, loss=0.572, v_num=2905]
+
+                                                                        [A
+Epoch 101: 100%|��������������������| 26/26 [00:02<00:00,  9.55it/s, loss=0.572, v_num=2905]
+Epoch 101:   0%|          | 0/26 [00:00<?, ?it/s, loss=0.572, v_num=2905]         
+Epoch 102:   0%|          | 0/26 [00:00<?, ?it/s, loss=0.572, v_num=2905]
+Epoch 102:   4%|��         | 1/26 [00:00<00:04,  5.04it/s, loss=0.572, v_num=2905]
+Epoch 102:   4%|��         | 1/26 [00:00<00:04,  5.04it/s, loss=0.572, v_num=2905]
+Epoch 102:   8%|��         | 2/26 [00:00<00:04,  5.41it/s, loss=0.572, v_num=2905]
+Epoch 102:   8%|��         | 2/26 [00:00<00:04,  5.41it/s, loss=0.572, v_num=2905]
+Epoch 102:  12%|����        | 3/26 [00:00<00:04,  5.55it/s, loss=0.572, v_num=2905]
+Epoch 102:  12%|����        | 3/26 [00:00<00:04,  5.55it/s, loss=0.572, v_num=2905]
+Epoch 102:  15%|����        | 4/26 [00:00<00:03,  5.67it/s, loss=0.572, v_num=2905]
+Epoch 102:  15%|����        | 4/26 [00:00<00:03,  5.67it/s, loss=0.7, v_num=2905]  
+Epoch 102:  19%|����        | 5/26 [00:00<00:03,  5.67it/s, loss=0.7, v_num=2905]
+Epoch 102:  19%|����        | 5/26 [00:00<00:03,  5.67it/s, loss=0.7, v_num=2905]
+Epoch 102:  23%|������       | 6/26 [00:01<00:03,  5.64it/s, loss=0.7, v_num=2905]
+Epoch 102:  23%|������       | 6/26 [00:01<00:03,  5.63it/s, loss=0.841, v_num=2905]
+Epoch 102:  27%|������       | 7/26 [00:01<00:03,  5.65it/s, loss=0.841, v_num=2905]
+Epoch 102:  27%|������       | 7/26 [00:01<00:03,  5.65it/s, loss=0.841, v_num=2905]
+Epoch 102:  31%|������       | 8/26 [00:01<00:03,  5.63it/s, loss=0.841, v_num=2905]
+Epoch 102:  31%|������       | 8/26 [00:01<00:03,  5.63it/s, loss=0.962, v_num=2905]
+Epoch 102:  35%|��������      | 9/26 [00:01<00:02,  5.67it/s, loss=0.962, v_num=2905]
+Epoch 102:  35%|��������      | 9/26 [00:01<00:03,  5.66it/s, loss=0.962, v_num=2905]
+Epoch 102:  38%|��������      | 10/26 [00:01<00:02,  5.70it/s, loss=0.962, v_num=2905]
+Epoch 102:  38%|��������      | 10/26 [00:01<00:02,  5.69it/s, loss=0.962, v_num=2905]
+Epoch 102:  42%|����������     | 11/26 [00:01<00:02,  5.71it/s, loss=0.962, v_num=2905]
+Epoch 102:  42%|����������     | 11/26 [00:01<00:02,  5.70it/s, loss=0.962, v_num=2905]
+Epoch 102:  46%|����������     | 12/26 [00:02<00:02,  5.70it/s, loss=0.962, v_num=2905]
+Epoch 102:  46%|����������     | 12/26 [00:02<00:02,  5.69it/s, loss=0.958, v_num=2905]
+Epoch 102:  50%|����������     | 13/26 [00:02<00:02,  5.71it/s, loss=0.958, v_num=2905]
+Epoch 102:  50%|����������     | 13/26 [00:02<00:02,  5.71it/s, loss=0.958, v_num=2905]
+
+Validation: 0it [00:00, ?it/s][A
+
+Validation:   0%|          | 0/13 [00:00<?, ?it/s][A
+
+Validation DataLoader 0:   0%|          | 0/13 [00:00<?, ?it/s][A
+
+Validation DataLoader 0:   8%|��         | 1/13 [00:00<00:00, 26.65it/s][A
+Epoch 102:  54%|������������    | 14/26 [00:02<00:02,  6.00it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0:  15%|����        | 2/13 [00:00<00:00, 30.90it/s][A
+Epoch 102:  58%|������������    | 15/26 [00:02<00:01,  6.35it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0:  23%|������       | 3/13 [00:00<00:00, 32.60it/s][A
+Epoch 102:  62%|��������������   | 16/26 [00:02<00:01,  6.70it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0:  31%|������       | 4/13 [00:00<00:00, 32.92it/s][A
+Epoch 102:  65%|��������������   | 17/26 [00:02<00:01,  7.03it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0:  38%|��������      | 5/13 [00:00<00:00, 33.69it/s][A
+Epoch 102:  69%|��������������   | 18/26 [00:02<00:01,  7.36it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0:  46%|����������     | 6/13 [00:00<00:00, 33.91it/s][A
+Epoch 102:  73%|����������������  | 19/26 [00:02<00:00,  7.68it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0:  54%|������������    | 7/13 [00:00<00:00, 34.09it/s][A
+Epoch 102:  77%|����������������  | 20/26 [00:02<00:00,  7.99it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0:  62%|��������������   | 8/13 [00:00<00:00, 34.37it/s][A
+Epoch 102:  81%|����������������  | 21/26 [00:02<00:00,  8.30it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0:  69%|��������������   | 9/13 [00:00<00:00, 34.26it/s][A
+Epoch 102:  85%|������������������ | 22/26 [00:02<00:00,  8.60it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0:  77%|����������������  | 10/13 [00:00<00:00, 34.32it/s][A
+Epoch 102:  88%|������������������ | 23/26 [00:02<00:00,  8.89it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0:  85%|������������������ | 11/13 [00:00<00:00, 33.92it/s][A
+Epoch 102:  92%|��������������������| 24/26 [00:02<00:00,  9.16it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0:  92%|��������������������| 12/13 [00:00<00:00, 33.62it/s][A
+Epoch 102:  96%|��������������������| 25/26 [00:02<00:00,  9.42it/s, loss=0.958, v_num=2905]
+
+Validation DataLoader 0: 100%|��������������������| 13/13 [00:00<00:00, 33.87it/s][A
+Epoch 102: 100%|��������������������| 26/26 [00:02<00:00,  9.70it/s, loss=0.958, v_num=2905]
+Epoch 102: 100%|��������������������| 26/26 [00:02<00:00,  9.67it/s, loss=0.958, v_num=2905]
+
+                                                                        [A
+Epoch 102: 100%|��������������������| 26/26 [00:02<00:00,  9.66it/s, loss=0.958, v_num=2905]
+Epoch 102:   0%|          | 0/26 [00:00<?, ?it/s, loss=0.958, v_num=2905]         
+Epoch 103:   0%|          | 0/26 [00:00<?, ?it/s, loss=0.958, v_num=2905]
+Epoch 103:   4%|��         | 1/26 [00:00<00:04,  5.29it/s, loss=0.958, v_num=2905]
+Epoch 103:   4%|��         | 1/26 [00:00<00:04,  5.29it/s, loss=0.958, v_num=2905]
+Epoch 103:   8%|��         | 2/26 [00:00<00:04,  5.57it/s, loss=0.958, v_num=2905]
+Epoch 103:   8%|��         | 2/26 [00:00<00:04,  5.57it/s, loss=1.08, v_num=2905] 
+Epoch 103:  12%|����        | 3/26 [00:00<00:04,  5.56it/s, loss=1.08, v_num=2905]
+Epoch 103:  12%|����        | 3/26 [00:00<00:04,  5.55it/s, loss=0.961, v_num=2905]
+Epoch 103:  15%|����        | 4/26 [00:00<00:03,  5.64it/s, loss=0.961, v_num=2905]
+Epoch 103:  15%|����        | 4/26 [00:00<00:03,  5.64it/s, loss=0.812, v_num=2905]
+Epoch 103:  19%|����        | 5/26 [00:00<00:03,  5.63it/s, loss=0.812, v_num=2905]
+Epoch 103:  19%|����        | 5/26 [00:00<00:03,  5.63it/s, loss=0.949, v_num=2905]
+Epoch 103:  23%|������       | 6/26 [00:01<00:03,  5.67it/s, loss=0.949, v_num=2905]
+Epoch 103:  23%|������       | 6/26 [00:01<00:03,  5.66it/s, loss=0.949, v_num=2905]
+Epoch 103:  27%|������       | 7/26 [00:01<00:03,  5.69it/s, loss=0.949, v_num=2905]
+Epoch 103:  27%|������       | 7/26 [00:01<00:03,  5.69it/s, loss=0.82, v_num=2905] 
+Epoch 103:  31%|������       | 8/26 [00:01<00:03,  5.73it/s, loss=0.82, v_num=2905]
+Epoch 103:  31%|������       | 8/26 [00:01<00:03,  5.73it/s, loss=0.82, v_num=2905]
+Epoch 103:  35%|��������      | 9/26 [00:01<00:02,  5.68it/s, loss=0.82, v_num=2905]
+Epoch 103:  35%|��������      | 9/26 [00:01<00:02,  5.68it/s, loss=0.82, v_num=2905]
+Epoch 103:  38%|��������      | 10/26 [00:01<00:02,  5.53it/s, loss=0.82, v_num=2905]
+Epoch 103:  38%|��������      | 10/26 [00:01<00:02,  5.53it/s, loss=0.931, v_num=2905]
+Epoch 103:  42%|����������     | 11/26 [00:01<00:02,  5.55it/s, loss=0.931, v_num=2905]
+Epoch 103:  42%|����������     | 11/26 [00:01<00:02,  5.55it/s, loss=0.803, v_num=2905]
+Epoch 103:  46%|����������     | 12/26 [00:02<00:02,  5.57it/s, loss=0.803, v_num=2905]
+Epoch 103:  46%|����������     | 12/26 [00:02<00:02,  5.57it/s, loss=0.803, v_num=2905]
+Epoch 103:  50%|����������     | 13/26 [00:02<00:02,  5.54it/s, loss=0.803, v_num=2905]
+Epoch 103:  50%|����������     | 13/26 [00:02<00:02,  5.54it/s, loss=0.778, v_num=2905]
+
+Validation: 0it [00:00, ?it/s][A
+
+Validation:   0%|          | 0/13 [00:00<?, ?it/s][A
+
+Validation DataLoader 0:   0%|          | 0/13 [00:00<?, ?it/s][A
+
+Validation DataLoader 0:   8%|��         | 1/13 [00:00<00:00, 25.74it/s][A
+Epoch 103:  54%|������������    | 14/26 [00:02<00:02,  5.82it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0:  15%|����        | 2/13 [00:00<00:00, 29.77it/s][A
+Epoch 103:  58%|������������    | 15/26 [00:02<00:01,  6.17it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0:  23%|������       | 3/13 [00:00<00:00, 31.19it/s][A
+Epoch 103:  62%|��������������   | 16/26 [00:02<00:01,  6.50it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0:  31%|������       | 4/13 [00:00<00:00, 32.12it/s][A
+Epoch 103:  65%|��������������   | 17/26 [00:02<00:01,  6.83it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0:  38%|��������      | 5/13 [00:00<00:00, 31.07it/s][A
+Epoch 103:  69%|��������������   | 18/26 [00:02<00:01,  7.13it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0:  46%|����������     | 6/13 [00:00<00:00, 31.67it/s][A
+Epoch 103:  73%|����������������  | 19/26 [00:02<00:00,  7.44it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0:  54%|������������    | 7/13 [00:00<00:00, 32.15it/s][A
+Epoch 103:  77%|����������������  | 20/26 [00:02<00:00,  7.74it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0:  62%|��������������   | 8/13 [00:00<00:00, 32.34it/s][A
+Epoch 103:  81%|����������������  | 21/26 [00:02<00:00,  8.04it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0:  69%|��������������   | 9/13 [00:00<00:00, 32.57it/s][A
+Epoch 103:  85%|������������������ | 22/26 [00:02<00:00,  8.33it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0:  77%|����������������  | 10/13 [00:00<00:00, 32.53it/s][A
+Epoch 103:  88%|������������������ | 23/26 [00:02<00:00,  8.61it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0:  85%|������������������ | 11/13 [00:00<00:00, 32.56it/s][A
+Epoch 103:  92%|��������������������| 24/26 [00:02<00:00,  8.88it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0:  92%|��������������������| 12/13 [00:00<00:00, 32.90it/s][A
+Epoch 103:  96%|��������������������| 25/26 [00:02<00:00,  9.16it/s, loss=0.778, v_num=2905]
+
+Validation DataLoader 0: 100%|��������������������| 13/13 [00:00<00:00, 33.09it/s][A
+Epoch 103: 100%|��������������������| 26/26 [00:02<00:00,  9.43it/s, loss=0.778, v_num=2905]
+Epoch 103: 100%|��������������������| 26/26 [00:02<00:00,  9.40it/s, loss=0.778, v_num=2905]
+
+                                                                        [A
+Epoch 103: 100%|��������������������| 26/26 [00:02<00:00,  9.39it/s, loss=0.778, v_num=2905]
+Epoch 103:   0%|          | 0/26 [00:00<?, ?it/s, loss=0.778, v_num=2905]         
+Epoch 104:   0%|          | 0/26 [00:00<?, ?it/s, loss=0.778, v_num=2905]
+Epoch 104:   4%|��         | 1/26 [00:00<00:04,  5.26it/s, loss=0.778, v_num=2905]
+Epoch 104:   4%|��         | 1/26 [00:00<00:04,  5.26it/s, loss=0.778, v_num=2905]
+Epoch 104:   8%|��         | 2/26 [00:00<00:04,  5.46it/s, loss=0.778, v_num=2905]
+Epoch 104:   8%|��         | 2/26 [00:00<00:04,  5.45it/s, loss=0.767, v_num=2905]
+Epoch 104:  12%|����        | 3/26 [00:00<00:04,  5.58it/s, loss=0.767, v_num=2905]
+Epoch 104:  12%|����        | 3/26 [00:00<00:04,  5.58it/s, loss=0.767, v_num=2905]
+Epoch 104:  15%|����        | 4/26 [00:00<00:03,  5.99it/s, loss=0.767, v_num=2905]
+Epoch 104:  15%|����        | 4/26 [00:00<00:03,  5.98it/s, loss=0.768, v_num=2905]
+Epoch 104:  19%|����        | 5/26 [00:00<00:03,  5.86it/s, loss=0.768, v_num=2905]
+Epoch 104:  19%|����        | 5/26 [00:00<00:03,  5.86it/s, loss=0.9, v_num=2905]  
+Epoch 104:  23%|������       | 6/26 [00:01<00:03,  5.79it/s, loss=0.9, v_num=2905]
+Epoch 104:  23%|������       | 6/26 [00:01<00:03,  5.79it/s, loss=0.785, v_num=2905]
+Epoch 104:  27%|������       | 7/26 [00:01<00:03,  5.80it/s, loss=0.785, v_num=2905]
+Epoch 104:  27%|������       | 7/26 [00:01<00:03,  5.80it/s, loss=0.785, v_num=2905]
+Epoch 104:  31%|������       | 8/26 [00:01<00:03,  5.83it/s, loss=0.785, v_num=2905]
+Epoch 104:  31%|������       | 8/26 [00:01<00:03,  5.83it/s, loss=0.908, v_num=2905]
+Epoch 104:  35%|��������      | 9/26 [00:01<00:02,  5.83it/s, loss=0.908, v_num=2905]
+Epoch 104:  35%|��������      | 9/26 [00:01<00:02,  5.82it/s, loss=0.783, v_num=2905]
+Epoch 104:  38%|��������      | 10/26 [00:01<00:02,  5.78it/s, loss=0.783, v_num=2905]
+Epoch 104:  38%|��������      | 10/26 [00:01<00:02,  5.78it/s, loss=0.783, v_num=2905]
+Epoch 104:  42%|����������     | 11/26 [00:01<00:02,  5.78it/s, loss=0.783, v_num=2905]
+Epoch 104:  42%|����������     | 11/26 [00:01<00:02,  5.78it/s, loss=0.783, v_num=2905]
+Epoch 104:  46%|����������     | 12/26 [00:02<00:02,  5.77it/s, loss=0.783, v_num=2905]
+Epoch 104:  46%|����������     | 12/26 [00:02<00:02,  5.77it/s, loss=0.758, v_num=2905]
+Epoch 104:  50%|����������     | 13/26 [00:02<00:02,  5.77it/s, loss=0.758, v_num=2905]
+Epoch 104:  50%|����������     | 13/26 [00:02<00:02,  5.77it/s, loss=0.758, v_num=2905]
+
+Validation: 0it [00:00, ?it/s][A
+
+Validation:   0%|          | 0/13 [00:00<?, ?it/s][A
+
+Validation DataLoader 0:   0%|          | 0/13 [00:00<?, ?it/s][A
+
+Validation DataLoader 0:   8%|��         | 1/13 [00:00<00:00, 25.95it/s][A
+Epoch 104:  54%|������������    | 14/26 [00:02<00:01,  6.06it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0:  15%|����        | 2/13 [00:00<00:00, 29.71it/s][A
+Epoch 104:  58%|������������    | 15/26 [00:02<00:01,  6.41it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0:  23%|������       | 3/13 [00:00<00:00, 32.48it/s][A
+Epoch 104:  62%|��������������   | 16/26 [00:02<00:01,  6.77it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0:  31%|������       | 4/13 [00:00<00:00, 33.92it/s][A
+Epoch 104:  65%|��������������   | 17/26 [00:02<00:01,  7.11it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0:  38%|��������      | 5/13 [00:00<00:00, 33.99it/s][A
+Epoch 104:  69%|��������������   | 18/26 [00:02<00:01,  7.44it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0:  46%|����������     | 6/13 [00:00<00:00, 34.84it/s][A
+Epoch 104:  73%|����������������  | 19/26 [00:02<00:00,  7.77it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0:  54%|������������    | 7/13 [00:00<00:00, 35.42it/s][A
+Epoch 104:  77%|����������������  | 20/26 [00:02<00:00,  8.10it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0:  62%|��������������   | 8/13 [00:00<00:00, 35.34it/s][A
+Epoch 104:  81%|����������������  | 21/26 [00:02<00:00,  8.40it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0:  69%|��������������   | 9/13 [00:00<00:00, 35.23it/s][A
+Epoch 104:  85%|������������������ | 22/26 [00:02<00:00,  8.70it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0:  77%|����������������  | 10/13 [00:00<00:00, 35.69it/s][A
+Epoch 104:  88%|������������������ | 23/26 [00:02<00:00,  9.01it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0:  85%|������������������ | 11/13 [00:00<00:00, 35.91it/s][A
+Epoch 104:  92%|��������������������| 24/26 [00:02<00:00,  9.31it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0:  92%|��������������������| 12/13 [00:00<00:00, 36.08it/s][A
+Epoch 104:  96%|��������������������| 25/26 [00:02<00:00,  9.60it/s, loss=0.758, v_num=2905]
+
+Validation DataLoader 0: 100%|��������������������| 13/13 [00:00<00:00, 36.09it/s][A
+Epoch 104: 100%|��������������������| 26/26 [00:02<00:00,  9.88it/s, loss=0.758, v_num=2905]
+Epoch 104: 100%|��������������������| 26/26 [00:02<00:00,  9.85it/s, loss=0.758, v_num=2905]
+
+                                                                        [A
+Traceback (most recent call last):
+  File "D:\Code\BrepMFR\segmentation.py", line 756, in <module>
+    raise SystemExit(main())
+  File "D:\Code\BrepMFR\segmentation.py", line 722, in main
+    trainer.fit(model, train_loader, val_loader)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\trainer.py", line 608, in fit
+    call._call_and_handle_interrupt(
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\call.py", line 38, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\trainer.py", line 650, in _fit_impl
+    self._run(model, ckpt_path=self.ckpt_path)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\trainer.py", line 1112, in _run
+    results = self._run_stage()
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\trainer.py", line 1191, in _run_stage
+    self._run_train()
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\trainer.py", line 1214, in _run_train
+    self.fit_loop.run()
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\loops\loop.py", line 200, in run
+    self.on_advance_end()
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\loops\fit_loop.py", line 295, in on_advance_end
+    self.trainer._call_callback_hooks("on_train_epoch_end")
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\trainer.py", line 1394, in _call_callback_hooks
+    fn(self, self.lightning_module, *args, **kwargs)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\callbacks\model_checkpoint.py", line 305, in on_train_epoch_end
+    self._save_last_checkpoint(trainer, monitor_candidates)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\callbacks\model_checkpoint.py", line 650, in _save_last_checkpoint
+    self._save_checkpoint(trainer, filepath)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\callbacks\model_checkpoint.py", line 366, in _save_checkpoint
+    trainer.save_checkpoint(filepath, self.save_weights_only)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\trainer.py", line 1939, in save_checkpoint
+    self._checkpoint_connector.save_checkpoint(filepath, weights_only=weights_only, storage_options=storage_options)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\trainer\connectors\checkpoint_connector.py", line 511, in save_checkpoint
+    self.trainer.strategy.save_checkpoint(_checkpoint, filepath, storage_options=storage_options)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\pytorch_lightning\strategies\strategy.py", line 466, in save_checkpoint
+    self.checkpoint_io.save_checkpoint(checkpoint, filepath, storage_options=storage_options)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\lightning_fabric\plugins\io\torch_io.py", line 54, in save_checkpoint
+    _atomic_save(checkpoint, path)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\lightning_fabric\utilities\cloud_io.py", line 71, in _atomic_save
+    with fsspec.open(filepath, "wb") as f:
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\fsspec\core.py", line 105, in __enter__
+    f = self.fs.open(self.path, mode=mode)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\fsspec\spec.py", line 1310, in open
+    f = self._open(
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\fsspec\implementations\local.py", line 201, in _open
+    return LocalFileOpener(path, mode, fs=self, **kwargs)
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\fsspec\implementations\local.py", line 365, in __init__
+    self._open()
+  File "F:\ProgramData\anaconda3\envs\aagmspenv\lib\site-packages\fsspec\implementations\local.py", line 370, in _open
+    self.f = open(self.path, mode=self.mode)
+OSError: [Errno 22] Invalid argument: 'D:/Code/BrepMFR/docs/001_overfit_results/Casing001_13crops_fullcoverage/1121/102905/last.ckpt'
+Epoch 104: 100%|��������������������| 26/26 [00:02<00:00,  9.83it/s, loss=0.758, v_num=2905]
+Epoch 104: 100%|��������������������| 26/26 [00:02<00:00,  8.98it/s, loss=0.758, v_num=2905]

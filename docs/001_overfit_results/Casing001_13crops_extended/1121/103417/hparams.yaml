@@ -1,0 +1,274 @@
+accelerator: null
+accumulate_grad_batches: null
+act_dropout: 0.0
+affinity_dim: 64
+affinity_loss_weight: 0.1
+affinity_temperature: 0.2
+affinity_warmup_epochs: 10
+amp_backend: null
+amp_level: null
+area_sampling_exponent: 0.5
+args: !!python/object:argparse.Namespace
+  accelerator: null
+  accumulate_grad_batches: null
+  act_dropout: 0.0
+  affinity_dim: 64
+  affinity_loss_weight: 0.1
+  affinity_temperature: 0.2
+  affinity_warmup_epochs: 10
+  amp_backend: null
+  amp_level: null
+  area_sampling_exponent: 0.5
+  attention_dropout: 0.0
+  auto_lr_find: false
+  auto_prepare: false
+  auto_scale_batch_size: false
+  auto_select_gpus: null
+  batch_size: 1
+  benchmark: null
+  bin_root: !!python/object/apply:pathlib.WindowsPath
+  - D:\
+  - Code
+  - Datasets
+  - "\u81EA\u5EFA\u673A\u5323\u6570\u636E\u96C6"
+  - 001_overfit_13crops_seed42
+  candidate_grids:
+  - 20
+  - 32
+  - 48
+  - 64
+  - 80
+  check_val_every_n_epoch: 1
+  checkpoint: null
+  cylindrical_scale: 1.0
+  d_model: 128
+  dataset: cadsynth
+  dataset_path: !!python/object/apply:pathlib.WindowsPath
+  - D:\
+  - Code
+  - Datasets
+  - "\u81EA\u5EFA\u673A\u5323\u6570\u636E\u96C6"
+  - 001_overfit_13crops_seed42
+  default_root_dir: null
+  detect_anomaly: false
+  devices: null
+  dim_node: 64
+  donor_prepared_dataset_paths: []
+  dropout: 0.0
+  enable_checkpointing: true
+  enable_model_summary: true
+  enable_progress_bar: true
+  experiment_alias: spe_instance
+  experiment_mode: dynamic_affinity
+  experiment_name: Casing001_13crops_extended
+  extractor_file: !!python/object/apply:pathlib.WindowsPath
+  - D:\
+  - Code
+  - BrepMFR
+  - tools
+  - AAGExtractor.py
+  face_geometry_encoder: param_surface
+  fast_dev_run: false
+  fixed_point_count: 64
+  gpus: null
+  gradient_clip_algorithm: null
+  gradient_clip_val: null
+  inference_mode: true
+  instance_bias_confidence_power: 1.0
+  instance_bias_delay_epochs: 10
+  instance_bias_gate_init: 0.0
+  instance_bias_last_layers: 2
+  instance_bias_max_gate_scale: 1.0
+  instance_bias_ramp_epochs: 10
+  instance_bias_scale: 1.0
+  instance_bias_strategy: late_gated
+  instance_relation_mapping: signed
+  ipus: null
+  limit_predict_batches: null
+  limit_test_batches: null
+  limit_train_batches: null
+  limit_val_batches: null
+  log_every_n_steps: 1
+  logger: true
+  max_epochs: 230
+  max_point_count: 96
+  max_steps: -1
+  max_time: null
+  min_epochs: null
+  min_point_count: 32
+  min_steps: null
+  move_metrics_to_cpu: false
+  multiple_trainloader_mode: max_size_cycle
+  n_heads: 8
+  n_layers_encode: 2
+  num_classes: 30
+  num_nodes: 1
+  num_processes: null
+  num_sanity_val_steps: 2
+  num_workers: 0
+  overfit_batches: 0.0
+  plugins: null
+  point_sampling_mode: area_adaptive
+  pointcloud_scale: 1.0
+  precision: 32
+  preparation_reuse_status: legacy
+  prepared_dataset_path: null
+  profiler: null
+  random_rotate: false
+  raw_dataset_path: null
+  rebuild_prepared_data: false
+  reload_dataloaders_every_n_epochs: 0
+  replace_sampler_ddp: true
+  results_root: !!python/object/apply:pathlib.WindowsPath
+  - D:\
+  - Code
+  - BrepMFR
+  - docs
+  - 001_overfit_results
+  resume_from_checkpoint: D:\Code\BrepMFR\docs\001_overfit_results\Casing001_13crops_bestonly\1121\103056\best-mIoU-159-0.843183.ckpt
+  sample_percent: 0.01
+  schema_file: !!python/object/apply:pathlib.WindowsPath
+  - D:\
+  - Code
+  - BrepMFR
+  - tools
+  - schema.json
+  seed: 42
+  selected_split_counts:
+    test: 13
+    train: 13
+    val: 13
+  shared_bin_cache_path: null
+  split_ratios:
+  - 0.8
+  - 0.1
+  - 0.1
+  strategy: null
+  surface_fusion: add
+  surface_neighbor_metric: intrinsic
+  surface_trim_aware: false
+  sync_batchnorm: false
+  tpu_cores: null
+  track_grad_norm: -1
+  traintest: train
+  use_cylindrical_pos: true
+  use_face_pointcloud: true
+  use_face_uv: false
+  val_check_interval: null
+attention_dropout: 0.0
+auto_lr_find: false
+auto_prepare: false
+auto_scale_batch_size: false
+auto_select_gpus: null
+base_seed: 42
+batch_size: 1
+benchmark: null
+bin_cache_path: "D:\\Code\\Datasets\\\u81EA\u5EFA\u673A\u5323\u6570\u636E\u96C6\\\
+  001_overfit_13crops_seed42"
+bin_root: "D:\\Code\\Datasets\\\u81EA\u5EFA\u673A\u5323\u6570\u636E\u96C6\\001_overfit_13crops_seed42"
+candidate_grids:
+- 20
+- 32
+- 48
+- 64
+- 80
+check_val_every_n_epoch: 1
+checkpoint: null
+cylindrical_scale: 1.0
+d_model: 128
+dataset: cadsynth
+dataset_path: "D:\\Code\\Datasets\\\u81EA\u5EFA\u673A\u5323\u6570\u636E\u96C6\\001_overfit_13crops_seed42"
+default_root_dir: null
+detect_anomaly: false
+devices: null
+dim_node: 64
+donor_prepared_dataset_paths: []
+dropout: 0.0
+enable_checkpointing: true
+enable_model_summary: true
+enable_progress_bar: true
+experiment_alias: spe_instance
+experiment_mode: dynamic_affinity
+experiment_name: Casing001_13crops_extended
+extractor_file: D:\Code\BrepMFR\tools\AAGExtractor.py
+face_geometry_encoder: param_surface
+fast_dev_run: false
+fixed_point_count: 64
+gpus: null
+gradient_clip_algorithm: null
+gradient_clip_val: null
+inference_mode: true
+instance_bias_confidence_power: 1.0
+instance_bias_delay_epochs: 10
+instance_bias_gate_init: 0.0
+instance_bias_last_layers: 2
+instance_bias_max_gate_scale: 1.0
+instance_bias_ramp_epochs: 10
+instance_bias_scale: 1.0
+instance_bias_strategy: late_gated
+instance_relation_mapping: signed
+ipus: null
+limit_predict_batches: null
+limit_test_batches: null
+limit_train_batches: null
+limit_val_batches: null
+log_every_n_steps: 1
+logger: true
+max_epochs: 230
+max_point_count: 96
+max_steps: -1
+max_time: null
+min_epochs: null
+min_point_count: 32
+min_steps: null
+move_metrics_to_cpu: false
+multiple_trainloader_mode: max_size_cycle
+n_heads: 8
+n_layers_encode: 2
+num_classes: 30
+num_nodes: 1
+num_processes: null
+num_sanity_val_steps: 2
+num_workers: 0
+output_cylindrical_pos: null
+output_face_pointcloud: null
+output_parametric_surface: null
+overfit_batches: 0.0
+plugins: null
+point_sampling_mode: area_adaptive
+pointcloud_scale: 1.0
+precision: 32
+preparation_reuse_status: legacy
+prepared_dataset_path: null
+profiler: null
+random_rotate: false
+raw_dataset_path: null
+rebuild_prepared_data: false
+reload_dataloaders_every_n_epochs: 0
+replace_sampler_ddp: true
+results_root: D:\Code\BrepMFR\docs\001_overfit_results
+resume_from_checkpoint: D:\Code\BrepMFR\docs\001_overfit_results\Casing001_13crops_bestonly\1121\103056\best-mIoU-159-0.843183.ckpt
+sample_percent: 0.01
+schema_file: D:\Code\BrepMFR\tools\schema.json
+seed: 42
+selected_split_counts:
+  test: 13
+  train: 13
+  val: 13
+shared_bin_cache_path: null
+split_ratios:
+- 0.8
+- 0.1
+- 0.1
+strategy: null
+surface_fusion: add
+surface_neighbor_metric: intrinsic
+surface_trim_aware: false
+sync_batchnorm: false
+tpu_cores: null
+track_grad_norm: -1
+traintest: train
+use_cylindrical_pos: true
+use_face_pointcloud: true
+use_face_uv: false
+val_check_interval: null
